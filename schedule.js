@@ -63,7 +63,7 @@ function scheduleRow(event) {
   ].filter(([, program]) => program && program !== "—");
 
   if (!programs.length) {
-    programCell.append(element("p", "", "To be announced"));
+    programCell.append(element("p", "", "TBA"));
   } else {
     programs.forEach(([name, program]) => {
       const line = element("p");
