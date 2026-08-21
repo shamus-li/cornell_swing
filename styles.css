@@ -114,11 +114,9 @@ h2 {
 .hero img {
   width: 100%;
   height: auto;
-  max-height: 480px;
   margin-top: 36px;
   display: block;
   border-radius: 8px;
-  object-fit: cover;
 }
 
 .section {
