@@ -72,9 +72,8 @@ h3 {
 }
 
 h1 {
-  font-size: clamp(1.45rem, 6.6vw, 3.8rem);
+  font-size: clamp(2.5rem, 5.5vw, 3.8rem);
   letter-spacing: -0.01em;
-  white-space: nowrap;
 }
 
 h2 {
@@ -85,6 +84,10 @@ h2 {
   max-width: 600px;
   margin: 16px 0 0;
   font-size: 1.1rem;
+}
+
+.hero-copy-lead {
+  white-space: nowrap;
 }
 
 .hero-links {
@@ -261,6 +264,16 @@ h2 {
 
   .schedule-program {
     margin-top: 2px;
+  }
+}
+
+@media (max-width: 500px) {
+  .hero-copy-lead {
+    white-space: normal;
+  }
+
+  .hero-copy-break {
+    display: none;
   }
 }
 
