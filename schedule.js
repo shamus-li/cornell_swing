@@ -1,5 +1,4 @@
 const SCHEDULE_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTMACS7bEK5TUm1wmzyu65DBGkbGSegPM8Vj5NqYywksSDJeSejUjTOmvFSbz_pQ70eMvOOH1SMW53G/pub?gid=0&single=true&output=csv";
-const CAMPUSGROUPS_URL = "https://cornell.campusgroups.com/gcss/club_signup";
 
 function parseCsv(csv) {
   const rows = [];
@@ -93,10 +92,7 @@ async function loadSchedule() {
     window.__scheduleReady = true;
   } catch (error) {
     console.error(error);
-    const message = element("p", "schedule-status", "The schedule could not be loaded. Please check ");
-    const link = element("a", "", "CampusGroups");
-    link.href = CAMPUSGROUPS_URL;
-    message.append(link, " for the latest details.");
+    const message = element("p", "schedule-status", "The schedule could not be loaded.");
     list.replaceChildren(message);
     list.setAttribute("aria-busy", "false");
     window.__scheduleReady = false;
