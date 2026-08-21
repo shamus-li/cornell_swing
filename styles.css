@@ -52,7 +52,7 @@ main,
 
 .site-name {
   color: var(--ink);
-  font-family: Fraunces, Georgia, serif;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   font-size: 1.1rem;
   font-weight: 700;
   text-decoration: none;
@@ -66,7 +66,7 @@ h1,
 h2,
 h3 {
   margin: 0;
-  font-family: Fraunces, Georgia, serif;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   font-weight: 700;
   line-height: 1.1;
 }

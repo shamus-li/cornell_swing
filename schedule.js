@@ -103,4 +103,4 @@ async function loadSchedule() {
   }
 }
 
-loadSchedule();
+window.addEventListener("load", loadSchedule, { once: true });

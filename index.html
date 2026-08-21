@@ -7,10 +7,7 @@
     <meta name="theme-color" content="#ffffff">
     <title>Swing Syndicate at Cornell</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap">
-    <link rel="stylesheet" href="styles.css?v=20260821">
+    <link rel="stylesheet" href="styles.css?v=20260821-2">
     <script src="schedule.js" defer></script>
   </head>
   <body id="top">
@@ -26,7 +23,14 @@
           <a class="button" href="https://lists.cornell.edu/GRAD-SWING-DANCE-L/subscribe">Join the mailing list</a>
           <a href="https://cornell.campusgroups.com/gcss/club_signup">Join CampusGroups</a>
         </div>
-        <img src="assets/hero.jpg" alt="Swing dancers high-five while other couples dance around them" width="1800" height="1200">
+        <img
+          src="assets/hero-960.webp"
+          srcset="assets/hero-480.webp 480w, assets/hero-720.webp 720w, assets/hero-960.webp 960w, assets/hero-1800.webp 1800w"
+          sizes="(max-width: 700px) calc(100vw - 32px), (max-width: 960px) calc(100vw - 40px), 920px"
+          alt="Swing dancers high-five while other couples dance around them"
+          width="1800"
+          height="1200"
+          fetchpriority="high">
       </section>
 
       <section id="schedule" class="section" aria-labelledby="schedule-title">
@@ -39,7 +43,7 @@
           <span>Lesson program</span>
         </div>
         <div id="schedule-list" class="schedule-list" aria-live="polite" aria-busy="true">
-          <p class="schedule-status">Loading the semester schedule…</p>
+          <p class="schedule-status">loading schedule...</p>
         </div>
         <noscript>
           <p class="schedule-status">JavaScript is needed to load the schedule. See the latest events on <a href="https://cornell.campusgroups.com/gcss/club_signup">CampusGroups</a>.</p>
