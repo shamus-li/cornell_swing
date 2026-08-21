@@ -185,9 +185,47 @@ h2 {
   padding: 14px 0;
 }
 
+.etiquette h2,
 .faq h2,
 .about h2 {
   margin-bottom: 26px;
+}
+
+.etiquette-intro,
+.etiquette-item,
+.etiquette-contact {
+  max-width: 700px;
+}
+
+.etiquette-intro {
+  margin: 0 0 26px;
+  color: var(--muted);
+}
+
+.etiquette-item + .etiquette-item {
+  margin-top: 22px;
+}
+
+.etiquette-item h3 {
+  font-size: 1.1rem;
+}
+
+.etiquette-item p,
+.etiquette-item ul {
+  margin: 8px 0 0;
+}
+
+.etiquette-item ul {
+  padding-left: 1.25rem;
+}
+
+.etiquette-item li + li {
+  margin-top: 6px;
+}
+
+.etiquette-contact {
+  margin: 26px 0 0;
+  color: var(--muted);
 }
 
 .faq-item + .faq-item {
@@ -267,7 +305,7 @@ h2 {
   }
 }
 
-@media (max-width: 500px) {
+@media (max-width: 330px) {
   .hero-copy-lead {
     white-space: normal;
   }
