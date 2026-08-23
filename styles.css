@@ -53,7 +53,6 @@ main,
 .site-name {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
   color: var(--ink);
   font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   font-size: 1.1rem;
@@ -64,6 +63,10 @@ main,
 .site-name img {
   width: auto;
   height: 34px;
+  margin-right: -4px;
+  position: relative;
+  top: -1px;
+  z-index: 1;
   flex: none;
 }
 
@@ -95,15 +98,11 @@ h2 {
   font-size: 1.1rem;
 }
 
-.hero-copy-lead {
-  white-space: nowrap;
-}
-
 .hero-links {
   margin-top: 24px;
   display: flex;
   align-items: center;
-  gap: 22px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
@@ -152,9 +151,7 @@ h2 {
 }
 
 .schedule-header,
-.schedule-row,
-.special-events-header,
-.special-event-row {
+.schedule-row {
   display: grid;
   gap: 22px;
 }
@@ -164,22 +161,18 @@ h2 {
   grid-template-columns: 110px 170px minmax(0, 1fr);
 }
 
-.special-events-header,
 .special-event-row {
-  grid-template-columns: 100px 120px minmax(140px, 1fr) minmax(180px, 1.2fr);
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 22px;
 }
 
-.schedule-header,
-.special-events-header {
+.schedule-header {
   padding-bottom: 8px;
   color: var(--muted);
   border-bottom: 1px solid var(--line);
   font-size: 0.8rem;
   font-weight: 700;
-}
-
-.special-events-header {
-  margin-top: 30px;
 }
 
 .schedule-row,
@@ -202,10 +195,22 @@ h2 {
 
 .schedule-location,
 .schedule-program,
-.schedule-detail,
-.special-event-time,
-.special-event-location,
+.schedule-detail {
+  font-size: 0.9rem;
+}
+
+.special-events-list {
+  margin-top: 30px;
+}
+
 .special-event-title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.special-event-meta {
+  margin: 4px 0 0;
+  color: var(--muted);
   font-size: 0.9rem;
 }
 
@@ -327,32 +332,19 @@ h2 {
     padding: 44px 0 0;
   }
 
-  .schedule-header,
-  .special-events-header {
+  .schedule-header {
     display: none;
   }
 
-  .schedule-row,
-  .special-event-row {
+  .schedule-row {
     display: block;
     padding: 12px 0;
   }
 
-  .special-event-time,
-  .special-event-location {
-    display: inline;
-    margin-left: 0.35em;
-  }
-
-  .special-event-time::before,
-  .special-event-location::before {
-    content: "\00b7  ";
-    color: var(--muted);
-  }
-
-  .special-event-title {
-    margin-top: 2px;
-    font-weight: 700;
+  .special-event-row {
+    grid-template-columns: 76px minmax(0, 1fr);
+    gap: 14px;
+    padding: 12px 0;
   }
 
   .schedule-location {
@@ -367,16 +359,6 @@ h2 {
 
   .schedule-program {
     margin-top: 2px;
-  }
-}
-
-@media (max-width: 330px) {
-  .hero-copy-lead {
-    white-space: normal;
-  }
-
-  .hero-copy-break {
-    display: none;
   }
 }
 

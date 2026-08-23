@@ -47,8 +47,8 @@ function element(tag, className, text) {
 }
 
 function formatDate(value) {
-  const date = new Date(`${value}T12:00:00`);
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
+  const [, month, day] = value.split("-");
+  return `${month}.${day}`;
 }
 
 function scheduleRow(event) {
@@ -83,17 +83,31 @@ function scheduleRow(event) {
   return article;
 }
 
+function specialEventMeta(event) {
+  const details = [event.Time, event.Location].filter(Boolean);
+  return details.length ? details.join(" · ") : "TBA";
+}
+
 function specialEventRow(event) {
   const article = element("article", "special-event-row");
 
   const dateCell = element("time", "special-event-date", formatDate(event.Date));
   dateCell.dateTime = event.Date;
 
-  const timeCell = element("div", "special-event-time", event.Time || "TBA");
-  const locationCell = element("div", "special-event-location", event.Location || "TBA");
-  const titleCell = element("div", "special-event-title", event.Title || "TBA");
+  const details = element("div", "special-event-details");
+  const title = element("h3", "special-event-title");
+  const titleText = event.Title || "TBA";
+  if (event.URL) {
+    const link = element("a", "", titleText);
+    link.href = event.URL;
+    title.append(link);
+  } else {
+    title.textContent = titleText;
+  }
+  const meta = element("p", "special-event-meta", specialEventMeta(event));
 
-  article.append(dateCell, timeCell, locationCell, titleCell);
+  details.append(title, meta);
+  article.append(dateCell, details);
   return article;
 }
 
