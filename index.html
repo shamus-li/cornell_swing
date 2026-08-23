@@ -6,13 +6,16 @@
     <meta name="description" content="Free Monday swing dance lessons and social dancing with Swing Syndicate at Cornell. No experience or partner required.">
     <meta name="theme-color" content="#ffffff">
     <title>Swing Syndicate at Cornell</title>
-    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="icon" href="assets/favicon.png" type="image/png">
     <link rel="stylesheet" href="styles.css">
     <script src="schedule.js" defer></script>
   </head>
   <body id="top">
     <header class="site-header">
-      <a class="site-name" href="#top">Swing Syndicate at Cornell</a>
+      <a class="site-name" href="#top">
+        <img src="assets/shoe-logo.png" alt="" width="52" height="128">
+        <span>Swing Syndicate at Cornell</span>
+      </a>
     </header>
 
     <main id="main">
@@ -20,8 +23,8 @@
         <h1 id="hero-title">Criminally Good Dancing.</h1>
         <p><span class="hero-copy-lead">Free Lindy Hop every Monday night.</span><br class="hero-copy-break"> No experience or partner required!</p>
         <div class="hero-links">
-          <a class="button" href="https://lists.cornell.edu/GRAD-SWING-DANCE-L/subscribe">Join the mailing list</a>
-          <a href="https://cornell.campusgroups.com/gcss/club_signup">Join CampusGroups</a>
+          <a class="button" href="https://lists.cornell.edu/GRAD-SWING-DANCE-L/subscribe">Get emails</a>
+          <a class="button button-secondary" href="https://cornell.campusgroups.com/gcss/club_signup">Join</a>
         </div>
         <img
           src="assets/hero-960.webp"
@@ -47,6 +50,23 @@
         </div>
         <noscript>
           <p class="schedule-status">JavaScript is needed to load the schedule.</p>
+        </noscript>
+      </section>
+
+      <section id="special-events" class="section" aria-labelledby="special-events-title">
+        <h2 id="special-events-title">Special Events</h2>
+
+        <div class="special-events-header" aria-hidden="true">
+          <span>Date</span>
+          <span>Time</span>
+          <span>Location</span>
+          <span>Title</span>
+        </div>
+        <div id="special-events-list" class="special-events-list" aria-live="polite" aria-busy="true">
+          <p class="schedule-status">Loading special events...</p>
+        </div>
+        <noscript>
+          <p class="schedule-status">JavaScript is needed to load special events.</p>
         </noscript>
       </section>
 
@@ -137,6 +157,7 @@
 
     <footer class="site-footer">
       <p>Swing Syndicate is a registered student organization of Cornell University.</p>
+      <p><a href="https://cglink.me/2ee/s96437">Physical activity waiver</a></p>
     </footer>
   </body>
 </html>

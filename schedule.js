@@ -1,4 +1,5 @@
 const SCHEDULE_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTMACS7bEK5TUm1wmzyu65DBGkbGSegPM8Vj5NqYywksSDJeSejUjTOmvFSbz_pQ70eMvOOH1SMW53G/pub?gid=0&single=true&output=csv";
+const SPECIAL_EVENTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTMACS7bEK5TUm1wmzyu65DBGkbGSegPM8Vj5NqYywksSDJeSejUjTOmvFSbz_pQ70eMvOOH1SMW53G/pub?gid=1922996257&single=true&output=csv";
 
 function parseCsv(csv) {
   const rows = [];
@@ -45,13 +46,17 @@ function element(tag, className, text) {
   return node;
 }
 
+function formatDate(value) {
+  const date = new Date(`${value}T12:00:00`);
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
+}
+
 function scheduleRow(event) {
-  const date = new Date(`${event.Date}T12:00:00`);
   const article = element("article", "schedule-row");
 
   const dateCell = element("time", "schedule-date");
   dateCell.dateTime = event.Date;
-  dateCell.textContent = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
+  dateCell.textContent = formatDate(event.Date);
 
   const locationCell = element("div", "schedule-location", event.Location || "TBA");
 
@@ -78,13 +83,31 @@ function scheduleRow(event) {
   return article;
 }
 
+function specialEventRow(event) {
+  const article = element("article", "special-event-row");
+
+  const dateCell = element("time", "special-event-date", formatDate(event.Date));
+  dateCell.dateTime = event.Date;
+
+  const timeCell = element("div", "special-event-time", event.Time || "TBA");
+  const locationCell = element("div", "special-event-location", event.Location || "TBA");
+  const titleCell = element("div", "special-event-title", event.Title || "TBA");
+
+  article.append(dateCell, timeCell, locationCell, titleCell);
+  return article;
+}
+
+async function fetchEvents(url) {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Event request failed with ${response.status}`);
+  return parseCsv(await response.text());
+}
+
 async function loadSchedule() {
   const list = document.querySelector("#schedule-list");
 
   try {
-    const response = await fetch(SCHEDULE_URL, { cache: "no-store" });
-    if (!response.ok) throw new Error(`Schedule request failed with ${response.status}`);
-    const events = parseCsv(await response.text());
+    const events = await fetchEvents(SCHEDULE_URL);
     if (!events.length) throw new Error("Schedule is empty");
 
     list.replaceChildren(...events.map(scheduleRow));
@@ -99,4 +122,26 @@ async function loadSchedule() {
   }
 }
 
-window.addEventListener("load", loadSchedule, { once: true });
+async function loadSpecialEvents() {
+  const list = document.querySelector("#special-events-list");
+
+  try {
+    const events = await fetchEvents(SPECIAL_EVENTS_URL);
+    if (!events.length) throw new Error("Special events are empty");
+
+    list.replaceChildren(...events.map(specialEventRow));
+    list.setAttribute("aria-busy", "false");
+    window.__specialEventsReady = true;
+  } catch (error) {
+    console.error(error);
+    const message = element("p", "schedule-status", "The special events could not be loaded.");
+    list.replaceChildren(message);
+    list.setAttribute("aria-busy", "false");
+    window.__specialEventsReady = false;
+  }
+}
+
+window.addEventListener("load", () => {
+  loadSchedule();
+  loadSpecialEvents();
+}, { once: true });

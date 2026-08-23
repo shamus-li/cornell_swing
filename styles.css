@@ -51,11 +51,20 @@ main,
 }
 
 .site-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   color: var(--ink);
   font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   font-size: 1.1rem;
   font-weight: 700;
   text-decoration: none;
+}
+
+.site-name img {
+  width: auto;
+  height: 34px;
+  flex: none;
 }
 
 .hero {
@@ -103,6 +112,7 @@ h2 {
   padding: 11px 20px;
   color: #fff;
   background: var(--accent);
+  border: 1px solid transparent;
   border-radius: 999px;
   font-weight: 700;
   text-decoration: none;
@@ -112,6 +122,16 @@ h2 {
 .button:hover {
   background: #702640;
   text-decoration: none;
+}
+
+.button-secondary {
+  color: var(--ink);
+  background: #fff;
+  border-color: var(--ink);
+}
+
+.button-secondary:hover {
+  background: #f2f1ee;
 }
 
 .hero img {
@@ -132,13 +152,25 @@ h2 {
 }
 
 .schedule-header,
-.schedule-row {
+.schedule-row,
+.special-events-header,
+.special-event-row {
   display: grid;
-  grid-template-columns: 110px 170px minmax(0, 1fr);
   gap: 22px;
 }
 
-.schedule-header {
+.schedule-header,
+.schedule-row {
+  grid-template-columns: 110px 170px minmax(0, 1fr);
+}
+
+.special-events-header,
+.special-event-row {
+  grid-template-columns: 100px 120px minmax(140px, 1fr) minmax(180px, 1.2fr);
+}
+
+.schedule-header,
+.special-events-header {
   padding-bottom: 8px;
   color: var(--muted);
   border-bottom: 1px solid var(--line);
@@ -146,16 +178,23 @@ h2 {
   font-weight: 700;
 }
 
-.schedule-row {
+.special-events-header {
+  margin-top: 30px;
+}
+
+.schedule-row,
+.special-event-row {
   padding: 14px 0;
   border-bottom: 1px solid var(--line);
 }
 
-.schedule-row:last-child {
+.schedule-row:last-child,
+.special-event-row:last-child {
   border-bottom: 0;
 }
 
-.schedule-date {
+.schedule-date,
+.special-event-date {
   font-family: Fraunces, Georgia, serif;
   font-size: 1rem;
   font-weight: 700;
@@ -163,7 +202,10 @@ h2 {
 
 .schedule-location,
 .schedule-program,
-.schedule-detail {
+.schedule-detail,
+.special-event-time,
+.special-event-location,
+.special-event-title {
   font-size: 0.9rem;
 }
 
@@ -264,6 +306,10 @@ h2 {
   margin: 0;
 }
 
+.site-footer p + p {
+  margin-top: 8px;
+}
+
 @media (max-width: 760px) {
   :root {
     --page: min(100% - 32px, 600px);
@@ -281,13 +327,32 @@ h2 {
     padding: 44px 0 0;
   }
 
-  .schedule-header {
+  .schedule-header,
+  .special-events-header {
     display: none;
   }
 
-  .schedule-row {
+  .schedule-row,
+  .special-event-row {
     display: block;
     padding: 12px 0;
+  }
+
+  .special-event-time,
+  .special-event-location {
+    display: inline;
+    margin-left: 0.35em;
+  }
+
+  .special-event-time::before,
+  .special-event-location::before {
+    content: "\00b7  ";
+    color: var(--muted);
+  }
+
+  .special-event-title {
+    margin-top: 2px;
+    font-weight: 700;
   }
 
   .schedule-location {
