@@ -7,8 +7,10 @@
     <meta name="theme-color" content="#ffffff">
     <title>Swing Syndicate at Cornell</title>
     <link rel="icon" href="assets/favicon.png" type="image/png" sizes="128x128">
+    <link rel="preload" href="assets/fonts/fraunces-latin.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="assets/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="styles.css">
-    <script src="schedule.js" defer></script>
+    <script type="module" src="schedule.js"></script>
   </head>
   <body id="top">
     <header class="site-header">
@@ -23,8 +25,8 @@
         <h1 id="hero-title">Criminally Good Dancing.</h1>
         <p>Free Lindy Hop every Monday night. No experience or partner required!</p>
         <div class="hero-links">
-          <a class="button" href="https://lists.cornell.edu/GRAD-SWING-DANCE-L/subscribe">Get emails</a>
-          <a class="button button-secondary" href="https://cornell.campusgroups.com/gcss/club_signup">Join</a>
+          <a class="button" data-slot="button" data-variant="default" data-size="default" href="https://lists.cornell.edu/GRAD-SWING-DANCE-L/subscribe">Get emails</a>
+          <a class="button" data-slot="button" data-variant="outline" data-size="default" href="https://cornell.campusgroups.com/gcss/club_signup">Join</a>
         </div>
         <img
           src="assets/hero-960.webp"
@@ -139,7 +141,7 @@
 
       <section id="about" class="section about" aria-labelledby="about-title">
         <h2 id="about-title">About</h2>
-        <p>We teach and promote swing dance to Cornell University students and community members. Our organization focuses on dances called swing dance—dances danced to swing jazz music—such as Lindy Hop, East Coast, Charleston and Balboa swing dances.</p>
+        <p>We teach and promote swing dance to Cornell University students and community members. Our organization focuses on dances called swing dance—dances danced to swing jazz music—such as Lindy Hop, Charleston, Shag, Blues, and Balboa swing dances.</p>
         <p class="about-links">
           <a href="https://cornell.campusgroups.com/gcss/club_signup">CampusGroups</a>
           <a href="https://www.instagram.com/cornell_swing/">Instagram</a>

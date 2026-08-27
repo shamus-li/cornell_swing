@@ -48,11 +48,18 @@ function element(tag, className, text) {
 
 function formatDate(value) {
   const [, month, day] = value.split("-");
-  return `${month}.${day}`;
+  return `${Number(month)}.${Number(day)}`;
+}
+
+function isPastDate(value) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return new Date(`${value}T00:00:00`) < today;
 }
 
 function scheduleRow(event) {
   const article = element("article", "schedule-row");
+  if (isPastDate(event.Date)) article.classList.add("is-past");
 
   const dateCell = element("time", "schedule-date");
   dateCell.dateTime = event.Date;
@@ -90,6 +97,7 @@ function specialEventMeta(event) {
 
 function specialEventRow(event) {
   const article = element("article", "special-event-row");
+  if (isPastDate(event.Date)) article.classList.add("is-past");
 
   const dateCell = element("time", "special-event-date", formatDate(event.Date));
   dateCell.dateTime = event.Date;

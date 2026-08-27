@@ -9,5 +9,7 @@ playwright-report/
 test-results/
 coverage/
 dist/
+dist-ssr/
 build/
+*.local
 *.log
