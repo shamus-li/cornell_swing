@@ -25,11 +25,6 @@ type MembersResponse = {
 
 type MemberSearchField = "name" | "email" | null
 
-type MemberSearchResults = {
-  key: string
-  members: Member[]
-}
-
 const MEMBER_SEARCH_DELAY_MS = 75
 const MEMBER_SEARCH_CACHE_LIMIT = 12
 
@@ -62,7 +57,7 @@ export default function App() {
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [affiliation, setAffiliation] = useState<Affiliation | "">("")
-  const [memberResults, setMemberResults] = useState<MemberSearchResults>({ key: "", members: [] })
+  const [members, setMembers] = useState<Member[]>([])
   const [selectedMember, setSelectedMember] = useState<Member | null>(null)
   const [memberSearchField, setMemberSearchField] = useState<MemberSearchField>(null)
   const [memberSearchOpen, setMemberSearchOpen] = useState(false)
@@ -73,23 +68,21 @@ export default function App() {
 
   const query = memberSearchField === "name" ? name.trim() : memberSearchField === "email" ? email.trim() : ""
   const searchKey = memberSearchKey(query)
-  const members = memberResults.key === searchKey ? memberResults.members : []
-
   useEffect(() => {
     if (selectedMember) {
-      setMemberResults({ key: "", members: [] })
+      setMembers([])
       setMemberSearchOpen(false)
       return
     }
-    if (query.length < 2) {
-      setMemberResults({ key: "", members: [] })
+    if (!query) {
+      setMembers([])
       setMemberSearchOpen(false)
       return
     }
 
     const cached = memberSearchCache.current.get(searchKey)
     if (cached) {
-      setMemberResults({ key: searchKey, members: cached })
+      setMembers(cached)
       setMemberSearchOpen(cached.length > 0)
       return
     }
@@ -113,13 +106,13 @@ export default function App() {
           const oldestKey = memberSearchCache.current.keys().next().value
           if (oldestKey) memberSearchCache.current.delete(oldestKey)
         }
-        setMemberResults({ key: searchKey, members: matches })
+        setMembers(matches)
         setMemberSearchOpen(matches.length > 0)
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return
         if (!active) return
         console.error(error)
-        setMemberResults({ key: "", members: [] })
+        setMembers([])
         setMemberSearchOpen(false)
       }
     }, MEMBER_SEARCH_DELAY_MS)
@@ -135,7 +128,7 @@ export default function App() {
     setName(value)
     if (!selectedMember && memberSearchField !== "name") {
       setMemberSearchField("name")
-      setMemberResults({ key: "", members: [] })
+      setMembers([])
       setMemberSearchOpen(false)
     }
   }
@@ -144,7 +137,7 @@ export default function App() {
     setEmail(value)
     if (!selectedMember && memberSearchField !== "email") {
       setMemberSearchField("email")
-      setMemberResults({ key: "", members: [] })
+      setMembers([])
       setMemberSearchOpen(false)
     }
   }
@@ -154,7 +147,7 @@ export default function App() {
     setName("")
     setEmail("")
     setAffiliation("")
-    setMemberResults({ key: "", members: [] })
+    setMembers([])
     memberSearchCache.current.clear()
     setMemberSearchField(null)
     setMemberSearchOpen(false)
@@ -216,7 +209,14 @@ export default function App() {
       )
     } catch (error) {
       console.error(error)
-      setMessage(error instanceof Error ? error.message : "Check-in failed. Please try again.")
+      // fetch rejects with a TypeError when the request never reached the server.
+      setMessage(
+        error instanceof TypeError
+          ? "Couldn't reach the server. Check the Wi-Fi connection and try again."
+          : error instanceof Error
+            ? error.message
+            : "Check-in failed. Please try again.",
+      )
     } finally {
       setIsSubmitting(false)
     }
@@ -226,7 +226,7 @@ export default function App() {
     setName("")
     setEmail("")
     setAffiliation("")
-    setMemberResults({ key: "", members: [] })
+    setMembers([])
     memberSearchCache.current.clear()
     setSelectedMember(null)
     setMemberSearchField(null)
@@ -289,7 +289,7 @@ export default function App() {
             inputValue={name}
             open={memberSearchField === "name" && memberSearchOpen}
             onOpenChange={(open) =>
-              setMemberSearchOpen(open && memberSearchField === "name" && name.trim().length >= 2)
+              setMemberSearchOpen(open && memberSearchField === "name" && name.trim().length >= 1)
             }
             onInputValueChange={(value, details) => {
               if (details.reason === "input-change") updateName(value)
@@ -323,7 +323,7 @@ export default function App() {
             inputValue={email}
             open={memberSearchField === "email" && memberSearchOpen}
             onOpenChange={(open) =>
-              setMemberSearchOpen(open && memberSearchField === "email" && email.trim().length >= 2)
+              setMemberSearchOpen(open && memberSearchField === "email" && email.trim().length >= 1)
             }
             onInputValueChange={(value, details) => {
               if (details.reason === "input-change") updateEmail(value)

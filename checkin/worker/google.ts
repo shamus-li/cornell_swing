@@ -4,10 +4,9 @@ import { createMemberId } from "./member-id"
 
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
-const SHEET_ROW_COUNT = 999
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504])
 
-type SheetValue = string | number | boolean | null
+export type SheetValue = string | number | boolean | null
 
 export type CheckinRow = {
   rowNumber: number
@@ -60,13 +59,17 @@ export async function getGoogleAccessToken(env: Env): Promise<string> {
   return payload.access_token
 }
 
-function sheetRange(env: Env, a1Range: string): string {
-  return `'${env.GOOGLE_SHEET_NAME.replaceAll("'", "''")}'!${a1Range}`
+function quoteSheetTitle(title: string): string {
+  return `'${title.replaceAll("'", "''")}'`
 }
 
-function sheetsUrl(env: Env, a1Range: string): URL {
+function sheetRange(env: Env, a1Range: string): string {
+  return `${quoteSheetTitle(env.GOOGLE_SHEET_NAME)}!${a1Range}`
+}
+
+function valuesUrl(env: Env, range: string, suffix = ""): URL {
   return new URL(
-    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(env.GOOGLE_SPREADSHEET_ID)}/values/${encodeURIComponent(sheetRange(env, a1Range))}`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(env.GOOGLE_SPREADSHEET_ID)}/values/${encodeURIComponent(range)}${suffix}`,
   )
 }
 
@@ -95,7 +98,7 @@ async function sheetsRequest(url: URL, init?: RequestInit): Promise<Response> {
 }
 
 export async function readCheckins(env: Env, accessToken: string): Promise<CheckinRow[]> {
-  const url = sheetsUrl(env, "A2:E1000")
+  const url = valuesUrl(env, sheetRange(env, "A2:E"))
   url.searchParams.set("valueRenderOption", "UNFORMATTED_VALUE")
   url.searchParams.set("dateTimeRenderOption", "SERIAL_NUMBER")
 
@@ -108,8 +111,8 @@ export async function readCheckins(env: Env, accessToken: string): Promise<Check
   }
 
   const values = Array.isArray(payload.values) ? payload.values : []
-  return Array.from({ length: SHEET_ROW_COUNT }, (_, index) => {
-    const source = Array.isArray(values[index]) ? values[index] : []
+  return values.map((row, index) => {
+    const source = Array.isArray(row) ? row : []
     return {
       rowNumber: index + 2,
       timestamp: sheetValue(source[0]),
@@ -127,7 +130,7 @@ async function updateValues(
   a1Range: string,
   values: SheetValue[][],
 ): Promise<void> {
-  const url = sheetsUrl(env, a1Range)
+  const url = valuesUrl(env, sheetRange(env, a1Range))
   url.searchParams.set("valueInputOption", "RAW")
   const response = await sheetsRequest(url, {
     method: "PUT",
@@ -142,53 +145,82 @@ async function updateValues(
   }
 }
 
-async function sortCheckins(env: Env, accessToken: string): Promise<void> {
-  const metadataUrl = spreadsheetUrl(env)
-  metadataUrl.searchParams.set("fields", "sheets.properties(sheetId,title)")
-  const metadataResponse = await sheetsRequest(metadataUrl, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  })
-  const metadata: unknown = await metadataResponse.json()
-  if (!metadataResponse.ok || !isRecord(metadata) || !Array.isArray(metadata.sheets)) {
-    throw new Error(`Google Sheets metadata read failed with ${metadataResponse.status}`)
-  }
-  const sheet = metadata.sheets.find(
-    (value) =>
-      isRecord(value) &&
-      isRecord(value.properties) &&
-      value.properties.title === env.GOOGLE_SHEET_NAME &&
-      typeof value.properties.sheetId === "number",
-  )
-  const properties = isRecord(sheet) && isRecord(sheet.properties) ? sheet.properties : null
-  if (!properties || typeof properties.sheetId !== "number") {
-    throw new Error(`Google Sheet ${env.GOOGLE_SHEET_NAME} was not found`)
-  }
-
-  const sortResponse = await sheetsRequest(new URL(`${spreadsheetUrl(env)}:batchUpdate`), {
+async function appendRows(
+  env: Env,
+  accessToken: string,
+  sheetTitle: string,
+  values: SheetValue[][],
+): Promise<void> {
+  const url = valuesUrl(env, `${quoteSheetTitle(sheetTitle)}!A1:E1`, ":append")
+  url.searchParams.set("valueInputOption", "RAW")
+  url.searchParams.set("insertDataOption", "INSERT_ROWS")
+  const response = await sheetsRequest(url, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      requests: [
-        {
-          sortRange: {
-            range: {
-              sheetId: properties.sheetId,
-              startRowIndex: 1,
-              startColumnIndex: 0,
-              endColumnIndex: 5,
-            },
-            sortSpecs: [{ dimensionIndex: 0, sortOrder: "DESCENDING" }],
-          },
-        },
-      ],
-    }),
+    body: JSON.stringify({ majorDimension: "ROWS", values }),
   })
-  if (!sortResponse.ok) {
-    throw new Error(`Google Sheets sort failed with ${sortResponse.status}`)
+  if (!response.ok) {
+    throw new Error(`Google Sheets append failed with ${response.status}`)
   }
+}
+
+type SheetProperties = { sheetId: number; title: string }
+
+async function listSheets(env: Env, accessToken: string): Promise<SheetProperties[]> {
+  const url = spreadsheetUrl(env)
+  url.searchParams.set("fields", "sheets.properties(sheetId,title)")
+  const response = await sheetsRequest(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  const metadata: unknown = await response.json()
+  if (!response.ok || !isRecord(metadata) || !Array.isArray(metadata.sheets)) {
+    throw new Error(`Google Sheets metadata read failed with ${response.status}`)
+  }
+  return metadata.sheets.flatMap((value) =>
+    isRecord(value) &&
+    isRecord(value.properties) &&
+    typeof value.properties.sheetId === "number" &&
+    typeof value.properties.title === "string"
+      ? [{ sheetId: value.properties.sheetId, title: value.properties.title }]
+      : [],
+  )
+}
+
+async function batchUpdate(env: Env, accessToken: string, requests: unknown[]): Promise<void> {
+  const response = await sheetsRequest(new URL(`${spreadsheetUrl(env)}:batchUpdate`), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ requests }),
+  })
+  if (!response.ok) {
+    throw new Error(`Google Sheets batch update failed with ${response.status}`)
+  }
+}
+
+export async function sortCheckins(env: Env, accessToken: string): Promise<void> {
+  const sheets = await listSheets(env, accessToken)
+  const sheet = sheets.find((candidate) => candidate.title === env.GOOGLE_SHEET_NAME)
+  if (!sheet) throw new Error(`Google Sheet ${env.GOOGLE_SHEET_NAME} was not found`)
+
+  await batchUpdate(env, accessToken, [
+    {
+      sortRange: {
+        range: {
+          sheetId: sheet.sheetId,
+          startRowIndex: 1,
+          startColumnIndex: 0,
+          endColumnIndex: 5,
+        },
+        sortSpecs: [{ dimensionIndex: 0, sortOrder: "DESCENDING" }],
+      },
+    },
+  ])
 }
 
 function timeZoneParts(timestamp: number, timeZone: string): Record<string, number> {
@@ -242,10 +274,9 @@ export async function recordCheckin(
   )
   if (duplicate) return "duplicate"
 
-  const target = rows.find((row) => row.timestamp === null && !row.name && !row.email)
-  if (!target) throw new Error("The Check-ins sheet has no empty rows")
-
-  await updateValues(env, accessToken, `A${target.rowNumber}:E${target.rowNumber}`, [
+  // values:append is atomic on Google's side, so concurrent check-ins cannot
+  // claim the same row. The nightly sync restores newest-first ordering.
+  await appendRows(env, accessToken, env.GOOGLE_SHEET_NAME, [
     [
       timestampForSheet(timestamp, env.TIME_ZONE),
       attendee.name,
@@ -254,7 +285,6 @@ export async function recordCheckin(
       attendee.memberId ?? createMemberId(),
     ],
   ])
-  await sortCheckins(env, accessToken)
   return "created"
 }
 

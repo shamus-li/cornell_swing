@@ -2,6 +2,10 @@
 .*
 !.gitignore
 
+# Local design explorations
+logo-concepts-*/
+favicon-concepts-*/
+
 # Browser, dependency, test, and build artifacts
 output/
 node_modules/

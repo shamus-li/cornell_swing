@@ -5,6 +5,7 @@ import {
   getGoogleAccessToken,
   readCheckins,
   recordCheckin,
+  sortCheckins,
   updateCheckinMemberDetails,
   updateCheckinMemberId,
 } from "./google"
@@ -59,7 +60,7 @@ function validateAttendee(value: unknown): Attendee | null {
 
 async function handleMemberSearch(request: Request, env: Env): Promise<Response> {
   const query = new URL(request.url).searchParams.get("q")?.trim() ?? ""
-  if (query.length < 2) return json({ members: [] })
+  if (!query) return json({ members: [] })
   if (query.length > 100) return json({ message: "Search is too long" }, 400)
 
   const identity = request.headers.get("Cf-Access-Authenticated-User-Email")?.trim().toLocaleLowerCase()
@@ -123,11 +124,10 @@ export async function handleCheckin(
     : json({ message: "Checked in" }, 201)
 }
 
-async function syncAttendance(env: Env, getAccessToken: AccessTokenProvider): Promise<{
+async function syncAttendance(env: Env, accessToken: string): Promise<{
   synced: number
   failed: number
 }> {
-  const accessToken = await getAccessToken(env)
   const rows = await readCheckins(env, accessToken)
   const events = new Map<string, string>()
   let synced = 0
@@ -185,8 +185,14 @@ export async function runNightlySync(
   env: Env,
   getAccessToken: AccessTokenProvider = getGoogleAccessToken,
 ): Promise<{ synced: number; failed: number }> {
-  const result = await syncAttendance(env, getAccessToken)
+  const accessToken = await getAccessToken(env)
+  const result = await syncAttendance(env, accessToken)
   await refreshMemberCache(env)
+  try {
+    await sortCheckins(env, accessToken)
+  } catch (error) {
+    console.error(JSON.stringify({ message: "check-in sort failed", error: errorMessage(error) }))
+  }
   return result
 }
 

@@ -1,6 +1,6 @@
 import { env, exports } from "cloudflare:workers"
 import { HttpResponse, http } from "msw"
-import { beforeEach, describe, expect, it } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { handleCheckin, runNightlySync } from "../worker"
 import { searchCachedMembers } from "../worker/cache"
@@ -44,6 +44,18 @@ async function cacheMembers(...members: Array<{
   affiliation: string
 }>): Promise<void> {
   await env.MEMBER_CACHE.put("members:v2", JSON.stringify({ refreshedAt: Date.now(), members }))
+}
+
+// The nightly sync sorts the sheet after reconciliation.
+function sheetSortHandlers() {
+  return [
+    http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId", () =>
+      HttpResponse.json({ sheets: [{ properties: { sheetId: 123, title: "Check-ins" } }] }),
+    ),
+    http.post(/https:\/\/sheets\.googleapis\.com\/v4\/spreadsheets\/[^/]+:batchUpdate/, () =>
+      HttpResponse.json({ replies: [{}] }),
+    ),
+  ]
 }
 
 describe("member IDs", () => {
@@ -200,9 +212,25 @@ describe("member search", () => {
     ])
   })
 
-  it("does not query Notion for a one-character search", async () => {
+  it("searches after one character", async () => {
+    await cacheMembers({
+      id: ADA_MEMBER_ID,
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      affiliation: "Community Member",
+    })
+
     const response = await exports.default.fetch("https://example.com/check-in/api/members?q=A")
-    expect(await response.json()).toEqual({ members: [] })
+    expect(await response.json()).toEqual({
+      members: [
+        {
+          id: ADA_MEMBER_ID,
+          name: "Ada Lovelace",
+          email: "ada@example.com",
+          affiliation: "Community Member",
+        },
+      ],
+    })
   })
 
   it("rate limits repeated roster enumeration by Access identity", async () => {
@@ -216,7 +244,7 @@ describe("member search", () => {
       headers: { "Cf-Access-Authenticated-User-Email": "rate-limit-test@example.com" },
     })
 
-    for (let index = 0; index < 120; index += 1) {
+    for (let index = 0; index < 300; index += 1) {
       expect((await exports.default.fetch(request())).status).toBe(200)
     }
     const response = await exports.default.fetch(request())
@@ -246,39 +274,34 @@ describe("check-in", () => {
     expect(reads).toBe(3)
   })
 
-  it("writes the first empty Sheet row with the durable member ID", async () => {
+  it("appends the check-in atomically with the durable member ID", async () => {
     await cacheMembers({
       id: ADA_MEMBER_ID,
       name: "Ada Lovelace",
       email: "ada@example.com",
       affiliation: "Community Member",
     })
-    let written: unknown
-    let sortRequest: unknown
+    let appended: { url: URL; body: unknown } | null = null
     network.use(
       http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
-        HttpResponse.json({ range: "Check-ins!A2:E1000", values: [["", "", "", "", ""]] }),
+        HttpResponse.json({ range: "Check-ins!A2:E", values: [] }),
       ),
-      http.put(
+      http.post(
         "https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range",
         async ({ request }) => {
-          written = await request.json()
-          return HttpResponse.json({ updatedRows: 1 })
+          appended = { url: new URL(request.url), body: await request.json() }
+          return HttpResponse.json({ updates: { updatedRows: 1 } })
         },
       ),
-      http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId", () =>
-        HttpResponse.json({ sheets: [{ properties: { sheetId: 123, title: "Check-ins" } }] }),
-      ),
-      http.post(/https:\/\/sheets\.googleapis\.com\/v4\/spreadsheets\/[^/]+:batchUpdate/, async ({ request }) => {
-        sortRequest = await request.json()
-        return HttpResponse.json({ replies: [{}] })
-      }),
     )
 
     const response = await handleCheckin(checkinRequest(), env, async () => "test-access-token", TEST_TIMESTAMP)
 
     expect(response.status).toBe(201)
-    expect(written).toEqual({
+    expect(appended).not.toBeNull()
+    expect(appended!.url.pathname.endsWith(":append")).toBe(true)
+    expect(appended!.url.searchParams.get("insertDataOption")).toBe("INSERT_ROWS")
+    expect(appended!.body).toEqual({
       majorDimension: "ROWS",
       values: [
         [
@@ -288,21 +311,6 @@ describe("check-in", () => {
           "Community Member",
           ADA_MEMBER_ID,
         ],
-      ],
-    })
-    expect(sortRequest).toEqual({
-      requests: [
-        {
-          sortRange: {
-            range: {
-              sheetId: 123,
-              startRowIndex: 1,
-              startColumnIndex: 0,
-              endColumnIndex: 5,
-            },
-            sortSpecs: [{ dimensionIndex: 0, sortOrder: "DESCENDING" }],
-          },
-        },
       ],
     })
   })
@@ -331,20 +339,14 @@ describe("check-in", () => {
         }),
       ),
       http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
-        HttpResponse.json({ range: "Check-ins!A2:E1000", values: [["", "", "", "", ""]] }),
+        HttpResponse.json({ range: "Check-ins!A2:E", values: [] }),
       ),
-      http.put(
+      http.post(
         "https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range",
         async ({ request }) => {
           written = await request.json()
-          return HttpResponse.json({ updatedRows: 1 })
+          return HttpResponse.json({ updates: { updatedRows: 1 } })
         },
-      ),
-      http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId", () =>
-        HttpResponse.json({ sheets: [{ properties: { sheetId: 123, title: "Check-ins" } }] }),
-      ),
-      http.post(/https:\/\/sheets\.googleapis\.com\/v4\/spreadsheets\/[^/]+:batchUpdate/, () =>
-        HttpResponse.json({ replies: [{}] }),
       ),
     )
 
@@ -384,20 +386,14 @@ describe("check-in", () => {
     let written: unknown
     network.use(
       http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
-        HttpResponse.json({ range: "Check-ins!A2:E1000", values: [] }),
+        HttpResponse.json({ range: "Check-ins!A2:E", values: [] }),
       ),
-      http.put(
+      http.post(
         "https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range",
         async ({ request }) => {
           written = await request.json()
-          return HttpResponse.json({ updatedRows: 1 })
+          return HttpResponse.json({ updates: { updatedRows: 1 } })
         },
-      ),
-      http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId", () =>
-        HttpResponse.json({ sheets: [{ properties: { sheetId: 123, title: "Check-ins" } }] }),
-      ),
-      http.post(/https:\/\/sheets\.googleapis\.com\/v4\/spreadsheets\/[^/]+:batchUpdate/, () =>
-        HttpResponse.json({ replies: [{}] }),
       ),
     )
 
@@ -516,22 +512,15 @@ describe("check-in", () => {
               "Community Member",
               ADA_MEMBER_ID,
             ],
-            ["", "", "", "", ""],
           ],
         }),
       ),
-      http.put(
+      http.post(
         "https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range",
         async ({ request }) => {
           written = await request.json()
-          return HttpResponse.json({ updatedRows: 1 })
+          return HttpResponse.json({ updates: { updatedRows: 1 } })
         },
-      ),
-      http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId", () =>
-        HttpResponse.json({ sheets: [{ properties: { sheetId: 123, title: "Check-ins" } }] }),
-      ),
-      http.post(/https:\/\/sheets\.googleapis\.com\/v4\/spreadsheets\/[^/]+:batchUpdate/, () =>
-        HttpResponse.json({ replies: [{}] }),
       ),
     )
 
@@ -562,11 +551,40 @@ describe("check-in", () => {
 })
 
 describe("nightly sync", () => {
+  it("still completes when sorting fails", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+    network.use(
+      http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
+        HttpResponse.json({ values: [] }),
+      ),
+      http.post("https://api.notion.com/v1/data_sources/:dataSourceId/query", () =>
+        HttpResponse.json({ object: "list", has_more: false, next_cursor: null, results: [] }),
+      ),
+      http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId", () =>
+        HttpResponse.json({ sheets: [{ properties: { sheetId: 123, title: "Check-ins" } }] }),
+      ),
+      http.post(/https:\/\/sheets\.googleapis\.com\/v4\/spreadsheets\/[^/]+:batchUpdate/, () =>
+        new HttpResponse(null, { status: 403 }),
+      ),
+    )
+
+    try {
+      await expect(runNightlySync(env, async () => "test-access-token")).resolves.toEqual({
+        synced: 0,
+        failed: 0,
+      })
+      expect(consoleError).toHaveBeenCalledOnce()
+    } finally {
+      consoleError.mockRestore()
+    }
+  })
+
   it("creates one dated event and relates every check-in from that date", async () => {
     const createdEvents: unknown[] = []
     const createdMembers: unknown[] = []
     let eventQueries = 0
     network.use(
+      ...sheetSortHandlers(),
       http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
         HttpResponse.json({
           values: [
@@ -639,6 +657,7 @@ describe("nightly sync", () => {
     const sheetUpdates: string[] = []
     let createdPage: unknown
     network.use(
+      ...sheetSortHandlers(),
       http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
         HttpResponse.json({
           values: [
@@ -699,6 +718,7 @@ describe("nightly sync", () => {
     let updatedPage: unknown
     let sheetWrite: { range: string; body: unknown } | null = null
     network.use(
+      ...sheetSortHandlers(),
       http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
         HttpResponse.json({
           values: [
@@ -781,6 +801,7 @@ describe("nightly sync", () => {
   it("uses newer Sheet details while preserving existing event relations", async () => {
     let updatedPage: unknown
     network.use(
+      ...sheetSortHandlers(),
       http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
         HttpResponse.json({
           values: [
@@ -861,6 +882,7 @@ describe("nightly sync", () => {
     let updatedPage: unknown
     const sheetWrites: { range: string; body: unknown }[] = []
     network.use(
+      ...sheetSortHandlers(),
       http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
         HttpResponse.json({
           values: [
@@ -949,6 +971,7 @@ describe("nightly sync", () => {
     let notionUpdates = 0
     let sheetUpdates = 0
     network.use(
+      ...sheetSortHandlers(),
       http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
         HttpResponse.json({
           values: [

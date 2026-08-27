@@ -46,15 +46,33 @@ function element(tag, className, text) {
   return node;
 }
 
+// Accepts 2026-09-07, 9/7/2026, and 9/7 so a sheet edit in either style renders.
+function parseDateParts(value) {
+  const trimmed = (value || "").trim();
+  let match = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (match) return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
+  match = trimmed.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?$/);
+  if (match) return { year: match[3] ? Number(match[3]) : null, month: Number(match[1]), day: Number(match[2]) };
+  return null;
+}
+
 function formatDate(value) {
-  const [, month, day] = value.split("-");
-  return `${Number(month)}.${Number(day)}`;
+  const parts = parseDateParts(value);
+  return parts ? `${parts.month}.${parts.day}` : value;
+}
+
+function isoDate(value) {
+  const parts = parseDateParts(value);
+  if (!parts || parts.year === null) return null;
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
 }
 
 function isPastDate(value) {
+  const parts = parseDateParts(value);
+  if (!parts || parts.year === null) return false;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  return new Date(`${value}T00:00:00`) < today;
+  return new Date(parts.year, parts.month - 1, parts.day) < today;
 }
 
 function scheduleRow(event) {
@@ -62,7 +80,8 @@ function scheduleRow(event) {
   if (isPastDate(event.Date)) article.classList.add("is-past");
 
   const dateCell = element("time", "schedule-date");
-  dateCell.dateTime = event.Date;
+  const iso = isoDate(event.Date);
+  if (iso) dateCell.dateTime = iso;
   dateCell.textContent = formatDate(event.Date);
 
   const locationCell = element("div", "schedule-location", event.Location || "TBA");
@@ -100,7 +119,8 @@ function specialEventRow(event) {
   if (isPastDate(event.Date)) article.classList.add("is-past");
 
   const dateCell = element("time", "special-event-date", formatDate(event.Date));
-  dateCell.dateTime = event.Date;
+  const iso = isoDate(event.Date);
+  if (iso) dateCell.dateTime = iso;
 
   const details = element("div", "special-event-details");
   const title = element("h3", "special-event-title");
