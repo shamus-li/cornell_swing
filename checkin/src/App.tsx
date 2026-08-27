@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react"
+import { FormEvent, useEffect, useRef, useState } from "react"
 
 import logoUrl from "../../assets/shoe-logo.png"
 
@@ -25,6 +25,18 @@ type MembersResponse = {
 
 type MemberSearchField = "name" | "email" | null
 
+type MemberSearchResults = {
+  key: string
+  members: Member[]
+}
+
+const MEMBER_SEARCH_DELAY_MS = 75
+const MEMBER_SEARCH_CACHE_LIMIT = 12
+
+function memberSearchKey(query: string): string {
+  return query.toLocaleLowerCase()
+}
+
 function MemberResults() {
   return (
     <ComboboxContent className="rounded-md">
@@ -50,28 +62,40 @@ export default function App() {
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [affiliation, setAffiliation] = useState<Affiliation | "">("")
-  const [members, setMembers] = useState<Member[]>([])
+  const [memberResults, setMemberResults] = useState<MemberSearchResults>({ key: "", members: [] })
   const [selectedMember, setSelectedMember] = useState<Member | null>(null)
   const [memberSearchField, setMemberSearchField] = useState<MemberSearchField>(null)
   const [memberSearchOpen, setMemberSearchOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState("")
   const [confirmation, setConfirmation] = useState<string | null>(null)
+  const memberSearchCache = useRef(new Map<string, Member[]>())
+
+  const query = memberSearchField === "name" ? name.trim() : memberSearchField === "email" ? email.trim() : ""
+  const searchKey = memberSearchKey(query)
+  const members = memberResults.key === searchKey ? memberResults.members : []
 
   useEffect(() => {
     if (selectedMember) {
-      setMembers([])
+      setMemberResults({ key: "", members: [] })
       setMemberSearchOpen(false)
       return
     }
-    const query = memberSearchField === "name" ? name.trim() : memberSearchField === "email" ? email.trim() : ""
     if (query.length < 2) {
-      setMembers([])
+      setMemberResults({ key: "", members: [] })
       setMemberSearchOpen(false)
+      return
+    }
+
+    const cached = memberSearchCache.current.get(searchKey)
+    if (cached) {
+      setMemberResults({ key: searchKey, members: cached })
+      setMemberSearchOpen(cached.length > 0)
       return
     }
 
     const controller = new AbortController()
+    let active = true
     const timeout = window.setTimeout(async () => {
       try {
         const response = await fetch(`api/members?q=${encodeURIComponent(query)}`, {
@@ -82,34 +106,47 @@ export default function App() {
 
         const payload = (await response.json()) as MembersResponse
         const matches = (payload.members ?? []).slice(0, 8)
-        setMembers(matches)
+        if (!active) return
+
+        memberSearchCache.current.set(searchKey, matches)
+        if (memberSearchCache.current.size > MEMBER_SEARCH_CACHE_LIMIT) {
+          const oldestKey = memberSearchCache.current.keys().next().value
+          if (oldestKey) memberSearchCache.current.delete(oldestKey)
+        }
+        setMemberResults({ key: searchKey, members: matches })
         setMemberSearchOpen(matches.length > 0)
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return
+        if (!active) return
         console.error(error)
-        setMembers([])
+        setMemberResults({ key: "", members: [] })
         setMemberSearchOpen(false)
       }
-    }, 400)
+    }, MEMBER_SEARCH_DELAY_MS)
 
     return () => {
+      active = false
       window.clearTimeout(timeout)
       controller.abort()
     }
-  }, [email, memberSearchField, name, selectedMember])
+  }, [query, searchKey, selectedMember])
 
   function updateName(value: string) {
     setName(value)
-    if (!selectedMember) setMemberSearchField("name")
-    setMembers([])
-    setMemberSearchOpen(false)
+    if (!selectedMember && memberSearchField !== "name") {
+      setMemberSearchField("name")
+      setMemberResults({ key: "", members: [] })
+      setMemberSearchOpen(false)
+    }
   }
 
   function updateEmail(value: string) {
     setEmail(value)
-    if (!selectedMember) setMemberSearchField("email")
-    setMembers([])
-    setMemberSearchOpen(false)
+    if (!selectedMember && memberSearchField !== "email") {
+      setMemberSearchField("email")
+      setMemberResults({ key: "", members: [] })
+      setMemberSearchOpen(false)
+    }
   }
 
   function clearSelectedMember() {
@@ -117,7 +154,8 @@ export default function App() {
     setName("")
     setEmail("")
     setAffiliation("")
-    setMembers([])
+    setMemberResults({ key: "", members: [] })
+    memberSearchCache.current.clear()
     setMemberSearchField(null)
     setMemberSearchOpen(false)
     setMessage("")
@@ -126,6 +164,7 @@ export default function App() {
   function chooseMember(member: Member | null) {
     if (!member) return
     setSelectedMember(member)
+    memberSearchCache.current.clear()
 
     setName(member.name)
     setEmail(member.email)
@@ -187,7 +226,8 @@ export default function App() {
     setName("")
     setEmail("")
     setAffiliation("")
-    setMembers([])
+    setMemberResults({ key: "", members: [] })
+    memberSearchCache.current.clear()
     setSelectedMember(null)
     setMemberSearchField(null)
     setMemberSearchOpen(false)

@@ -61,6 +61,15 @@ async function handleMemberSearch(request: Request, env: Env): Promise<Response>
   const query = new URL(request.url).searchParams.get("q")?.trim() ?? ""
   if (query.length < 2) return json({ members: [] })
   if (query.length > 100) return json({ message: "Search is too long" }, 400)
+
+  const identity = request.headers.get("Cf-Access-Authenticated-User-Email")?.trim().toLocaleLowerCase()
+    || "access-identity-missing"
+  const { success } = await env.MEMBER_SEARCH_RATE_LIMITER.limit({ key: identity })
+  if (!success) {
+    const response = json({ message: "Too many member searches. Wait a minute and try again." }, 429)
+    response.headers.set("Retry-After", "60")
+    return response
+  }
   return json({ members: await searchCachedMembers(env, query) })
 }
 

@@ -3,6 +3,7 @@ import { HttpResponse, http } from "msw"
 import { beforeEach, describe, expect, it } from "vitest"
 
 import { handleCheckin, runNightlySync } from "../worker"
+import { searchCachedMembers } from "../worker/cache"
 import { readCheckins, timestampForSheet } from "../worker/google"
 import { createMemberId, MEMBER_ID_PATTERN } from "../worker/member-id"
 import { network } from "./network"
@@ -151,11 +152,80 @@ describe("member search", () => {
       ],
     })
     expect(notionQueries).toBe(2)
+    expect(response.headers.get("Cache-Control")).toBe("no-store")
+  })
+
+  it("ranks exact and prefix matches before substring matches", async () => {
+    await cacheMembers(
+      {
+        id: "Exact_000001",
+        name: "Ada",
+        email: "exact@example.com",
+        affiliation: "Community Member",
+      },
+      {
+        id: "Email_000001",
+        name: "Email Prefix",
+        email: "ada@example.com",
+        affiliation: "Community Member",
+      },
+      {
+        id: "Name__000001",
+        name: "Ada Lovelace",
+        email: "name@example.com",
+        affiliation: "Community Member",
+      },
+      {
+        id: "Token_000001",
+        name: "Grace Ada",
+        email: "token@example.com",
+        affiliation: "Community Member",
+      },
+      {
+        id: "Inside000001",
+        name: "Madam Hopper",
+        email: "inside@example.com",
+        affiliation: "Community Member",
+      },
+    )
+
+    const results = await searchCachedMembers(env, "ADA")
+
+    expect(results.map((member) => member.id)).toEqual([
+      "Exact_000001",
+      "Email_000001",
+      "Name__000001",
+      "Token_000001",
+      "Inside000001",
+    ])
   })
 
   it("does not query Notion for a one-character search", async () => {
     const response = await exports.default.fetch("https://example.com/check-in/api/members?q=A")
     expect(await response.json()).toEqual({ members: [] })
+  })
+
+  it("rate limits repeated roster enumeration by Access identity", async () => {
+    await cacheMembers({
+      id: ADA_MEMBER_ID,
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      affiliation: "Community Member",
+    })
+    const request = () => new Request("https://example.com/check-in/api/members?q=Ada", {
+      headers: { "Cf-Access-Authenticated-User-Email": "rate-limit-test@example.com" },
+    })
+
+    for (let index = 0; index < 120; index += 1) {
+      expect((await exports.default.fetch(request())).status).toBe(200)
+    }
+    const response = await exports.default.fetch(request())
+
+    expect(response.status).toBe(429)
+    expect(response.headers.get("Retry-After")).toBe("60")
+    expect(await response.json()).toEqual({
+      message: "Too many member searches. Wait a minute and try again.",
+    })
   })
 })
 

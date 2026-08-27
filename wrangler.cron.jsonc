@@ -12,6 +12,16 @@
       "id": "e01aefd5a15f43d18dc7939c28987046"
     }
   ],
+  "ratelimits": [
+    {
+      "name": "MEMBER_SEARCH_RATE_LIMITER",
+      "namespace_id": "20260827",
+      "simple": {
+        "limit": 120,
+        "period": 60
+      }
+    }
+  ],
   "vars": {
     "NOTION_MEMBERS_DATA_SOURCE_ID": "6963065b-1352-4663-bf1a-fb3ed656e018",
     "NOTION_EVENTS_DATA_SOURCE_ID": "687e0df9-8bc6-4383-99b0-9a7ffcbaf5a5",

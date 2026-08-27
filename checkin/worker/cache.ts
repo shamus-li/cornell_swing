@@ -48,14 +48,29 @@ async function currentMemberSnapshot(env: Env): Promise<MemberSnapshot> {
 }
 
 export async function searchCachedMembers(env: Env, query: string): Promise<Member[]> {
-  const normalizedQuery = query.toLocaleLowerCase()
+  const normalizedQuery = normalizeSearchValue(query)
   const snapshot = await currentMemberSnapshot(env)
   return snapshot.members
-    .filter(
-      (member) =>
-        member.name.toLocaleLowerCase().includes(normalizedQuery) || member.email.includes(normalizedQuery),
-    )
+    .map((member) => ({ member, score: memberSearchScore(member, normalizedQuery) }))
+    .filter((result): result is { member: Member; score: number } => result.score !== null)
+    .sort((left, right) => left.score - right.score || left.member.name.localeCompare(right.member.name))
     .slice(0, 8)
+    .map(({ member }) => member)
+}
+
+function normalizeSearchValue(value: string): string {
+  return value.normalize("NFKD").replace(/\p{M}/gu, "").toLocaleLowerCase()
+}
+
+function memberSearchScore(member: Member, query: string): number | null {
+  const name = normalizeSearchValue(member.name)
+  const email = normalizeSearchValue(member.email)
+  if (name === query || email === query) return 0
+  if (email.startsWith(query)) return 1
+  if (name.startsWith(query)) return 2
+  if (name.split(/\s+/).some((part) => part.startsWith(query))) return 3
+  if (name.includes(query) || email.includes(query)) return 4
+  return null
 }
 
 export async function findCachedMemberById(env: Env, memberId: string): Promise<Member | null> {
