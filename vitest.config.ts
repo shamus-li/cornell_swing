@@ -4,7 +4,7 @@ import { defineConfig } from "vitest/config"
 export default defineConfig({
   plugins: [
     cloudflareTest({
-      main: "./checkin/worker/index.ts",
+      main: "./check-in/worker/index.ts",
       wrangler: { configPath: "./wrangler.cron.jsonc" },
       miniflare: {
         compatibilityDate: "2026-08-26",
@@ -27,6 +27,6 @@ export default defineConfig({
     }),
   ],
   test: {
-    setupFiles: ["./checkin/test/setup.ts"],
+    setupFiles: ["./check-in/test/setup.ts"],
   },
 })

@@ -17,13 +17,13 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "paths": {
-      "@/*": ["./checkin/src/*"]
+      "@/*": ["./check-in/src/*"]
     }
   },
   "include": [
-    "checkin/src",
-    "checkin/worker",
-    "checkin/test",
+    "check-in/src",
+    "check-in/worker",
+    "check-in/test",
     "functions",
     "vite.config.ts",
     "vitest.config.ts",
