@@ -24,8 +24,10 @@
     "checkin/src",
     "checkin/worker",
     "checkin/test",
+    "functions",
     "vite.config.ts",
     "vitest.config.ts",
+    "pages-configuration.d.ts",
     "worker-configuration.d.ts"
   ]
 }

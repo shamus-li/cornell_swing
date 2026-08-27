@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [
     cloudflareTest({
       main: "./checkin/worker/index.ts",
-      wrangler: { configPath: "./wrangler.jsonc" },
+      wrangler: { configPath: "./wrangler.cron.jsonc" },
       miniflare: {
         compatibilityDate: "2026-08-26",
         compatibilityFlags: ["nodejs_compat"],

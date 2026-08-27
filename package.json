@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "pages:types": "wrangler types pages-configuration.d.ts --config wrangler.jsonc --include-runtime false --env-interface PagesEnv",
     "worker:types": "wrangler types worker-configuration.d.ts --config wrangler.cron.jsonc --env-file checkin/dev.vars.example",
     "worker:check": "npm run build && wrangler pages functions build functions --outdir .wrangler/pages-functions && wrangler deploy --dry-run --config wrangler.cron.jsonc",
     "deploy:pages": "npm run build && wrangler pages deploy",

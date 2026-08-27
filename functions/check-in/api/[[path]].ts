@@ -1,3 +1,2 @@
-import { handleApiRequest } from "../../../checkin/worker"
-
-export const onRequest: PagesFunction<Env> = ({ request, env }) => handleApiRequest(request, env)
+export const onRequest: PagesFunction<PagesEnv> = ({ request, env }) =>
+  env.CHECKIN_API.fetch(request)
