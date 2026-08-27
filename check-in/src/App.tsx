@@ -10,6 +10,7 @@ import {
   ComboboxItem,
   ComboboxList,
 } from "@/components/ui/combobox"
+import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
@@ -22,8 +23,6 @@ import { AFFILIATIONS, type Affiliation, type Member } from "@/lib/checkin"
 type MembersResponse = {
   members?: Member[]
 }
-
-type MemberSearchField = "name" | "email" | null
 
 const MEMBER_SEARCH_DELAY_MS = 75
 const MEMBER_SEARCH_CACHE_LIMIT = 12
@@ -59,14 +58,13 @@ export default function App() {
   const [affiliation, setAffiliation] = useState<Affiliation | "">("")
   const [members, setMembers] = useState<Member[]>([])
   const [selectedMember, setSelectedMember] = useState<Member | null>(null)
-  const [memberSearchField, setMemberSearchField] = useState<MemberSearchField>(null)
   const [memberSearchOpen, setMemberSearchOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState("")
   const [confirmation, setConfirmation] = useState<string | null>(null)
   const memberSearchCache = useRef(new Map<string, Member[]>())
 
-  const query = memberSearchField === "name" ? name.trim() : memberSearchField === "email" ? email.trim() : ""
+  const query = name.trim()
   const searchKey = memberSearchKey(query)
   useEffect(() => {
     if (selectedMember) {
@@ -126,20 +124,6 @@ export default function App() {
 
   function updateName(value: string) {
     setName(value)
-    if (!selectedMember && memberSearchField !== "name") {
-      setMemberSearchField("name")
-      setMembers([])
-      setMemberSearchOpen(false)
-    }
-  }
-
-  function updateEmail(value: string) {
-    setEmail(value)
-    if (!selectedMember && memberSearchField !== "email") {
-      setMemberSearchField("email")
-      setMembers([])
-      setMemberSearchOpen(false)
-    }
   }
 
   function clearSelectedMember() {
@@ -149,7 +133,6 @@ export default function App() {
     setAffiliation("")
     setMembers([])
     memberSearchCache.current.clear()
-    setMemberSearchField(null)
     setMemberSearchOpen(false)
     setMessage("")
   }
@@ -162,7 +145,6 @@ export default function App() {
     setName(member.name)
     setEmail(member.email)
     setAffiliation(AFFILIATIONS.some((option) => option === member.affiliation) ? member.affiliation : "")
-    setMemberSearchField(null)
     setMemberSearchOpen(false)
     setMessage("")
   }
@@ -229,7 +211,6 @@ export default function App() {
     setMembers([])
     memberSearchCache.current.clear()
     setSelectedMember(null)
-    setMemberSearchField(null)
     setMemberSearchOpen(false)
     setMessage("")
     setConfirmation(null)
@@ -287,9 +268,9 @@ export default function App() {
             filteredItems={members}
             value={selectedMember}
             inputValue={name}
-            open={memberSearchField === "name" && memberSearchOpen}
+            open={memberSearchOpen}
             onOpenChange={(open) =>
-              setMemberSearchOpen(open && memberSearchField === "name" && name.trim().length >= 1)
+              setMemberSearchOpen(open && !selectedMember && name.trim().length >= 1)
             }
             onInputValueChange={(value, details) => {
               if (details.reason === "input-change") updateName(value)
@@ -316,38 +297,19 @@ export default function App() {
           <label className="sr-only" htmlFor="email">
             Email
           </label>
-          <Combobox<Member>
-            items={members}
-            filteredItems={members}
-            value={selectedMember}
-            inputValue={email}
-            open={memberSearchField === "email" && memberSearchOpen}
-            onOpenChange={(open) =>
-              setMemberSearchOpen(open && memberSearchField === "email" && email.trim().length >= 1)
-            }
-            onInputValueChange={(value, details) => {
-              if (details.reason === "input-change") updateEmail(value)
-            }}
-            onValueChange={chooseMember}
-            itemToStringLabel={(member) => member.email}
-            itemToStringValue={(member) => member.id}
-            isItemEqualToValue={(member, value) => member.id === value.id}
-            autoHighlight
-          >
-            <ComboboxInput
-              id="email"
-              name="email"
-              className="h-13 w-full rounded-md [&_[data-slot=input-group-control]]:text-base"
-              type="email"
-              inputMode="email"
-              autoComplete="off"
-              data-1p-ignore
-              placeholder="Email"
-              showTrigger={false}
-              required
-            />
-            <MemberResults />
-          </Combobox>
+          <Input
+            id="email"
+            name="email"
+            className="h-13 rounded-md px-3 text-base md:text-base"
+            type="email"
+            inputMode="email"
+            autoComplete="off"
+            data-1p-ignore
+            placeholder="Email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            required
+          />
 
           <label className="sr-only" htmlFor="affiliation">
             Affiliation

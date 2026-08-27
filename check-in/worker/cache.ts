@@ -39,17 +39,24 @@ export async function refreshMemberCache(env: Env, refreshedAt = Date.now()): Pr
   return snapshot
 }
 
-async function currentMemberSnapshot(env: Env): Promise<MemberSnapshot> {
+async function currentMemberSnapshot(env: Env, allowStale = false): Promise<MemberSnapshot> {
   const cached: unknown = await env.MEMBER_CACHE.get(MEMBER_CACHE_KEY, "json")
-  if (isMemberSnapshot(cached) && Date.now() - cached.refreshedAt < MEMBER_CACHE_MAX_AGE_MS) {
+  if (
+    isMemberSnapshot(cached) &&
+    (allowStale || Date.now() - cached.refreshedAt < MEMBER_CACHE_MAX_AGE_MS)
+  ) {
     return cached
   }
   return refreshMemberCache(env)
 }
 
-export async function searchCachedMembers(env: Env, query: string): Promise<Member[]> {
+export async function searchCachedMembers(
+  env: Env,
+  query: string,
+  options: { allowStale?: boolean } = {},
+): Promise<Member[]> {
   const normalizedQuery = normalizeSearchValue(query)
-  const snapshot = await currentMemberSnapshot(env)
+  const snapshot = await currentMemberSnapshot(env, options.allowStale)
   return snapshot.members
     .map((member) => ({ member, score: memberSearchScore(member, normalizedQuery) }))
     .filter((result): result is { member: Member; score: number } => result.score !== null)

@@ -71,7 +71,7 @@ async function handleMemberSearch(request: Request, env: Env): Promise<Response>
     response.headers.set("Retry-After", "60")
     return response
   }
-  return json({ members: await searchCachedMembers(env, query) })
+  return json({ members: await searchCachedMembers(env, query, { allowStale: true }) })
 }
 
 export async function handleCheckin(

@@ -1,26 +1,32 @@
 import { env, exports } from "cloudflare:workers"
-import { HttpResponse, http } from "msw"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { handleCheckin, runNightlySync } from "../worker"
+import { handleApiRequest, handleCheckin, runNightlySync } from "../worker"
 import { searchCachedMembers } from "../worker/cache"
-import { readCheckins, timestampForSheet } from "../worker/google"
+import { dateKeyForSheetTimestamp, dateKeyInTimeZone, timestampForSheet } from "../worker/google"
 import { createMemberId, MEMBER_ID_PATTERN } from "../worker/member-id"
+import { FakeNotion, FakeSheets } from "./fakes"
 import { network } from "./network"
 
-const TEST_TIMESTAMP = Date.parse("2026-08-25T23:00:00Z")
+const TEST_TIMESTAMP = Date.parse("2026-08-25T23:00:00Z") // 7pm in New York
+const HOUR = 60 * 60 * 1000
 const ADA_MEMBER_ID = "Ada_00000001"
 const GRACE_MEMBER_ID = "Grace_000001"
 const SHAMUS_MEMBER_ID = "Shamus_00001"
-const UNNAMED_MEMBER_ID = "Unknown_0001"
 const MISSING_MEMBER_ID = "Missing_0001"
+
+const token = async () => "test-access-token"
+const serialFor = (timestamp: number) => timestampForSheet(timestamp, "America/New_York")
 
 beforeEach(async () => {
   await env.MEMBER_CACHE.delete("members:v2")
 })
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
+function useFakes() {
+  const sheets = new FakeSheets()
+  const notion = new FakeNotion()
+  network.use(...sheets.handlers(), ...notion.handlers())
+  return { sheets, notion }
 }
 
 function checkinRequest(overrides: Record<string, unknown> = {}): Request {
@@ -46,18 +52,6 @@ async function cacheMembers(...members: Array<{
   await env.MEMBER_CACHE.put("members:v2", JSON.stringify({ refreshedAt: Date.now(), members }))
 }
 
-// The nightly sync sorts the sheet after reconciliation.
-function sheetSortHandlers() {
-  return [
-    http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId", () =>
-      HttpResponse.json({ sheets: [{ properties: { sheetId: 123, title: "Check-ins" } }] }),
-    ),
-    http.post(/https:\/\/sheets\.googleapis\.com\/v4\/spreadsheets\/[^/]+:batchUpdate/, () =>
-      HttpResponse.json({ replies: [{}] }),
-    ),
-  ]
-}
-
 describe("member IDs", () => {
   it("generates unique 12-character Nano IDs", () => {
     const ids = Array.from({ length: 100 }, () => createMemberId())
@@ -66,105 +60,95 @@ describe("member IDs", () => {
   })
 })
 
+describe("sheet timestamps", () => {
+  it("round-trips the New York calendar date across DST and UTC-midnight boundaries", () => {
+    const instants = [
+      Date.parse("2026-08-25T23:00:00Z"), // 7:00pm EDT
+      Date.parse("2026-01-06T02:30:00Z"), // 9:30pm EST the previous calendar day
+      Date.parse("2026-11-01T05:30:00Z"), // 1:30am on the night DST ends
+      Date.parse("2026-03-08T06:59:00Z"), // 1:59am just before DST begins
+    ]
+    for (const instant of instants) {
+      expect(dateKeyForSheetTimestamp(serialFor(instant))).toBe(
+        dateKeyInTimeZone(instant, "America/New_York"),
+      )
+    }
+  })
+
+  it("encodes the local wall-clock time in the serial number", () => {
+    const serial = serialFor(TEST_TIMESTAMP)
+    expect(dateKeyForSheetTimestamp(serial)).toBe("2026-08-25")
+    expect(serial % 1).toBeCloseTo(19 / 24, 6)
+  })
+
+  it("rejects sheet timestamps that are not serial numbers", () => {
+    expect(dateKeyForSheetTimestamp("2026-08-25")).toBeNull()
+    expect(dateKeyForSheetTimestamp(null)).toBeNull()
+  })
+})
+
 describe("member search", () => {
-  it("caches the Notion roster and searches it by name or email", async () => {
-    let notionQueries = 0
-    network.use(
-      http.post("https://api.notion.com/v1/data_sources/:dataSourceId/query", async ({ request }) => {
-        notionQueries += 1
-        const body = await request.json()
-        expect(body).toMatchObject({
-          page_size: 100,
-          result_type: "page",
-        })
-        if (notionQueries === 2) expect(body).toMatchObject({ start_cursor: "next-page" })
-        return HttpResponse.json({
-          object: "list",
-          has_more: notionQueries === 1,
-          next_cursor: notionQueries === 1 ? "next-page" : null,
-          results: notionQueries === 1 ? [
-            {
-              object: "page",
-              id: "member-page-id",
-              last_edited_time: "2026-08-25T20:00:00.000Z",
-              properties: {
-                Name: { title: [{ plain_text: "Ada Lovelace" }] },
-                Email: { email: null },
-                Affiliation: { select: { name: "Community Member" } },
-                "Member ID": { rich_text: [{ plain_text: ADA_MEMBER_ID }] },
-              },
-            },
-          ] : [
-            {
-              object: "page",
-              id: "email-member-page-id",
-              last_edited_time: "2026-08-25T20:00:00.000Z",
-              properties: {
-                Name: { title: [{ plain_text: "Shamus Li" }] },
-                Email: { email: "wl757@cornell.edu" },
-                Affiliation: { select: { name: "Graduate/Professional Student" } },
-                "Member ID": { rich_text: [{ plain_text: SHAMUS_MEMBER_ID }] },
-              },
-            },
-            {
-              object: "page",
-              id: "unnamed-member-page-id",
-              last_edited_time: "2026-08-25T20:00:00.000Z",
-              properties: {
-                Name: { title: [] },
-                Email: { email: "unnamed@example.com" },
-                Affiliation: { select: { name: "Alumni" } },
-                "Member ID": { rich_text: [{ plain_text: UNNAMED_MEMBER_ID }] },
-              },
-            },
-          ],
-        })
-      }),
-    )
+  it("builds the roster cache from every Notion page and reuses it across searches", async () => {
+    const { notion } = useFakes()
+    notion.addMember({
+      memberId: ADA_MEMBER_ID,
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      affiliation: "Community Member",
+    })
+    // Force a second Notion page to prove pagination is followed.
+    for (let index = 0; index < 100; index += 1) {
+      notion.addMember({
+        memberId: `Filler_${String(index).padStart(5, "0")}`,
+        name: `Roster Filler ${index}`,
+        email: `filler${index}@example.com`,
+        affiliation: "Staff",
+      })
+    }
 
     const response = await exports.default.fetch("https://example.com/check-in/api/members?q=Ada")
 
     expect(response.status).toBe(200)
+    expect(response.headers.get("Cache-Control")).toBe("no-store")
     expect(await response.json()).toEqual({
       members: [
         {
           id: ADA_MEMBER_ID,
           name: "Ada Lovelace",
-          email: "",
+          email: "ada@example.com",
           affiliation: "Community Member",
         },
       ],
     })
+    expect(notion.queries).toBe(2)
 
-    const emailResponse = await exports.default.fetch(
-      "https://example.com/check-in/api/members?q=WL757",
-    )
-    expect(await emailResponse.json()).toEqual({
-      members: [
-        {
-          id: SHAMUS_MEMBER_ID,
-          name: "Shamus Li",
-          email: "wl757@cornell.edu",
-          affiliation: "Graduate/Professional Student",
-        },
-      ],
-    })
+    await exports.default.fetch("https://example.com/check-in/api/members?q=Roster")
+    expect(notion.queries).toBe(2) // second search served from the cached roster
+  })
 
-    const unnamedResponse = await exports.default.fetch(
-      "https://example.com/check-in/api/members?q=unnamed%40example.com",
-    )
-    expect(await unnamedResponse.json()).toEqual({
-      members: [
-        {
-          id: UNNAMED_MEMBER_ID,
-          name: "",
-          email: "unnamed@example.com",
-          affiliation: "Alumni",
-        },
-      ],
+  it("serves a fresh snapshot from KV but refreshes a stale one", async () => {
+    const { notion } = useFakes()
+    notion.addMember({
+      memberId: "Fresh_000001",
+      name: "Fresh Fiona",
+      email: "fiona@example.com",
+      affiliation: "Staff",
     })
-    expect(notionQueries).toBe(2)
-    expect(response.headers.get("Cache-Control")).toBe("no-store")
+    const cachedSam = { id: "Stale_000001", name: "Stale Sam", email: "sam@example.com", affiliation: "Staff" }
+
+    await env.MEMBER_CACHE.put(
+      "members:v2",
+      JSON.stringify({ refreshedAt: Date.now(), members: [cachedSam] }),
+    )
+    expect((await searchCachedMembers(env, "sam")).map((member) => member.id)).toEqual(["Stale_000001"])
+    expect(notion.queries).toBe(0)
+
+    await env.MEMBER_CACHE.put(
+      "members:v2",
+      JSON.stringify({ refreshedAt: Date.now() - 16 * 60 * 1000, members: [cachedSam] }),
+    )
+    expect((await searchCachedMembers(env, "fiona")).map((member) => member.id)).toEqual(["Fresh_000001"])
+    expect(notion.queries).toBeGreaterThan(0)
   })
 
   it("ranks exact and prefix matches before substring matches", async () => {
@@ -233,122 +217,85 @@ describe("member search", () => {
     })
   })
 
-  it("rate limits repeated roster enumeration by Access identity", async () => {
-    await cacheMembers({
-      id: ADA_MEMBER_ID,
-      name: "Ada Lovelace",
-      email: "ada@example.com",
-      affiliation: "Community Member",
-    })
-    const request = () => new Request("https://example.com/check-in/api/members?q=Ada", {
-      headers: { "Cf-Access-Authenticated-User-Email": "rate-limit-test@example.com" },
-    })
-
-    for (let index = 0; index < 300; index += 1) {
-      expect((await exports.default.fetch(request())).status).toBe(200)
+  it("keys the rate limit by Access identity and returns 429 when it trips", async () => {
+    const keys: string[] = []
+    const limiter: Env["MEMBER_SEARCH_RATE_LIMITER"] = {
+      limit: async ({ key }) => {
+        keys.push(String(key))
+        return { success: false }
+      },
     }
-    const response = await exports.default.fetch(request())
+    const limitedEnv: Env = { ...env, MEMBER_SEARCH_RATE_LIMITER: limiter }
+
+    const response = await handleApiRequest(
+      new Request("https://example.com/check-in/api/members?q=Ada", {
+        headers: { "Cf-Access-Authenticated-User-Email": "Kiosk@Example.COM" },
+      }),
+      limitedEnv,
+    )
 
     expect(response.status).toBe(429)
     expect(response.headers.get("Retry-After")).toBe("60")
     expect(await response.json()).toEqual({
       message: "Too many member searches. Wait a minute and try again.",
     })
+
+    await handleApiRequest(new Request("https://example.com/check-in/api/members?q=Ada"), limitedEnv)
+    expect(keys).toEqual(["kiosk@example.com", "access-identity-missing"])
   })
 })
 
 describe("check-in", () => {
-  it("retries transient Google Sheets failures", async () => {
-    let reads = 0
-    network.use(
-      http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () => {
-        reads += 1
-        return reads < 3
-          ? new HttpResponse(null, { status: 503 })
-          : HttpResponse.json({ values: [] })
-      }),
+  it("records a first-time attendee with a generated durable member ID", async () => {
+    const { sheets } = useFakes()
+
+    const response = await handleCheckin(
+      checkinRequest({ memberId: null, name: "New Dancer", email: "new@example.com" }),
+      env,
+      token,
+      TEST_TIMESTAMP,
     )
 
-    await readCheckins(env, "test-access-token")
-
-    expect(reads).toBe(3)
+    expect(response.status).toBe(201)
+    expect(sheets.rows).toHaveLength(1)
+    const [timestamp, name, email, affiliation, memberId] = sheets.rows[0]
+    expect(timestamp).toBe(serialFor(TEST_TIMESTAMP))
+    expect(name).toBe("New Dancer")
+    expect(email).toBe("new@example.com")
+    expect(affiliation).toBe("Community Member")
+    expect(String(memberId)).toMatch(MEMBER_ID_PATTERN)
   })
 
-  it("appends the check-in atomically with the durable member ID", async () => {
+  it("rejects a second check-in the same night but allows the next day", async () => {
+    const { sheets } = useFakes()
     await cacheMembers({
       id: ADA_MEMBER_ID,
       name: "Ada Lovelace",
       email: "ada@example.com",
       affiliation: "Community Member",
     })
-    let appended: { url: URL; body: unknown } | null = null
-    network.use(
-      http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
-        HttpResponse.json({ range: "Check-ins!A2:E", values: [] }),
-      ),
-      http.post(
-        "https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range",
-        async ({ request }) => {
-          appended = { url: new URL(request.url), body: await request.json() }
-          return HttpResponse.json({ updates: { updatedRows: 1 } })
-        },
-      ),
-    )
 
-    const response = await handleCheckin(checkinRequest(), env, async () => "test-access-token", TEST_TIMESTAMP)
+    expect((await handleCheckin(checkinRequest(), env, token, TEST_TIMESTAMP)).status).toBe(201)
+    expect(sheets.rows[0][4]).toBe(ADA_MEMBER_ID)
 
-    expect(response.status).toBe(201)
-    expect(appended).not.toBeNull()
-    expect(appended!.url.pathname.endsWith(":append")).toBe(true)
-    expect(appended!.url.searchParams.get("insertDataOption")).toBe("INSERT_ROWS")
-    expect(appended!.body).toEqual({
-      majorDimension: "ROWS",
-      values: [
-        [
-          timestampForSheet(TEST_TIMESTAMP, "America/New_York"),
-          "Ada Lovelace",
-          "ada@example.com",
-          "Community Member",
-          ADA_MEMBER_ID,
-        ],
-      ],
-    })
+    const sameNight = await handleCheckin(checkinRequest(), env, token, TEST_TIMESTAMP + HOUR)
+    expect(sameNight.status).toBe(409)
+    expect(await sameNight.json()).toEqual({ message: "Already checked in" })
+    expect(sheets.rows).toHaveLength(1)
+
+    const nextDay = await handleCheckin(checkinRequest(), env, token, TEST_TIMESTAMP + 24 * HOUR)
+    expect(nextDay.status).toBe(201)
+    expect(sheets.rows).toHaveLength(2)
   })
 
   it("recovers the durable member ID from an exact email when the client omits it", async () => {
-    let written: unknown
-    network.use(
-      http.post("https://api.notion.com/v1/data_sources/:dataSourceId/query", () =>
-        HttpResponse.json({
-          object: "list",
-          has_more: false,
-          next_cursor: null,
-          results: [
-            {
-              object: "page",
-              id: "shamus-page-id",
-              last_edited_time: "2026-08-25T20:00:00.000Z",
-              properties: {
-                Name: { title: [{ plain_text: "Shamus Li" }] },
-                Email: { email: "wl757@cornell.edu" },
-                Affiliation: { select: { name: "Graduate/Professional Student" } },
-                "Member ID": { rich_text: [{ plain_text: SHAMUS_MEMBER_ID }] },
-              },
-            },
-          ],
-        }),
-      ),
-      http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
-        HttpResponse.json({ range: "Check-ins!A2:E", values: [] }),
-      ),
-      http.post(
-        "https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range",
-        async ({ request }) => {
-          written = await request.json()
-          return HttpResponse.json({ updates: { updatedRows: 1 } })
-        },
-      ),
-    )
+    const { sheets } = useFakes()
+    await cacheMembers({
+      id: SHAMUS_MEMBER_ID,
+      name: "Shamus Li",
+      email: "wl757@cornell.edu",
+      affiliation: "Graduate/Professional Student",
+    })
 
     const response = await handleCheckin(
       checkinRequest({
@@ -358,134 +305,16 @@ describe("check-in", () => {
         affiliation: "Graduate/Professional Student",
       }),
       env,
-      async () => "test-access-token",
+      token,
       TEST_TIMESTAMP,
     )
 
     expect(response.status).toBe(201)
-    expect(written).toMatchObject({
-      values: [
-        [
-          timestampForSheet(TEST_TIMESTAMP, "America/New_York"),
-          "Shamus Li",
-          "wl757@cornell.edu",
-          "Graduate/Professional Student",
-          SHAMUS_MEMBER_ID,
-        ],
-      ],
-    })
+    expect(sheets.rows[0][4]).toBe(SHAMUS_MEMBER_ID)
   })
 
-  it("allows an empty name while requiring a valid email", async () => {
-    await cacheMembers({
-      id: ADA_MEMBER_ID,
-      name: "Ada Lovelace",
-      email: "ada@example.com",
-      affiliation: "Community Member",
-    })
-    let written: unknown
-    network.use(
-      http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
-        HttpResponse.json({ range: "Check-ins!A2:E", values: [] }),
-      ),
-      http.post(
-        "https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range",
-        async ({ request }) => {
-          written = await request.json()
-          return HttpResponse.json({ updates: { updatedRows: 1 } })
-        },
-      ),
-    )
-
-    const response = await handleCheckin(
-      checkinRequest({ name: "" }),
-      env,
-      async () => "test-access-token",
-      TEST_TIMESTAMP,
-    )
-
-    expect(response.status).toBe(201)
-    expect(written).toMatchObject({
-      values: [
-        [
-          timestampForSheet(TEST_TIMESTAMP, "America/New_York"),
-          "",
-          "ada@example.com",
-          "Community Member",
-          ADA_MEMBER_ID,
-        ],
-      ],
-    })
-
-    const missingEmail = await handleCheckin(
-      checkinRequest({ name: "Ada Lovelace", email: "" }),
-      env,
-      async () => "test-access-token",
-      TEST_TIMESTAMP,
-    )
-    expect(missingEmail.status).toBe(400)
-    expect(await missingEmail.json()).toEqual({ message: "Enter a valid email and affiliation" })
-  })
-
-  it("rejects a duplicate member ID on the same inferred date", async () => {
-    await cacheMembers({
-      id: ADA_MEMBER_ID,
-      name: "Ada Lovelace",
-      email: "ada@example.com",
-      affiliation: "Community Member",
-    })
-    network.use(
-      http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
-        HttpResponse.json({
-          values: [
-            [
-              timestampForSheet(TEST_TIMESTAMP, "America/New_York"),
-              "Ada Lovelace",
-              "ada@example.com",
-              "Community Member",
-              ADA_MEMBER_ID,
-            ],
-          ],
-        }),
-      ),
-    )
-
-    const response = await handleCheckin(checkinRequest(), env, async () => "test-access-token", TEST_TIMESTAMP)
-
-    expect(response.status).toBe(409)
-    expect(await response.json()).toEqual({ message: "Already checked in" })
-  })
-
-  it("rejects a client-supplied member ID that is not in the roster", async () => {
-    await cacheMembers({
-      id: ADA_MEMBER_ID,
-      name: "Ada Lovelace",
-      email: "ada@example.com",
-      affiliation: "Community Member",
-    })
-    let sheetReads = 0
-    network.use(
-      http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () => {
-        sheetReads += 1
-        return HttpResponse.json({ values: [] })
-      }),
-    )
-
-    const response = await handleCheckin(
-      checkinRequest({ memberId: MISSING_MEMBER_ID }),
-      env,
-      async () => "test-access-token",
-      TEST_TIMESTAMP,
-    )
-
-    expect(response.status).toBe(400)
-    expect(await response.json()).toEqual({
-      message: "That member record is no longer available. Select “Not you?” and choose again.",
-    })
-    expect(sheetReads).toBe(0)
-  })
-
-  it("allows two members with the same email to check in separately", async () => {
+  it("lets two members who share an email check in separately", async () => {
+    const { sheets } = useFakes()
     await cacheMembers(
       {
         id: ADA_MEMBER_ID,
@@ -500,539 +329,351 @@ describe("check-in", () => {
         affiliation: "Community Member",
       },
     )
-    let written: unknown
-    network.use(
-      http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
-        HttpResponse.json({
-          values: [
-            [
-              timestampForSheet(TEST_TIMESTAMP, "America/New_York"),
-              "Ada Lovelace",
-              "shared@example.com",
-              "Community Member",
-              ADA_MEMBER_ID,
-            ],
-          ],
-        }),
-      ),
-      http.post(
-        "https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range",
-        async ({ request }) => {
-          written = await request.json()
-          return HttpResponse.json({ updates: { updatedRows: 1 } })
-        },
-      ),
+
+    const ada = await handleCheckin(
+      checkinRequest({ email: "shared@example.com" }),
+      env,
+      token,
+      TEST_TIMESTAMP,
+    )
+    const grace = await handleCheckin(
+      checkinRequest({ memberId: GRACE_MEMBER_ID, name: "Grace Hopper", email: "shared@example.com" }),
+      env,
+      token,
+      TEST_TIMESTAMP + HOUR,
     )
 
+    expect(ada.status).toBe(201)
+    expect(grace.status).toBe(201)
+    expect(sheets.rows.map((row) => row[4]).sort()).toEqual([ADA_MEMBER_ID, GRACE_MEMBER_ID])
+  })
+
+  it("handles concurrent check-ins without losing either", async () => {
+    const { sheets } = useFakes()
+
+    const [first, second] = await Promise.all([
+      handleCheckin(
+        checkinRequest({ memberId: null, name: "Ada Lovelace", email: "ada@example.com" }),
+        env,
+        token,
+        TEST_TIMESTAMP,
+      ),
+      handleCheckin(
+        checkinRequest({ memberId: null, name: "Grace Hopper", email: "grace@example.com" }),
+        env,
+        token,
+        TEST_TIMESTAMP,
+      ),
+    ])
+
+    expect(first.status).toBe(201)
+    expect(second.status).toBe(201)
+    expect(sheets.rows.map((row) => row[2]).sort()).toEqual(["ada@example.com", "grace@example.com"])
+  })
+
+  it("stores an empty name when the name is just the email address", async () => {
+    const { sheets } = useFakes()
+
     const response = await handleCheckin(
-      checkinRequest({
-        memberId: GRACE_MEMBER_ID,
-        name: "Grace Hopper",
-        email: "shared@example.com",
-      }),
+      checkinRequest({ memberId: null, name: "ADA@EXAMPLE.COM" }),
       env,
-      async () => "test-access-token",
+      token,
       TEST_TIMESTAMP,
     )
 
     expect(response.status).toBe(201)
-    expect(written).toMatchObject({
-      values: [
-        [
-          timestampForSheet(TEST_TIMESTAMP, "America/New_York"),
-          "Grace Hopper",
-          "shared@example.com",
-          "Community Member",
-          GRACE_MEMBER_ID,
-        ],
-      ],
+    expect(sheets.rows[0][1]).toBe("")
+    expect(sheets.rows[0][2]).toBe("ada@example.com")
+  })
+
+  it("accepts the legacy Student affiliation", async () => {
+    const { sheets } = useFakes()
+
+    const response = await handleCheckin(
+      checkinRequest({ memberId: null, email: "student@example.com", affiliation: "Student" }),
+      env,
+      token,
+      TEST_TIMESTAMP,
+    )
+
+    expect(response.status).toBe(201)
+    expect(sheets.rows[0][3]).toBe("Student")
+  })
+
+  it("rejects malformed payloads without touching the sheet", async () => {
+    const { sheets } = useFakes()
+    const badPayloads = [
+      { email: "not-an-email" },
+      { email: "" },
+      { affiliation: "Wizard" },
+      { memberId: "short" },
+      { name: "x".repeat(161) },
+    ]
+
+    for (const overrides of badPayloads) {
+      const response = await handleCheckin(checkinRequest(overrides), env, token, TEST_TIMESTAMP)
+      expect(response.status).toBe(400)
+      expect(await response.json()).toEqual({ message: "Enter a valid email and affiliation" })
+    }
+
+    const notJson = await handleCheckin(
+      new Request("https://example.com/check-in/api/checkins", { method: "POST", body: "not json" }),
+      env,
+      token,
+      TEST_TIMESTAMP,
+    )
+    expect(notJson.status).toBe(400)
+
+    const oversized = await handleCheckin(
+      new Request("https://example.com/check-in/api/checkins", {
+        method: "POST",
+        headers: { "Content-Length": "8192" },
+        body: "{}",
+      }),
+      env,
+      token,
+      TEST_TIMESTAMP,
+    )
+    expect(oversized.status).toBe(413)
+
+    expect(sheets.appends).toBe(0)
+  })
+
+  it("rejects a client-supplied member ID that is not in the roster", async () => {
+    const { sheets } = useFakes()
+    await cacheMembers({
+      id: ADA_MEMBER_ID,
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      affiliation: "Community Member",
     })
+
+    const response = await handleCheckin(
+      checkinRequest({ memberId: MISSING_MEMBER_ID }),
+      env,
+      token,
+      TEST_TIMESTAMP,
+    )
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({
+      message: "That member record is no longer available. Select “Not you?” and choose again.",
+    })
+    expect(sheets.reads).toBe(0)
+    expect(sheets.appends).toBe(0)
+  })
+
+  it("retries transient Google Sheets failures", async () => {
+    const { sheets } = useFakes()
+    sheets.transientFailures = 2
+    await cacheMembers({
+      id: ADA_MEMBER_ID,
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      affiliation: "Community Member",
+    })
+
+    const response = await handleCheckin(checkinRequest(), env, token, TEST_TIMESTAMP)
+
+    expect(response.status).toBe(201)
+    expect(sheets.reads).toBe(3)
+    expect(sheets.rows).toHaveLength(1)
+  })
+})
+
+describe("API routing", () => {
+  it("rejects unknown paths and methods", async () => {
+    expect((await exports.default.fetch("https://example.com/somewhere-else")).status).toBe(404)
+    expect(
+      (await exports.default.fetch(new Request("https://example.com/check-in/api/checkins"))).status,
+    ).toBe(405)
+    expect(
+      (
+        await exports.default.fetch(
+          new Request("https://example.com/check-in/api/members", { method: "POST" }),
+        )
+      ).status,
+    ).toBe(405)
+  })
+
+  it("answers 503 with a generic message when a backend fails", async () => {
+    useFakes()
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    try {
+      // The test environment has no real Google key, so the token exchange throws.
+      const response = await exports.default.fetch(checkinRequest({ memberId: null }))
+      expect(response.status).toBe(503)
+      expect(await response.json()).toEqual({ message: "Check-in failed" })
+      expect(consoleError).toHaveBeenCalled()
+    } finally {
+      consoleError.mockRestore()
+    }
   })
 })
 
 describe("nightly sync", () => {
-  it("still completes when sorting fails", async () => {
+  it("converges the sheet and Notion, then a second run makes no further writes", async () => {
+    const { sheets, notion } = useFakes()
+    sheets.rows.push(
+      [serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "Community Member", ADA_MEMBER_ID],
+      [serialFor(TEST_TIMESTAMP + 60_000), "Grace Hopper", "grace@example.com", "Alumni", GRACE_MEMBER_ID],
+      [serialFor(TEST_TIMESTAMP + 120_000), "Legacy Lee", "legacy@example.com", "Staff", ""],
+    )
+
+    const first = await runNightlySync(env, token)
+
+    expect(first).toEqual({ synced: 3, failed: 0 })
+    // One event for the night, every attendee related to it.
+    expect(notion.events).toHaveLength(1)
+    expect(notion.events[0]).toMatchObject({ date: "2026-08-25", name: "2026-08-25" })
+    expect(notion.members).toHaveLength(3)
+    for (const member of notion.members) {
+      expect(member.events).toEqual([notion.events[0].pageId])
+      expect(member.memberSince).toBe("2026-08-25")
+    }
+    // The legacy row got a durable member ID backfilled into the sheet.
+    const legacyRow = sheets.rows.find((row) => row[2] === "legacy@example.com")
+    expect(String(legacyRow?.[4])).toMatch(MEMBER_ID_PATTERN)
+    // The sheet ends up sorted newest-first.
+    const serials = sheets.rows.map((row) => Number(row[0]))
+    expect(serials).toEqual([...serials].sort((left, right) => right - left))
+
+    const notionWrites = notion.writes
+    const sheetWrites = sheets.updates + sheets.appends
+    const second = await runNightlySync(env, token)
+
+    expect(second).toEqual({ synced: 3, failed: 0 })
+    expect(notion.writes).toBe(notionWrites)
+    expect(sheets.updates + sheets.appends).toBe(sheetWrites)
+  })
+
+  it("backfills newer Notion details into a legacy sheet row", async () => {
+    const { sheets, notion } = useFakes()
+    notion.addMember({
+      memberId: ADA_MEMBER_ID,
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      affiliation: "Graduate/Professional Student",
+      lastEditedTime: "2026-08-26T12:00:00.000Z", // edited after the check-in
+    })
+    sheets.rows.push([serialFor(TEST_TIMESTAMP), "Old Name", "ada@example.com", "Community Member", ""])
+
+    const result = await runNightlySync(env, token)
+
+    expect(result).toEqual({ synced: 1, failed: 0 })
+    expect(sheets.rows[0].slice(1)).toEqual([
+      "Ada Lovelace",
+      "ada@example.com",
+      "Graduate/Professional Student",
+      ADA_MEMBER_ID,
+    ])
+    expect(notion.members[0].name).toBe("Ada Lovelace")
+    expect(notion.members[0].events).toEqual([notion.events[0].pageId])
+  })
+
+  it("prefers newer sheet details while preserving existing event relations", async () => {
+    const { sheets, notion } = useFakes()
+    notion.addMember({
+      memberId: ADA_MEMBER_ID,
+      name: "Old Name",
+      email: "ada@example.com",
+      affiliation: "Alumni",
+      events: ["previous-event-id"],
+      lastEditedTime: "2026-08-25T18:00:00.000Z", // edited before the check-in
+    })
+    sheets.rows.push([serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "Community Member", ""])
+
+    const result = await runNightlySync(env, token)
+
+    expect(result).toEqual({ synced: 1, failed: 0 })
+    expect(notion.members[0]).toMatchObject({
+      name: "Ada Lovelace",
+      affiliation: "Community Member",
+      events: ["previous-event-id", notion.events[0].pageId],
+    })
+    expect(sheets.rows[0][4]).toBe(ADA_MEMBER_ID)
+  })
+
+  it("clears email-as-name placeholders from both systems", async () => {
+    const { sheets, notion } = useFakes()
+    notion.addMember({
+      memberId: ADA_MEMBER_ID,
+      name: "ada@example.com",
+      email: "ada@example.com",
+      affiliation: "Community Member",
+    })
+    sheets.rows.push([
+      serialFor(TEST_TIMESTAMP),
+      "ada@example.com",
+      "ada@example.com",
+      "Community Member",
+      ADA_MEMBER_ID,
+    ])
+
+    const result = await runNightlySync(env, token)
+
+    expect(result).toEqual({ synced: 1, failed: 0 })
+    expect(notion.members[0].name).toBe("")
+    expect(sheets.rows[0][1]).toBe("")
+  })
+
+  it("keeps syncing the remaining rows when one row is invalid", async () => {
+    const { sheets, notion } = useFakes()
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
-    network.use(
-      http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
-        HttpResponse.json({ values: [] }),
-      ),
-      http.post("https://api.notion.com/v1/data_sources/:dataSourceId/query", () =>
-        HttpResponse.json({ object: "list", has_more: false, next_cursor: null, results: [] }),
-      ),
-      http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId", () =>
-        HttpResponse.json({ sheets: [{ properties: { sheetId: 123, title: "Check-ins" } }] }),
-      ),
-      http.post(/https:\/\/sheets\.googleapis\.com\/v4\/spreadsheets\/[^/]+:batchUpdate/, () =>
-        new HttpResponse(null, { status: 403 }),
-      ),
+    sheets.rows.push(
+      [serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "Community Member", ADA_MEMBER_ID],
+      [serialFor(TEST_TIMESTAMP), "Broken Row", "not-an-email", "Community Member", ""],
+      [serialFor(TEST_TIMESTAMP), "Grace Hopper", "grace@example.com", "Alumni", GRACE_MEMBER_ID],
     )
 
     try {
-      await expect(runNightlySync(env, async () => "test-access-token")).resolves.toEqual({
-        synced: 0,
-        failed: 0,
-      })
+      const result = await runNightlySync(env, token)
+
+      expect(result).toEqual({ synced: 2, failed: 1 })
+      expect(notion.members.map((member) => member.memberId).sort()).toEqual([
+        ADA_MEMBER_ID,
+        GRACE_MEMBER_ID,
+      ])
       expect(consoleError).toHaveBeenCalledOnce()
     } finally {
       consoleError.mockRestore()
     }
   })
 
-  it("creates one dated event and relates every check-in from that date", async () => {
-    const createdEvents: unknown[] = []
-    const createdMembers: unknown[] = []
-    let eventQueries = 0
-    network.use(
-      ...sheetSortHandlers(),
-      http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
-        HttpResponse.json({
-          values: [
-            [
-              timestampForSheet(TEST_TIMESTAMP, "America/New_York"),
-              "Ada Lovelace",
-              "ada@example.com",
-              "Community Member",
-              ADA_MEMBER_ID,
-            ],
-            [
-              timestampForSheet(TEST_TIMESTAMP + 60_000, "America/New_York"),
-              "Grace Hopper",
-              "grace@example.com",
-              "Alumni",
-              GRACE_MEMBER_ID,
-            ],
-          ],
-        }),
-      ),
-      http.put("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
-        HttpResponse.json({ updatedRows: 1 }),
-      ),
-      http.post("https://api.notion.com/v1/data_sources/:dataSourceId/query", ({ params }) => {
-        if (params.dataSourceId === env.NOTION_EVENTS_DATA_SOURCE_ID) {
-          eventQueries += 1
-          return HttpResponse.json({ object: "list", has_more: false, next_cursor: null, results: [] })
-        }
-        return HttpResponse.json({ object: "list", has_more: false, next_cursor: null, results: [] })
-      }),
-      http.post("https://api.notion.com/v1/pages", async ({ request }) => {
-        const body = await request.json()
-        const parent = isRecord(body) && isRecord(body.parent) ? body.parent : null
-        if (parent?.data_source_id === env.NOTION_EVENTS_DATA_SOURCE_ID) {
-          createdEvents.push(body)
-          return HttpResponse.json({ object: "page", id: "dated-event-id", properties: {} })
-        }
-        createdMembers.push(body)
-        return HttpResponse.json({ object: "page", id: "new-member-id", properties: {} })
-      }),
-    )
-
-    const result = await runNightlySync(env, async () => "test-access-token")
-
-    expect(result).toEqual({ synced: 2, failed: 0 })
-    expect(eventQueries).toBe(1)
-    expect(createdEvents).toEqual([
-      {
-        parent: { type: "data_source_id", data_source_id: env.NOTION_EVENTS_DATA_SOURCE_ID },
-        properties: {
-          Name: { title: [{ type: "text", text: { content: "2026-08-25" } }] },
-          Date: { date: { start: "2026-08-25" } },
-        },
-      },
+  it("fails a row instead of guessing when a date has two Notion events", async () => {
+    const { sheets, notion } = useFakes()
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+    notion.addEvent("2026-08-25")
+    notion.addEvent("2026-08-25")
+    sheets.rows.push([
+      serialFor(TEST_TIMESTAMP),
+      "Ada Lovelace",
+      "ada@example.com",
+      "Community Member",
+      ADA_MEMBER_ID,
     ])
-    expect(createdMembers).toHaveLength(2)
-    for (const [index, member] of createdMembers.entries()) {
-      expect(member).toMatchObject({
-        properties: {
-          "Member ID": {
-            rich_text: [{ type: "text", text: { content: index === 0 ? ADA_MEMBER_ID : GRACE_MEMBER_ID } }],
-          },
-          "Events Attended": { relation: [{ id: "dated-event-id" }] },
-        },
-      })
+
+    try {
+      const result = await runNightlySync(env, token)
+
+      expect(result).toEqual({ synced: 0, failed: 1 })
+      expect(notion.members).toHaveLength(0)
+    } finally {
+      consoleError.mockRestore()
     }
   })
 
-  it("creates an unknown Notion member and relates the event without a Sheet sync flag", async () => {
-    const sheetUpdates: string[] = []
-    let createdPage: unknown
-    network.use(
-      ...sheetSortHandlers(),
-      http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
-        HttpResponse.json({
-          values: [
-            [
-              timestampForSheet(TEST_TIMESTAMP, "America/New_York"),
-              "",
-              "ada@example.com",
-              "Community Member",
-              ADA_MEMBER_ID,
-            ],
-          ],
-        }),
-      ),
-      http.put(
-        "https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range",
-        ({ params }) => {
-          sheetUpdates.push(String(params.range))
-          return HttpResponse.json({ updatedRows: 1 })
-        },
-      ),
-      http.post("https://api.notion.com/v1/data_sources/:dataSourceId/query", ({ params }) => {
-        if (params.dataSourceId === env.NOTION_EVENTS_DATA_SOURCE_ID) {
-          return HttpResponse.json({
-            object: "list",
-            has_more: false,
-            next_cursor: null,
-            results: [{ object: "page", id: "event-page-id", properties: {} }],
-          })
-        }
-        return HttpResponse.json({ object: "list", has_more: false, next_cursor: null, results: [] })
-      }),
-      http.post("https://api.notion.com/v1/pages", async ({ request }) => {
-        createdPage = await request.json()
-        return HttpResponse.json({ object: "page", id: "new-member-page-id", properties: {} })
-      }),
-    )
+  it("still completes when sorting fails", async () => {
+    const { sheets } = useFakes()
+    sheets.failSort = true
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
 
-    const result = await runNightlySync(env, async () => "test-access-token")
-
-    expect(result).toEqual({ synced: 1, failed: 0 })
-    expect(createdPage).toMatchObject({
-      parent: { type: "data_source_id", data_source_id: env.NOTION_MEMBERS_DATA_SOURCE_ID },
-      properties: {
-        Name: { title: [] },
-        Email: { email: "ada@example.com" },
-        "Member ID": {
-          rich_text: [{ type: "text", text: { content: ADA_MEMBER_ID } }],
-        },
-        Affiliation: { select: { name: "Community Member" } },
-        "Member Since": { date: { start: "2026-08-25" } },
-        "Events Attended": { relation: [{ id: "event-page-id" }] },
-      },
-    })
-    expect(sheetUpdates).toEqual([])
-  })
-
-  it("clears email-as-name placeholders from Notion and the Sheet", async () => {
-    let updatedPage: unknown
-    let sheetWrite: { range: string; body: unknown } | null = null
-    network.use(
-      ...sheetSortHandlers(),
-      http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
-        HttpResponse.json({
-          values: [
-            [
-              timestampForSheet(TEST_TIMESTAMP, "America/New_York"),
-              "ada@example.com",
-              "ada@example.com",
-              "Community Member",
-              ADA_MEMBER_ID,
-            ],
-          ],
-        }),
-      ),
-      http.put(
-        "https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range",
-        async ({ params, request }) => {
-          sheetWrite = { range: String(params.range), body: await request.json() }
-          return HttpResponse.json({ updatedRows: 1 })
-        },
-      ),
-      http.post("https://api.notion.com/v1/data_sources/:dataSourceId/query", ({ params }) => {
-        if (params.dataSourceId === env.NOTION_EVENTS_DATA_SOURCE_ID) {
-          return HttpResponse.json({
-            object: "list",
-            has_more: false,
-            next_cursor: null,
-            results: [{ object: "page", id: "event-page-id", properties: {} }],
-          })
-        }
-        return HttpResponse.json({
-          object: "list",
-          has_more: false,
-          next_cursor: null,
-          results: [
-            {
-              object: "page",
-              id: "existing-member-id",
-              last_edited_time: "2026-08-26T00:00:00.000Z",
-              properties: {
-                Name: { title: [{ plain_text: "ada@example.com" }] },
-                Email: { email: "ada@example.com" },
-                Affiliation: { select: { name: "Community Member" } },
-                "Member ID": { rich_text: [{ plain_text: ADA_MEMBER_ID }] },
-                "Events Attended": {
-                  id: "relation-property-id",
-                  type: "relation",
-                  relation: [{ id: "event-page-id" }],
-                  has_more: false,
-                },
-              },
-            },
-          ],
-        })
-      }),
-      http.patch("https://api.notion.com/v1/pages/:pageId", async ({ request }) => {
-        updatedPage = await request.json()
-        return HttpResponse.json({ object: "page", id: "existing-member-id", properties: {} })
-      }),
-    )
-
-    const result = await runNightlySync(env, async () => "test-access-token")
-
-    expect(result).toEqual({ synced: 1, failed: 0 })
-    expect(updatedPage).toEqual({
-      properties: {
-        Name: { title: [] },
-        Email: { email: "ada@example.com" },
-        Affiliation: { select: { name: "Community Member" } },
-      },
-    })
-    expect(sheetWrite).toEqual({
-      range: "'Check-ins'!B2:D2",
-      body: {
-        majorDimension: "ROWS",
-        values: [["", "ada@example.com", "Community Member"]],
-      },
-    })
-  })
-
-  it("uses newer Sheet details while preserving existing event relations", async () => {
-    let updatedPage: unknown
-    network.use(
-      ...sheetSortHandlers(),
-      http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
-        HttpResponse.json({
-          values: [
-            [
-              timestampForSheet(TEST_TIMESTAMP, "America/New_York"),
-              "Ada Lovelace",
-              "new@example.com",
-              "Community Member",
-              ADA_MEMBER_ID,
-            ],
-          ],
-        }),
-      ),
-      http.put("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
-        HttpResponse.json({ updatedRows: 1 }),
-      ),
-      http.post("https://api.notion.com/v1/data_sources/:dataSourceId/query", async ({ params, request }) => {
-        if (params.dataSourceId === env.NOTION_EVENTS_DATA_SOURCE_ID) {
-          return HttpResponse.json({
-            object: "list",
-            has_more: false,
-            next_cursor: null,
-            results: [{ object: "page", id: "new-event-id", properties: {} }],
-          })
-        }
-        const body = await request.json()
-        if (isRecord(body) && "filter" in body) {
-          expect(body.filter).toEqual({
-            property: "Member ID",
-            rich_text: { equals: ADA_MEMBER_ID },
-          })
-        }
-        return HttpResponse.json({
-          object: "list",
-          has_more: false,
-          next_cursor: null,
-          results: [
-            {
-              object: "page",
-              id: "existing-member-id",
-              last_edited_time: "2026-08-25T18:00:00.000Z",
-              properties: {
-                Name: { title: [{ plain_text: "Old Name" }] },
-                Email: { email: "ada@example.com" },
-                Affiliation: { select: { name: "Alumni" } },
-                "Member ID": { rich_text: [{ plain_text: ADA_MEMBER_ID }] },
-                "Events Attended": {
-                  id: "relation-property-id",
-                  type: "relation",
-                  relation: [{ id: "old-event-id" }],
-                  has_more: false,
-                },
-              },
-            },
-          ],
-        })
-      }),
-      http.patch("https://api.notion.com/v1/pages/:pageId", async ({ request }) => {
-        updatedPage = await request.json()
-        return HttpResponse.json({ object: "page", id: "existing-member-id", properties: {} })
-      }),
-    )
-
-    const result = await runNightlySync(env, async () => "test-access-token")
-
-    expect(result).toEqual({ synced: 1, failed: 0 })
-    expect(updatedPage).toEqual({
-      properties: {
-        Name: { title: [{ type: "text", text: { content: "Ada Lovelace" } }] },
-        Email: { email: "new@example.com" },
-        Affiliation: { select: { name: "Community Member" } },
-        "Events Attended": { relation: [{ id: "old-event-id" }, { id: "new-event-id" }] },
-      },
-    })
-  })
-
-  it("migrates a legacy email-only row using newer Notion details", async () => {
-    let updatedPage: unknown
-    const sheetWrites: { range: string; body: unknown }[] = []
-    network.use(
-      ...sheetSortHandlers(),
-      http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
-        HttpResponse.json({
-          values: [
-            [
-              timestampForSheet(TEST_TIMESTAMP, "America/New_York"),
-              "Old Name",
-              "ada@example.com",
-              "Community Member",
-            ],
-          ],
-        }),
-      ),
-      http.put(
-        "https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range",
-        async ({ params, request }) => {
-          sheetWrites.push({ range: String(params.range), body: await request.json() })
-          return HttpResponse.json({ updatedRows: 1 })
-        },
-      ),
-      http.post("https://api.notion.com/v1/data_sources/:dataSourceId/query", ({ params }) => {
-        if (params.dataSourceId === env.NOTION_EVENTS_DATA_SOURCE_ID) {
-          return HttpResponse.json({
-            object: "list",
-            has_more: false,
-            next_cursor: null,
-            results: [{ object: "page", id: "new-event-id", properties: {} }],
-          })
-        }
-        return HttpResponse.json({
-          object: "list",
-          has_more: false,
-          next_cursor: null,
-          results: [
-            {
-              object: "page",
-              id: "existing-member-id",
-              last_edited_time: "2026-08-26T00:00:00.000Z",
-              properties: {
-                Name: { title: [{ plain_text: "Ada Lovelace" }] },
-                Email: { email: "ada@example.com" },
-                Affiliation: { select: { name: "Graduate/Professional Student" } },
-                "Member ID": { rich_text: [{ plain_text: ADA_MEMBER_ID }] },
-                "Events Attended": {
-                  id: "relation-property-id",
-                  type: "relation",
-                  relation: [],
-                  has_more: false,
-                },
-              },
-            },
-          ],
-        })
-      }),
-      http.patch("https://api.notion.com/v1/pages/:pageId", async ({ request }) => {
-        updatedPage = await request.json()
-        return HttpResponse.json({ object: "page", id: "existing-member-id", properties: {} })
-      }),
-    )
-
-    const result = await runNightlySync(env, async () => "test-access-token")
-
-    expect(result).toEqual({ synced: 1, failed: 0 })
-    expect(updatedPage).toEqual({
-      properties: {
-        "Events Attended": { relation: [{ id: "new-event-id" }] },
-      },
-    })
-    expect(sheetWrites).toEqual([
-      {
-        range: "'Check-ins'!B2:D2",
-        body: {
-          majorDimension: "ROWS",
-          values: [
-            ["Ada Lovelace", "ada@example.com", "Graduate/Professional Student"],
-          ],
-        },
-      },
-      {
-        range: "'Check-ins'!E2",
-        body: { majorDimension: "ROWS", values: [[ADA_MEMBER_ID]] },
-      },
-    ])
-  })
-
-  it("reprocesses an already-related row without duplicating the relation", async () => {
-    let notionUpdates = 0
-    let sheetUpdates = 0
-    network.use(
-      ...sheetSortHandlers(),
-      http.get("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () =>
-        HttpResponse.json({
-          values: [
-            [
-              timestampForSheet(TEST_TIMESTAMP, "America/New_York"),
-              "Ada Lovelace",
-              "ada@example.com",
-              "Community Member",
-              ADA_MEMBER_ID,
-            ],
-          ],
-        }),
-      ),
-      http.put("https://sheets.googleapis.com/v4/spreadsheets/:spreadsheetId/values/:range", () => {
-        sheetUpdates += 1
-        return HttpResponse.json({ updatedRows: 1 })
-      }),
-      http.post("https://api.notion.com/v1/data_sources/:dataSourceId/query", ({ params }) => {
-        if (params.dataSourceId === env.NOTION_EVENTS_DATA_SOURCE_ID) {
-          return HttpResponse.json({
-            object: "list",
-            has_more: false,
-            next_cursor: null,
-            results: [{ object: "page", id: "event-page-id", properties: {} }],
-          })
-        }
-        return HttpResponse.json({
-          object: "list",
-          has_more: false,
-          next_cursor: null,
-          results: [
-            {
-              object: "page",
-              id: "existing-member-id",
-              last_edited_time: "2026-08-25T18:00:00.000Z",
-              properties: {
-                Name: { title: [{ plain_text: "Ada Lovelace" }] },
-                Email: { email: "ada@example.com" },
-                Affiliation: { select: { name: "Community Member" } },
-                "Member ID": { rich_text: [{ plain_text: ADA_MEMBER_ID }] },
-                "Events Attended": {
-                  id: "relation-property-id",
-                  type: "relation",
-                  relation: [{ id: "event-page-id" }],
-                  has_more: false,
-                },
-              },
-            },
-          ],
-        })
-      }),
-      http.patch("https://api.notion.com/v1/pages/:pageId", () => {
-        notionUpdates += 1
-        return HttpResponse.json({ object: "page", id: "existing-member-id", properties: {} })
-      }),
-    )
-
-    const result = await runNightlySync(env, async () => "test-access-token")
-
-    expect(result).toEqual({ synced: 1, failed: 0 })
-    expect(notionUpdates).toBe(0)
-    expect(sheetUpdates).toBe(0)
+    try {
+      await expect(runNightlySync(env, token)).resolves.toEqual({ synced: 0, failed: 0 })
+      expect(consoleError).toHaveBeenCalledOnce()
+    } finally {
+      consoleError.mockRestore()
+    }
   })
 })

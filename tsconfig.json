@@ -11,7 +11,7 @@
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "types": ["vite/client", "@cloudflare/vitest-plugin/types"],
+    "types": ["vite/client", "@cloudflare/vitest-plugin/types", "@cloudflare/workers-types"],
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
