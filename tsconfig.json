@@ -21,6 +21,7 @@
     }
   },
   "include": [
+    "src",
     "check-in/src",
     "check-in/worker",
     "check-in/test",
