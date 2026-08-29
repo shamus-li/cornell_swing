@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "swing-checkin-sync",
+  "account_id": "826a8805e6c445803da24e740d6912e3",
   "main": "check-in/worker/index.ts",
   "compatibility_date": "2026-08-26",
   "compatibility_flags": ["nodejs_compat"],
@@ -9,7 +10,7 @@
   "kv_namespaces": [
     {
       "binding": "MEMBER_CACHE",
-      "id": "e01aefd5a15f43d18dc7939c28987046"
+      "id": "694f8558f39b4980ac32b596cb92e858"
     }
   ],
   "ratelimits": [

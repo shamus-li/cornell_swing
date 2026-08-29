@@ -1,6 +1,7 @@
 import { isAffiliation, type Affiliation } from "../src/lib/checkin"
 import { findCachedMemberById, refreshMemberCache, searchCachedMembers } from "./cache"
 import {
+  type CheckinRow,
   dateKeyForSheetTimestamp,
   getGoogleAccessToken,
   readCheckins,
@@ -14,6 +15,7 @@ import { findOrCreateEventForDate, syncMemberAttendance } from "./notion"
 
 const MEMBER_SEARCH_PATH = "/check-in/api/members"
 const CHECKIN_PATH = "/check-in/api/checkins"
+export const ATTENDANCE_SYNC_STATE_KEY = "attendance-sync:v1"
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 type Attendee = {
   memberId: string | null
@@ -26,6 +28,35 @@ type AccessTokenProvider = (env: Env) => Promise<string>
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function checkinFingerprint(row: CheckinRow): string {
+  return JSON.stringify([row.timestamp, row.name, row.email, row.affiliation, row.memberId])
+}
+
+async function readAttendanceSyncState(env: Env): Promise<Set<string> | null> {
+  const value: unknown = await env.MEMBER_CACHE.get(ATTENDANCE_SYNC_STATE_KEY, "json")
+  if (value === null) return null
+  if (
+    !isRecord(value) ||
+    value.version !== 1 ||
+    !Array.isArray(value.fingerprints) ||
+    !value.fingerprints.every((fingerprint) => typeof fingerprint === "string")
+  ) {
+    throw new Error("Attendance sync state is invalid")
+  }
+  return new Set(value.fingerprints)
+}
+
+function sameFingerprints(left: Set<string>, right: Set<string>): boolean {
+  return left.size === right.size && [...left].every((fingerprint) => right.has(fingerprint))
+}
+
+async function writeAttendanceSyncState(env: Env, fingerprints: Set<string>): Promise<void> {
+  await env.MEMBER_CACHE.put(
+    ATTENDANCE_SYNC_STATE_KEY,
+    JSON.stringify({ version: 1, fingerprints: [...fingerprints] }),
+  )
 }
 
 function json(data: unknown, status = 200): Response {
@@ -127,14 +158,27 @@ export async function handleCheckin(
 async function syncAttendance(env: Env, accessToken: string): Promise<{
   synced: number
   failed: number
+  attempted: number
+  previousFingerprints: Set<string> | null
+  nextFingerprints: Set<string>
 }> {
   const rows = await readCheckins(env, accessToken)
+  const previousFingerprints = await readAttendanceSyncState(env)
+  const processedFingerprints = previousFingerprints ?? new Set<string>()
+  const nextFingerprints = new Set<string>()
   const events = new Map<string, string>()
   let synced = 0
   let failed = 0
+  let attempted = 0
 
   for (const row of rows) {
     if (row.timestamp === null || !row.email) continue
+    const fingerprint = checkinFingerprint(row)
+    if (processedFingerprints.has(fingerprint)) {
+      nextFingerprints.add(fingerprint)
+      continue
+    }
+    attempted += 1
 
     try {
       if (typeof row.timestamp !== "number" || !Number.isFinite(row.timestamp)) {
@@ -162,10 +206,15 @@ async function syncAttendance(env: Env, accessToken: string): Promise<{
         member.affiliation !== row.affiliation
       ) {
         await updateCheckinMemberDetails(env, accessToken, row.rowNumber, member)
+        row.name = member.name
+        row.email = member.email
+        row.affiliation = member.affiliation
       }
       if (member.id !== row.memberId) {
         await updateCheckinMemberId(env, accessToken, row.rowNumber, member.id)
+        row.memberId = member.id
       }
+      nextFingerprints.add(checkinFingerprint(row))
       synced += 1
     } catch (error) {
       failed += 1
@@ -178,7 +227,8 @@ async function syncAttendance(env: Env, accessToken: string): Promise<{
       )
     }
   }
-  return { synced, failed }
+
+  return { synced, failed, attempted, previousFingerprints, nextFingerprints }
 }
 
 export async function runNightlySync(
@@ -186,12 +236,32 @@ export async function runNightlySync(
   getAccessToken: AccessTokenProvider = getGoogleAccessToken,
 ): Promise<{ synced: number; failed: number }> {
   const accessToken = await getAccessToken(env)
-  const result = await syncAttendance(env, accessToken)
+  const {
+    attempted,
+    previousFingerprints,
+    nextFingerprints,
+    ...result
+  } = await syncAttendance(env, accessToken)
   await refreshMemberCache(env)
-  try {
-    await sortCheckins(env, accessToken)
-  } catch (error) {
-    console.error(JSON.stringify({ message: "check-in sort failed", error: errorMessage(error) }))
+  let sortSucceeded = true
+  if (attempted > 0) {
+    try {
+      await sortCheckins(env, accessToken)
+    } catch (error) {
+      sortSucceeded = false
+      console.error(JSON.stringify({ message: "check-in sort failed", error: errorMessage(error) }))
+    }
+  }
+  if (
+    sortSucceeded &&
+    (previousFingerprints === null || !sameFingerprints(previousFingerprints, nextFingerprints))
+  ) {
+    await writeAttendanceSyncState(env, nextFingerprints)
+    if (previousFingerprints === null) {
+      console.log(
+        JSON.stringify({ message: "attendance sync state initialized", rows: nextFingerprints.size }),
+      )
+    }
   }
   return result
 }

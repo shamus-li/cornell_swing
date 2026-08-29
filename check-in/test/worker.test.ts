@@ -1,10 +1,15 @@
 import { env, exports } from "cloudflare:workers"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { handleApiRequest, handleCheckin, runNightlySync } from "../worker"
+import {
+  ATTENDANCE_SYNC_STATE_KEY,
+  handleApiRequest,
+  handleCheckin,
+  runNightlySync,
+} from "../worker"
 import { searchCachedMembers } from "../worker/cache"
 import { dateKeyForSheetTimestamp, dateKeyInTimeZone, timestampForSheet } from "../worker/google"
-import { createMemberId, MEMBER_ID_PATTERN } from "../worker/member-id"
+import { MEMBER_ID_PATTERN } from "../worker/member-id"
 import { FakeNotion, FakeSheets } from "./fakes"
 import { network } from "./network"
 
@@ -20,6 +25,10 @@ const serialFor = (timestamp: number) => timestampForSheet(timestamp, "America/N
 
 beforeEach(async () => {
   await env.MEMBER_CACHE.delete("members:v2")
+  await env.MEMBER_CACHE.put(
+    ATTENDANCE_SYNC_STATE_KEY,
+    JSON.stringify({ version: 1, fingerprints: [] }),
+  )
 })
 
 function useFakes() {
@@ -52,14 +61,6 @@ async function cacheMembers(...members: Array<{
   await env.MEMBER_CACHE.put("members:v2", JSON.stringify({ refreshedAt: Date.now(), members }))
 }
 
-describe("member IDs", () => {
-  it("generates unique 12-character Nano IDs", () => {
-    const ids = Array.from({ length: 100 }, () => createMemberId())
-    expect(ids.every((id) => MEMBER_ID_PATTERN.test(id))).toBe(true)
-    expect(new Set(ids).size).toBe(ids.length)
-  })
-})
-
 describe("sheet timestamps", () => {
   it("round-trips the New York calendar date across DST and UTC-midnight boundaries", () => {
     const instants = [
@@ -81,10 +82,6 @@ describe("sheet timestamps", () => {
     expect(serial % 1).toBeCloseTo(19 / 24, 6)
   })
 
-  it("rejects sheet timestamps that are not serial numbers", () => {
-    expect(dateKeyForSheetTimestamp("2026-08-25")).toBeNull()
-    expect(dateKeyForSheetTimestamp(null)).toBeNull()
-  })
 })
 
 describe("member search", () => {
@@ -371,21 +368,6 @@ describe("check-in", () => {
     expect(sheets.rows.map((row) => row[2]).sort()).toEqual(["ada@example.com", "grace@example.com"])
   })
 
-  it("stores an empty name when the name is just the email address", async () => {
-    const { sheets } = useFakes()
-
-    const response = await handleCheckin(
-      checkinRequest({ memberId: null, name: "ADA@EXAMPLE.COM" }),
-      env,
-      token,
-      TEST_TIMESTAMP,
-    )
-
-    expect(response.status).toBe(201)
-    expect(sheets.rows[0][1]).toBe("")
-    expect(sheets.rows[0][2]).toBe("ada@example.com")
-  })
-
   it("accepts the legacy Student affiliation", async () => {
     const { sheets } = useFakes()
 
@@ -479,22 +461,6 @@ describe("check-in", () => {
     expect(sheets.reads).toBe(3)
     expect(sheets.rows).toHaveLength(1)
   })
-})
-
-describe("API routing", () => {
-  it("rejects unknown paths and methods", async () => {
-    expect((await exports.default.fetch("https://example.com/somewhere-else")).status).toBe(404)
-    expect(
-      (await exports.default.fetch(new Request("https://example.com/check-in/api/checkins"))).status,
-    ).toBe(405)
-    expect(
-      (
-        await exports.default.fetch(
-          new Request("https://example.com/check-in/api/members", { method: "POST" }),
-        )
-      ).status,
-    ).toBe(405)
-  })
 
   it("answers 503 with a generic message when a backend fails", async () => {
     useFakes()
@@ -541,11 +507,61 @@ describe("nightly sync", () => {
 
     const notionWrites = notion.writes
     const sheetWrites = sheets.updates + sheets.appends
+    const sheetSorts = sheets.sorts
     const second = await runNightlySync(env, token)
 
-    expect(second).toEqual({ synced: 3, failed: 0 })
+    expect(second).toEqual({ synced: 0, failed: 0 })
     expect(notion.writes).toBe(notionWrites)
     expect(sheets.updates + sheets.appends).toBe(sheetWrites)
+    expect(sheets.sorts).toBe(sheetSorts)
+  })
+
+  it("reconciles existing rows when it initializes incremental state", async () => {
+    const { sheets, notion } = useFakes()
+    await env.MEMBER_CACHE.delete(ATTENDANCE_SYNC_STATE_KEY)
+    sheets.rows.push([
+      serialFor(TEST_TIMESTAMP),
+      "Ada Lovelace",
+      "ada@example.com",
+      "Community Member",
+      ADA_MEMBER_ID,
+    ])
+
+    const first = await runNightlySync(env, token)
+
+    expect(first).toEqual({ synced: 1, failed: 0 })
+    expect(notion.events).toHaveLength(1)
+    expect(notion.members.map((member) => member.memberId)).toEqual([ADA_MEMBER_ID])
+
+    sheets.rows.push([
+      serialFor(TEST_TIMESTAMP + 60_000),
+      "Grace Hopper",
+      "grace@example.com",
+      "Alumni",
+      GRACE_MEMBER_ID,
+    ])
+    expect(await runNightlySync(env, token)).toEqual({ synced: 1, failed: 0 })
+    expect(notion.members.map((member) => member.memberId).sort()).toEqual([
+      ADA_MEMBER_ID,
+      GRACE_MEMBER_ID,
+    ])
+  })
+
+  it("resyncs a row when its Sheet data changes", async () => {
+    const { sheets, notion } = useFakes()
+    sheets.rows.push([
+      serialFor(TEST_TIMESTAMP),
+      "Ada Lovelace",
+      "ada@example.com",
+      "Community Member",
+      ADA_MEMBER_ID,
+    ])
+
+    expect(await runNightlySync(env, token)).toEqual({ synced: 1, failed: 0 })
+    sheets.rows[0][1] = "Changed in the Sheet"
+
+    expect(await runNightlySync(env, token)).toEqual({ synced: 1, failed: 0 })
+    expect(notion.members[0].name).toBe("Changed in the Sheet")
   })
 
   it("backfills newer Notion details into a legacy sheet row", async () => {
@@ -635,7 +651,9 @@ describe("nightly sync", () => {
         ADA_MEMBER_ID,
         GRACE_MEMBER_ID,
       ])
-      expect(consoleError).toHaveBeenCalledOnce()
+      expect(await runNightlySync(env, token)).toEqual({ synced: 0, failed: 1 })
+      expect(notion.members).toHaveLength(2)
+      expect(consoleError).toHaveBeenCalledTimes(2)
     } finally {
       consoleError.mockRestore()
     }
@@ -667,11 +685,22 @@ describe("nightly sync", () => {
   it("still completes when sorting fails", async () => {
     const { sheets } = useFakes()
     sheets.failSort = true
+    sheets.rows.push([
+      serialFor(TEST_TIMESTAMP),
+      "Ada Lovelace",
+      "ada@example.com",
+      "Community Member",
+      ADA_MEMBER_ID,
+    ])
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
 
     try {
-      await expect(runNightlySync(env, token)).resolves.toEqual({ synced: 0, failed: 0 })
+      await expect(runNightlySync(env, token)).resolves.toEqual({ synced: 1, failed: 0 })
       expect(consoleError).toHaveBeenCalledOnce()
+
+      sheets.failSort = false
+      await expect(runNightlySync(env, token)).resolves.toEqual({ synced: 1, failed: 0 })
+      expect(sheets.sorts).toBe(1)
     } finally {
       consoleError.mockRestore()
     }

@@ -4,9 +4,9 @@ import { siteContent } from "./content"
 
 export default function App() {
   return (
-    <div id="top">
+    <div>
       <header className="site-header">
-        <a className="site-name" href="#top">
+        <a className="site-name" href="/">
           <img
             src={siteContent.brand.logoUrl}
             alt=""

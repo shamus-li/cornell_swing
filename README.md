@@ -32,3 +32,9 @@ npm run preview
 The Vite development server serves both `/` and `/check-in/`. `npm run build` type-checks the project and writes both pages to `dist/`.
 
 Use `npm run dev:pages` when the local Cloudflare Pages Function and check-in Worker binding are needed. Deploy the Pages site with `npm run deploy:pages`; deploy the nightly synchronization Worker separately with `npm run deploy:sync`.
+
+## Nightly check-in sync
+
+The nightly Worker stores fingerprints of the current check-in rows under the `attendance-sync:v1` KV key. It sends only new or edited rows to Notion, retries failed rows, and sorts the Sheet only after processing changes.
+
+The first run after introducing or resetting that KV key reconciles the existing Sheet once before switching to incremental processing.
