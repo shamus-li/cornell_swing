@@ -18,7 +18,7 @@ describe("special events", () => {
     ])
 
     expect(html.match(/class="special-event-row/g)).toHaveLength(2)
-    expect(html.match(/class="special-event-activity"/g)).toHaveLength(3)
+    expect(html.match(/class="special-event-activity"/g)).toHaveLength(2)
     expect(html.indexOf("Crash course")).toBeLessThan(html.indexOf("Live music"))
     expect(html.indexOf("Live music")).toBeLessThan(html.indexOf("November dance"))
     expect(html).toContain("October dance")
@@ -34,12 +34,14 @@ describe("special events", () => {
     expect(html.match(/class="special-event-row/g)).toHaveLength(2)
   })
 
-  it("shows a shared location once and keeps readable times", () => {
+  it("shares event metadata when only the first activity provides it", () => {
     const html = render([
-      { Date: "10/17/2026", Time: "6:15–7:00 PM", Activity: "Crash course", Location: "Memorial Room" },
-      { Date: "10/17/2026", Time: "7:00–10:00 PM", Activity: "Live music", Location: "Memorial Room" },
+      { Date: "10/17/2026", Title: "October dance", Time: "6:15–7:00 PM", Activity: "Crash course", Location: "Memorial Room", URL: "https://example.com/dance" },
+      { Date: "10/17/2026", Time: "7:00–10:00 PM", Activity: "Live music" },
     ])
 
+    expect(html.match(/October dance/g)).toHaveLength(1)
+    expect(html).toContain('<a href="https://example.com/dance">October dance</a>')
     expect(html.match(/Memorial Room/g)).toHaveLength(1)
     expect(html.indexOf("Memorial Room")).toBeLessThan(html.indexOf("6:15–7:00 PM"))
     expect(html).toContain("7:00–10:00 PM")
@@ -48,18 +50,33 @@ describe("special events", () => {
     expect(html).not.toContain("Location TBA")
   })
 
-  it("shows different or unknown locations with their activities", () => {
+  it("uses the first known location for the whole event", () => {
     const html = render([
-      { Date: "10/17/2026", Activity: "Lesson", Location: "Dance Studio" },
-      { Date: "10/17/2026", Activity: "Social", Location: "Memorial Room" },
-      { Date: "10/17/2026", Activity: "Afterparty", Location: "" },
+      { Date: "10/17/2026", Activity: "Lesson", Location: "TBA" },
+      { Date: "10/17/2026", Activity: "Social", Location: "Dance Studio" },
+      { Date: "10/17/2026", Activity: "Afterparty", Location: "Memorial Room" },
     ])
     const activities = html.match(/<li\b.*?<\/li>/g)!
 
     expect(activities).toHaveLength(3)
-    expect(activities[0]).toContain("Dance Studio")
-    expect(activities[1]).toContain("Memorial Room")
-    expect(activities[2]).toContain("Location TBA")
+    expect(html.match(/Dance Studio/g)).toHaveLength(1)
+    expect(html).not.toContain("Memorial Room")
+    expect(html).not.toContain("Location TBA")
+    expect(activities.join("")).not.toContain("Dance Studio")
+  })
+
+  it("does not share metadata between different dates", () => {
+    const html = render([
+      { Date: "10/17/2026", Title: "October dance", Location: "Memorial Room", URL: "https://example.com/dance" },
+      { Date: "11/13/2026", Activity: "Social" },
+    ])
+    const events = html.match(/<article\b.*?<\/article>/g)!
+
+    expect(events).toHaveLength(2)
+    expect(events[1]).toContain('<h3 class="special-event-title">TBA</h3>')
+    expect(events[1]).not.toContain('class="special-event-location"')
+    expect(events[1]).not.toContain("Memorial Room")
+    expect(events[1]).not.toContain("<a ")
   })
 
   it("uses TBA for blank titles and keeps date-only events", () => {
@@ -67,8 +84,37 @@ describe("special events", () => {
 
     expect(html).toContain('<h3 class="special-event-title">TBA</h3>')
     expect(html).toContain("11.13")
-    expect(html).toContain("Time TBA")
-    expect(html).toContain("Location TBA")
+    expect(html).not.toContain('class="special-event-time"')
+    expect(html).not.toContain('class="special-event-location"')
+    expect(html).not.toContain("<ul")
+  })
+
+  it.each(["", "TBA", "tba"])("hides unknown location and time values: %j", (value) => {
+    const html = render([{ Date: "11/13/2026", Location: value, Time: value }])
+
+    expect(html).toContain('<h3 class="special-event-title">TBA</h3>')
+    expect(html).not.toContain('class="special-event-location"')
+    expect(html).not.toContain('class="special-event-time"')
+    expect(html).not.toContain("<ul")
+  })
+
+  it("keeps an activity and known location when its time is TBA", () => {
+    const html = render([
+      { Date: "10/17/2026", Location: "Memorial Room", Time: "TBA", Activity: "Live music" },
+      { Date: "10/17/2026", Time: "TBA" },
+    ])
+
+    expect(html).toContain('<p class="special-event-location">Memorial Room</p>')
+    expect(html).toContain('<li class="special-event-activity"><p>Live music</p></li>')
+    expect(html).not.toContain('class="special-event-time"')
+    expect(html.match(/<li\b/g)).toHaveLength(1)
+  })
+
+  it("keeps a known time when the location is TBA", () => {
+    const html = render([{ Date: "10/17/2026", Location: "TBA", Time: "7:00–10:00 PM" }])
+
+    expect(html).toContain('<span class="special-event-time">7:00–10:00 PM</span>')
+    expect(html).not.toContain('class="special-event-location"')
   })
 
   it("uses the first nonblank title and URL for an event", () => {
@@ -105,14 +151,14 @@ describe("special events", () => {
   })
 })
 
-it("renders weekly lesson labels without bold emphasis", () => {
+it("bolds weekly lesson labels but not their descriptions", () => {
   const html = renderToStaticMarkup(
     <Schedule title="Schedule" times="Lesson 8:00–9:00 PM" status="loaded" events={[
       { Date: "10/17/2026", Location: "Big Red Barn", "Beginner Program": "Basics", "Advanced Program": "Charleston" },
     ]} />,
   )
 
-  expect(html).toContain("Beginner: Basics")
-  expect(html).toContain("Advanced: Charleston")
-  expect(html).not.toContain("<strong")
+  expect(html).toContain("<strong>Beginner: </strong>Basics")
+  expect(html).toContain("<strong>Advanced: </strong>Charleston")
+  expect(html.match(/<strong>/g)).toHaveLength(2)
 })

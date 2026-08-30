@@ -151,7 +151,8 @@ function ScheduleRow({ event }: { event: SheetRow }) {
         {programs.length ? (
           programs.map(({ label, value }) => (
             <p key={label}>
-              {label}: {value}
+              <strong>{label}: </strong>
+              {value}
             </p>
           ))
         ) : (
@@ -206,8 +207,15 @@ function SpecialEventRow({ activities }: { activities: SheetRow[] }) {
   const date = activities[0].Date
   const title = activities.find((activity) => activity.Title)?.Title || "TBA"
   const url = activities.find((activity) => activity.URL)?.URL
-  const location = activities[0].Location
-  const sharedLocation = activities.every((activity) => activity.Location === location)
+  const location = activities.find(
+    (activity) => activity.Location && activity.Location.toUpperCase() !== "TBA",
+  )?.Location
+  const schedule = activities
+    .map(({ Time, Activity }) => ({
+      time: Time?.toUpperCase() === "TBA" ? "" : Time,
+      activity: Activity,
+    }))
+    .filter(({ time, activity }) => time || activity)
 
   return (
     <article
@@ -220,24 +228,17 @@ function SpecialEventRow({ activities }: { activities: SheetRow[] }) {
         <h3 className="special-event-title">
           {url ? <a href={url}>{title}</a> : title}
         </h3>
-        {sharedLocation && (
-          <p className="special-event-location">{location || "Location TBA"}</p>
+        {location && <p className="special-event-location">{location}</p>}
+        {schedule.length > 0 && (
+          <ul className="special-event-activities">
+            {schedule.map(({ time, activity }, index) => (
+              <li className="special-event-activity" key={index}>
+                {time && <span className="special-event-time">{time}</span>}
+                {activity && <p>{activity}</p>}
+              </li>
+            ))}
+          </ul>
         )}
-        <ul className="special-event-activities">
-          {activities.map((activity, index) => (
-            <li className="special-event-activity" key={index}>
-              <span className="special-event-time">{activity.Time || "Time TBA"}</span>
-              <div>
-                {activity.Activity && <p>{activity.Activity}</p>}
-                {!sharedLocation && (
-                  <p className="special-event-location">
-                    {activity.Location || "Location TBA"}
-                  </p>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
       </div>
     </article>
   )
