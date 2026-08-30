@@ -72,7 +72,7 @@ export const siteContent = {
     url: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTMACS7bEK5TUm1wmzyu65DBGkbGSegPM8Vj5NqYywksSDJeSejUjTOmvFSbz_pQ70eMvOOH1SMW53G/pub?gid=0&single=true&output=csv",
   },
   specialEvents: {
-    title: "Special Events",
+    title: "Special events",
     url: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTMACS7bEK5TUm1wmzyu65DBGkbGSegPM8Vj5NqYywksSDJeSejUjTOmvFSbz_pQ70eMvOOH1SMW53G/pub?gid=1922996257&single=true&output=csv",
   },
   etiquette: {
