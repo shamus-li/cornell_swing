@@ -4,7 +4,7 @@ type SheetRow = Record<string, string>
 type LoadStatus = "loading" | "loaded" | "error"
 type EventsState = { events: SheetRow[]; status: LoadStatus }
 
-function parseCsv(csv: string): SheetRow[] {
+export function parseCsv(csv: string): SheetRow[] {
   const rows: string[][] = []
   let row: string[] = []
   let value = ""

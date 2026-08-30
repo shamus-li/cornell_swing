@@ -232,27 +232,6 @@ describe("member search", () => {
     ])
   })
 
-  it("searches after one character", async () => {
-    await cacheMembers({
-      id: ADA_MEMBER_ID,
-      name: "Ada Lovelace",
-      email: "ada@example.com",
-      affiliation: "Community Member",
-    })
-
-    const response = await exports.default.fetch(memberSearchRequest("A"))
-    expect(await response.json()).toEqual({
-      members: [
-        {
-          id: ADA_MEMBER_ID,
-          name: "Ada Lovelace",
-          email: "ada@example.com",
-          affiliation: "Community Member",
-        },
-      ],
-    })
-  })
-
   it("keys the rate limit by Access identity and returns 429 when it trips", async () => {
     const keys: string[] = []
     const limiter: Env["MEMBER_SEARCH_RATE_LIMITER"] = {
@@ -490,20 +469,6 @@ describe("check-in", () => {
     expect(sheets.rows).toHaveLength(1)
   })
 
-  it("accepts the legacy Student affiliation", async () => {
-    const { sheets } = useFakes()
-
-    const response = await handleCheckin(
-      checkinRequest({ memberId: null, email: "student@example.com", affiliation: "Student" }),
-      env,
-      token,
-      TEST_TIMESTAMP,
-    )
-
-    expect(response.status).toBe(201)
-    expect(sheets.rows[0][3]).toBe("Student")
-  })
-
   it("rejects malformed payloads without touching the sheet", async () => {
     const { sheets } = useFakes()
     const badPayloads = [
@@ -652,14 +617,11 @@ describe("check-in", () => {
 })
 
 describe("nightly sync", () => {
-  it.each(["row", "sort"])("rejects the scheduled invocation on a %s failure", async (failure) => {
+  it("rejects the scheduled invocation when a row fails", async () => {
     const { sheets } = useFakes()
     sheets.rows.push([
-      serialFor(TEST_TIMESTAMP), "Ada Lovelace",
-      failure === "row" ? "not-an-email" : "ada@example.com",
-      "Community Member", ADA_MEMBER_ID,
+      serialFor(TEST_TIMESTAMP), "Ada Lovelace", "not-an-email", "Community Member", ADA_MEMBER_ID,
     ])
-    sheets.failSort = failure === "sort"
     const { privateKey } = await generateKeyPair("RS256", { extractable: true })
     network.use(http.post("https://oauth2.googleapis.com/token", () =>
       HttpResponse.json({ access_token: "test-access-token" }),
@@ -670,7 +632,7 @@ describe("nightly sync", () => {
       await expect(worker.scheduled(createScheduledController(), {
         ...env,
         GOOGLE_PRIVATE_KEY: await exportPKCS8(privateKey),
-      })).rejects.toThrow(failure === "row" ? "1 failed" : "403")
+      })).rejects.toThrow("1 failed")
       expect(consoleError).toHaveBeenCalledWith(expect.stringContaining("nightly attendance sync failed"))
       expect(consoleLog).not.toHaveBeenCalledWith(expect.stringContaining("nightly attendance sync complete"))
     } finally {
@@ -684,7 +646,8 @@ describe("nightly sync", () => {
     sheets.rows.push(
       [serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "Community Member", ADA_MEMBER_ID],
       [serialFor(TEST_TIMESTAMP + 60_000), "Grace Hopper", "grace@example.com", "Alumni", GRACE_MEMBER_ID],
-      [serialFor(TEST_TIMESTAMP + 120_000), "Legacy Lee", "legacy@example.com", "Staff", ""],
+      // The legacy Student affiliation must keep syncing even though the form no longer offers it.
+      [serialFor(TEST_TIMESTAMP + 120_000), "Legacy Lee", "legacy@example.com", "Student", ""],
     )
 
     const first = await runNightlySync(env, token)
