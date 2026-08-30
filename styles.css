@@ -344,7 +344,7 @@ h3 {
 
 .special-event-activity {
   display: grid;
-  grid-template-columns: 104px minmax(0, 1fr);
+  grid-template-columns: 120px minmax(0, 1fr);
   gap: 8px;
 }
 
