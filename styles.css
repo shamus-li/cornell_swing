@@ -55,7 +55,7 @@ body {
   font-family: var(--sans);
   font-size: 16px;
   font-weight: 450;
-  line-height: 1.55;
+  line-height: 1.45;
 }
 
 a {
@@ -287,7 +287,7 @@ h3 {
 
 .schedule-row,
 .special-event-row {
-  padding: 12px 0;
+  padding: 16px 0;
   border-bottom: 1px solid var(--line);
 }
 
@@ -334,7 +334,7 @@ h3 {
 }
 
 .special-event-activities {
-  margin: 0;
+  margin: 4px 0 0;
   padding: 0;
   list-style: none;
   font-size: 0.9rem;
@@ -347,7 +347,7 @@ h3 {
 }
 
 .special-event-activity + .special-event-activity {
-  margin-top: 8px;
+  margin-top: 4px;
 }
 
 .special-event-activity p {
@@ -377,7 +377,7 @@ h3 {
 
 .schedule-status {
   margin: 0;
-  padding: 12px 0;
+  padding: 16px 0;
 }
 
 .etiquette h2,
@@ -476,13 +476,25 @@ h3 {
     display: none;
   }
 
+  .schedule-times {
+    margin-bottom: 16px;
+  }
+
+  .special-events-list {
+    margin-top: 16px;
+  }
+
   .schedule-row {
     display: block;
   }
 
   .special-event-row {
-    grid-template-columns: 76px minmax(0, 1fr);
-    gap: 16px;
+    display: block;
+  }
+
+  .special-event-date {
+    display: block;
+    margin-bottom: 4px;
   }
 
   .special-event-activity {
