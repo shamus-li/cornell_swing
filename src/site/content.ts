@@ -68,7 +68,7 @@ export const siteContent = {
   },
   schedule: {
     title: "Fall 2026 schedule",
-    times: "Lesson 8–9 PM · Social dance 9–10 PM",
+    times: "Lesson 8:00–9:00 PM · Social dance 9:00–10:00 PM",
     url: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTMACS7bEK5TUm1wmzyu65DBGkbGSegPM8Vj5NqYywksSDJeSejUjTOmvFSbz_pQ70eMvOOH1SMW53G/pub?gid=0&single=true&output=csv",
   },
   specialEvents: {

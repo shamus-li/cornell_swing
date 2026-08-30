@@ -36,13 +36,14 @@ describe("special events", () => {
 
   it("shows a shared location once and keeps readable times", () => {
     const html = render([
-      { Date: "10/17/2026", Time: "6:15–7 PM", Activity: "Crash course", Location: "Memorial Room" },
-      { Date: "10/17/2026", Time: "7–10 PM", Activity: "Live music", Location: "Memorial Room" },
+      { Date: "10/17/2026", Time: "6:15–7:00 PM", Activity: "Crash course", Location: "Memorial Room" },
+      { Date: "10/17/2026", Time: "7:00–10:00 PM", Activity: "Live music", Location: "Memorial Room" },
     ])
 
     expect(html.match(/Memorial Room/g)).toHaveLength(1)
-    expect(html.indexOf("Memorial Room")).toBeLessThan(html.indexOf("6:15–7 PM"))
-    expect(html).toContain("7–10 PM")
+    expect(html.indexOf("Memorial Room")).toBeLessThan(html.indexOf("6:15–7:00 PM"))
+    expect(html).toContain("7:00–10:00 PM")
+    expect(html).toContain('<p class="special-event-activity-title">Live music</p>')
     expect(html).not.toContain("TBA")
   })
 

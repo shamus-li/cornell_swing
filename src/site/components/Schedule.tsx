@@ -231,7 +231,9 @@ function SpecialEventRow({ activities }: { activities: SheetRow[] }) {
             <li className="special-event-activity" key={index}>
               <span className="special-event-time">{activity.Time || "Time TBA"}</span>
               <div>
-                {activity.Activity && <p>{activity.Activity}</p>}
+                {activity.Activity && (
+                  <p className="special-event-activity-title">{activity.Activity}</p>
+                )}
                 {!sharedLocation && (
                   <p className="special-event-location">
                     {activity.Location || "Location TBA"}

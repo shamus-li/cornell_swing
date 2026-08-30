@@ -357,8 +357,11 @@ h3 {
   margin: 0;
 }
 
-.special-event-time {
+.special-event-activity-title {
   font-weight: 650;
+}
+
+.special-event-time {
   font-variant-numeric: tabular-nums;
 }
 
