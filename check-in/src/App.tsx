@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react"
 
 import logoUrl from "../../assets/shoe-logo.png"
+import waiverQrUrl from "../../assets/waiver-qr.png"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -26,6 +27,7 @@ type MembersResponse = {
 
 const MEMBER_SEARCH_DELAY_MS = 75
 const MEMBER_SEARCH_CACHE_LIMIT = 12
+const WAIVER_URL = "https://cglink.me/2ee/s96437"
 
 function memberSearchKey(query: string): string {
   return query.toLocaleLowerCase()
@@ -52,6 +54,42 @@ function MemberResults() {
   )
 }
 
+function WaiverCallout() {
+  return (
+    <aside
+      className="flex w-full flex-col items-center gap-5 rounded-lg border bg-muted p-5 text-center sm:flex-row sm:gap-6 sm:p-6 sm:text-left"
+      aria-labelledby="waiver-title"
+    >
+      <div className="min-w-0 flex-1">
+        <h2 id="waiver-title" className="font-sans text-lg leading-tight font-semibold">
+          Before you dance
+        </h2>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          Please complete the{" "}
+          <a
+            className="font-medium text-foreground underline underline-offset-4"
+            href={WAIVER_URL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Physical Activity Waiver
+          </a>
+          .
+        </p>
+      </div>
+      <a
+        className="shrink-0 rounded-sm bg-white p-1"
+        href={WAIVER_URL}
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Open the physical activity waiver"
+      >
+        <img className="size-24" src={waiverQrUrl} width="444" height="444" alt="" />
+      </a>
+    </aside>
+  )
+}
+
 export default function App() {
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
@@ -61,7 +99,11 @@ export default function App() {
   const [memberSearchOpen, setMemberSearchOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState("")
-  const [confirmation, setConfirmation] = useState<string | null>(null)
+  const [confirmation, setConfirmation] = useState<string | null>(() =>
+    import.meta.env.DEV && new URLSearchParams(window.location.search).get("preview") === "success"
+      ? "Checked in!"
+      : null,
+  )
   const memberSearchCache = useRef(new Map<string, Member[]>())
 
   const query = name.trim()
@@ -220,9 +262,10 @@ export default function App() {
 
   if (confirmation) {
     return (
-      <main className="mx-auto flex min-h-svh w-full max-w-[620px] flex-col items-center px-5 pt-16 text-center">
+      <main className="mx-auto flex min-h-svh w-full max-w-[540px] flex-col items-center justify-center gap-6 px-5 py-12 text-center sm:gap-8">
         <h1 className="text-[2rem] leading-tight font-bold">{confirmation}</h1>
-        <Button className="mt-6 h-13 px-5 text-base" onClick={resetForm}>
+        <WaiverCallout />
+        <Button className="h-13 px-5 text-base" onClick={resetForm}>
           Check in another person
         </Button>
       </main>
