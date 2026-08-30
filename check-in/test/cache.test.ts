@@ -24,7 +24,7 @@ describe("interactive member search", () => {
       }),
     )
 
-    const results = await searchCachedMembers(env, "sam", { allowStale: true })
+    const results = await searchCachedMembers(env, "sam")
 
     expect(results.map((member) => member.id)).toEqual(["Stale_000001"])
   })

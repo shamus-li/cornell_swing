@@ -1,8 +1,13 @@
 import { HeroCarousel } from "./components/HeroCarousel"
-import { Schedule, SpecialEvents } from "./components/Schedule"
+import { Schedule, SpecialEvents, useScheduleData } from "./components/Schedule"
 import { siteContent } from "./content"
 
 export default function App() {
+  const { schedule, specialEvents } = useScheduleData(
+    siteContent.schedule.url,
+    siteContent.specialEvents.url,
+  )
+
   return (
     <div>
       <header className="site-header">
@@ -38,8 +43,12 @@ export default function App() {
           <HeroCarousel />
         </section>
 
-        <Schedule {...siteContent.schedule} />
-        <SpecialEvents {...siteContent.specialEvents} />
+        <Schedule
+          title={siteContent.schedule.title}
+          times={siteContent.schedule.times}
+          {...schedule}
+        />
+        <SpecialEvents title={siteContent.specialEvents.title} {...specialEvents} />
 
         <section
           id="etiquette"

@@ -89,8 +89,10 @@ export default function App() {
     let active = true
     const timeout = window.setTimeout(async () => {
       try {
-        const response = await fetch(`api/members?q=${encodeURIComponent(query)}`, {
-          headers: { Accept: "application/json" },
+        const response = await fetch("api/members", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ q: query }),
           signal: controller.signal,
         })
         if (!response.ok) throw new Error(`Member request failed with ${response.status}`)

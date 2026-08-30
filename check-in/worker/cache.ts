@@ -2,10 +2,8 @@ import { isAffiliation, type Member } from "../src/lib/checkin"
 import { listMembers } from "./notion"
 
 const MEMBER_CACHE_KEY = "members:v2"
-const MEMBER_CACHE_MAX_AGE_MS = 15 * 60 * 1000
 
 type MemberSnapshot = {
-  refreshedAt: number
   members: Member[]
 }
 
@@ -26,37 +24,28 @@ function isMember(value: unknown): value is Member {
 function isMemberSnapshot(value: unknown): value is MemberSnapshot {
   return (
     isRecord(value) &&
-    typeof value.refreshedAt === "number" &&
-    Number.isFinite(value.refreshedAt) &&
     Array.isArray(value.members) &&
     value.members.every(isMember)
   )
 }
 
-export async function refreshMemberCache(env: Env, refreshedAt = Date.now()): Promise<MemberSnapshot> {
-  const snapshot = { refreshedAt, members: await listMembers(env) }
+export async function refreshMemberCache(env: Env): Promise<MemberSnapshot> {
+  const snapshot = { members: await listMembers(env) }
   await env.MEMBER_CACHE.put(MEMBER_CACHE_KEY, JSON.stringify(snapshot))
   return snapshot
 }
 
-async function currentMemberSnapshot(env: Env, allowStale = false): Promise<MemberSnapshot> {
+async function currentMemberSnapshot(env: Env): Promise<MemberSnapshot> {
   const cached: unknown = await env.MEMBER_CACHE.get(MEMBER_CACHE_KEY, "json")
-  if (
-    isMemberSnapshot(cached) &&
-    (allowStale || Date.now() - cached.refreshedAt < MEMBER_CACHE_MAX_AGE_MS)
-  ) {
-    return cached
-  }
-  return refreshMemberCache(env)
+  return isMemberSnapshot(cached) ? cached : refreshMemberCache(env)
 }
 
 export async function searchCachedMembers(
   env: Env,
   query: string,
-  options: { allowStale?: boolean } = {},
 ): Promise<Member[]> {
   const normalizedQuery = normalizeSearchValue(query)
-  const snapshot = await currentMemberSnapshot(env, options.allowStale)
+  const snapshot = await currentMemberSnapshot(env)
   return snapshot.members
     .map((member) => ({ member, score: memberSearchScore(member, normalizedQuery) }))
     .filter((result): result is { member: Member; score: number } => result.score !== null)
@@ -80,7 +69,10 @@ function memberSearchScore(member: Member, query: string): number | null {
   return null
 }
 
-export async function findCachedMemberById(env: Env, memberId: string): Promise<Member | null> {
+export async function findCachedMemberById(
+  env: Env,
+  memberId: string,
+): Promise<Member | null> {
   const snapshot = await currentMemberSnapshot(env)
   return snapshot.members.find((member) => member.id === memberId) ?? null
 }

@@ -17,10 +17,23 @@ export class FakeSheets {
   updates = 0
   sorts = 0
   transientFailures = 0
+  failAppends = false
   failSort = false
 
   handlers() {
     return [
+      http.get(/https:\/\/sheets\.googleapis\.com\/v4\/spreadsheets\/[^/]+\/values:batchGet/, () => {
+        this.reads += 1
+        if (this.transientFailures > 0) {
+          this.transientFailures -= 1
+          return new HttpResponse(null, { status: 503 })
+        }
+        return HttpResponse.json({
+          valueRanges: [0, 2, 4].map((column) => ({
+            values: this.rows.map((row) => row[column] == null ? [] : [row[column]]),
+          })),
+        })
+      }),
       http.get(`${SHEETS_API}/:spreadsheetId/values/:range`, () => {
         this.reads += 1
         if (this.transientFailures > 0) {
@@ -31,6 +44,7 @@ export class FakeSheets {
       }),
       http.post(`${SHEETS_API}/:spreadsheetId/values/:range`, async ({ params, request }) => {
         if (!String(params.range).endsWith(":append")) return new HttpResponse(null, { status: 400 })
+        if (this.failAppends) return new HttpResponse(null, { status: 503 })
         const body = (await request.json()) as { values: Cell[][] }
         this.rows.push(...body.values)
         this.appends += 1
