@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
-import { SpecialEvents } from "./Schedule"
+import { Schedule, SpecialEvents } from "./Schedule"
 
 function render(events: Record<string, string>[]) {
   return renderToStaticMarkup(
@@ -43,8 +43,9 @@ describe("special events", () => {
     expect(html.match(/Memorial Room/g)).toHaveLength(1)
     expect(html.indexOf("Memorial Room")).toBeLessThan(html.indexOf("6:15–7:00 PM"))
     expect(html).toContain("7:00–10:00 PM")
-    expect(html).toContain('<p class="special-event-activity-title">Live music</p>')
-    expect(html).not.toContain("TBA")
+    expect(html).toContain("<p>Live music</p>")
+    expect(html).not.toContain("Time TBA")
+    expect(html).not.toContain("Location TBA")
   })
 
   it("shows different or unknown locations with their activities", () => {
@@ -61,10 +62,10 @@ describe("special events", () => {
     expect(activities[2]).toContain("Location TBA")
   })
 
-  it("leaves blank titles blank and keeps date-only events", () => {
+  it("uses TBA for blank titles and keeps date-only events", () => {
     const html = render([{ Date: "11/13/2026", Title: "" }])
 
-    expect(html).not.toContain("<h3")
+    expect(html).toContain('<h3 class="special-event-title">TBA</h3>')
     expect(html).toContain("11.13")
     expect(html).toContain("Time TBA")
     expect(html).toContain("Location TBA")
@@ -83,11 +84,10 @@ describe("special events", () => {
     expect(html).not.toContain("https://example.com/other")
   })
 
-  it("links the date when a URL has no title", () => {
+  it("links the TBA title when a URL has no title", () => {
     const html = render([{ Date: "10/17/2026", URL: "https://example.com/dance" }])
 
-    expect(html).toContain('<a href="https://example.com/dance">10.17</a>')
-    expect(html).not.toContain("<h3")
+    expect(html).toContain('<h3 class="special-event-title"><a href="https://example.com/dance">TBA</a></h3>')
   })
 
   it("preserves loading and error states", () => {
@@ -103,4 +103,16 @@ describe("special events", () => {
       expect(html).not.toContain("<article")
     }
   })
+})
+
+it("renders weekly lesson labels without bold emphasis", () => {
+  const html = renderToStaticMarkup(
+    <Schedule title="Schedule" times="Lesson 8:00–9:00 PM" status="loaded" events={[
+      { Date: "10/17/2026", Location: "Big Red Barn", "Beginner Program": "Basics", "Advanced Program": "Charleston" },
+    ]} />,
+  )
+
+  expect(html).toContain("Beginner: Basics")
+  expect(html).toContain("Advanced: Charleston")
+  expect(html).not.toContain("<strong")
 })

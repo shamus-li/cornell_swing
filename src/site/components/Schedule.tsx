@@ -151,8 +151,7 @@ function ScheduleRow({ event }: { event: SheetRow }) {
         {programs.length ? (
           programs.map(({ label, value }) => (
             <p key={label}>
-              <strong>{label}: </strong>
-              {value}
+              {label}: {value}
             </p>
           ))
         ) : (
@@ -205,7 +204,7 @@ export function Schedule({ title, times, events, status }: {
 
 function SpecialEventRow({ activities }: { activities: SheetRow[] }) {
   const date = activities[0].Date
-  const title = activities.find((activity) => activity.Title)?.Title
+  const title = activities.find((activity) => activity.Title)?.Title || "TBA"
   const url = activities.find((activity) => activity.URL)?.URL
   const location = activities[0].Location
   const sharedLocation = activities.every((activity) => activity.Location === location)
@@ -215,14 +214,12 @@ function SpecialEventRow({ activities }: { activities: SheetRow[] }) {
       className={`special-event-row${isPastDate(date) ? " is-past" : ""}`}
     >
       <time className="special-event-date" dateTime={isoDate(date)}>
-        {url && !title ? <a href={url}>{formatDate(date)}</a> : formatDate(date)}
+        {formatDate(date)}
       </time>
       <div className="special-event-details">
-        {title && (
-          <h3 className="special-event-title">
-            {url ? <a href={url}>{title}</a> : title}
-          </h3>
-        )}
+        <h3 className="special-event-title">
+          {url ? <a href={url}>{title}</a> : title}
+        </h3>
         {sharedLocation && (
           <p className="special-event-location">{location || "Location TBA"}</p>
         )}
@@ -231,9 +228,7 @@ function SpecialEventRow({ activities }: { activities: SheetRow[] }) {
             <li className="special-event-activity" key={index}>
               <span className="special-event-time">{activity.Time || "Time TBA"}</span>
               <div>
-                {activity.Activity && (
-                  <p className="special-event-activity-title">{activity.Activity}</p>
-                )}
+                {activity.Activity && <p>{activity.Activity}</p>}
                 {!sharedLocation && (
                   <p className="special-event-location">
                     {activity.Location || "Location TBA"}

@@ -283,7 +283,6 @@ h3 {
   color: var(--muted);
   border-bottom: 1px solid var(--line);
   font-size: 0.9rem;
-  font-weight: 700;
 }
 
 .schedule-row,
@@ -345,8 +344,8 @@ h3 {
 
 .special-event-activity {
   display: grid;
-  grid-template-columns: 130px minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 8px;
 }
 
 .special-event-activity + .special-event-activity {
@@ -355,10 +354,6 @@ h3 {
 
 .special-event-activity p {
   margin: 0;
-}
-
-.special-event-activity-title {
-  font-weight: 650;
 }
 
 .special-event-time {
