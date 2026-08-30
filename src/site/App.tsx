@@ -1,3 +1,5 @@
+import { Button } from "@/components/ui/button"
+
 import { HeroCarousel } from "./components/HeroCarousel"
 import { Schedule, SpecialEvents, useScheduleData } from "./components/Schedule"
 import { siteContent } from "./content"
@@ -28,16 +30,14 @@ export default function App() {
           <p>{siteContent.hero.description}</p>
           <div className="hero-links">
             {siteContent.hero.actions.map((action) => (
-              <a
+              <Button
                 key={action.label}
-                className="button"
-                data-slot="button"
-                data-variant={action.variant}
-                data-size="default"
-                href={action.href}
+                asChild
+                variant={action.variant}
+                className="no-underline"
               >
-                {action.label}
-              </a>
+                <a href={action.href}>{action.label}</a>
+              </Button>
             ))}
           </div>
           <HeroCarousel />

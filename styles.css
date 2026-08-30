@@ -1,3 +1,17 @@
+/* Use the shared Button utilities without resetting the homepage's base styles. */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+@source "./check-in/src/components/ui/button.tsx";
+@source "./src/site/App.tsx";
+
+@theme inline {
+  --color-primary: var(--accent);
+  --color-primary-foreground: #fff;
+  --color-background: #fff;
+  --color-ring: var(--accent);
+}
+
 @font-face {
   font-family: Fraunces;
   font-style: normal;
@@ -20,6 +34,7 @@
   --line: #e6e4e0;
   --accent: #a13a5e;
   --accent-hover: #aa4e6e;
+  --primary-hover: var(--accent-hover);
   --page: min(920px, calc(100% - 40px));
   --serif: Fraunces, Georgia, "Times New Roman", serif;
   --sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -44,8 +59,11 @@ body {
 }
 
 a {
-  color: inherit;
   text-underline-offset: 3px;
+}
+
+a:not([data-slot="button"]) {
+  color: inherit;
 }
 
 a:hover {
@@ -129,43 +147,6 @@ h3 {
   align-items: center;
   gap: 17px;
   flex-wrap: wrap;
-}
-
-.button {
-  height: 44px;
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  padding: 11px 21px;
-  color: #fff;
-  background: var(--accent);
-  border: 1px solid transparent;
-  border-radius: 999px;
-  font-size: 15px;
-  font-weight: 400;
-  line-height: 20px;
-  white-space: nowrap;
-  text-decoration: none;
-  user-select: none;
-  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease;
-}
-
-.button:hover {
-  background: var(--accent-hover);
-  text-decoration: none;
-}
-
-.button[data-variant="outline"] {
-  color: var(--accent);
-  background: #fff;
-  border-color: var(--accent);
-}
-
-.button[data-variant="outline"]:hover {
-  color: #fff;
-  background: var(--accent);
-  border-color: transparent;
 }
 
 .hero-carousel-root {
@@ -341,10 +322,44 @@ h3 {
   font-weight: 650;
 }
 
-.special-event-meta {
-  margin: 4px 0 0;
+.special-event-location {
+  margin: 0;
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.special-event-title + .special-event-location {
+  margin-top: 4px;
+}
+
+.special-event-activities {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+}
+
+.special-event-activities:first-child {
+  margin-top: 0;
+}
+
+.special-event-activity {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 16px;
+}
+
+.special-event-activity + .special-event-activity {
+  margin-top: 8px;
+}
+
+.special-event-activity p {
+  margin: 0;
+}
+
+.special-event-time {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
 }
 
 .schedule-program p {
@@ -470,6 +485,11 @@ h3 {
     gap: 16px;
   }
 
+  .special-event-activity {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
   .schedule-location {
     display: inline;
     margin-left: 0.35em;
@@ -497,7 +517,7 @@ h3 {
     scroll-behavior: auto;
   }
 
-  .button {
+  .hero-links [data-slot="button"] {
     transition: none;
   }
 

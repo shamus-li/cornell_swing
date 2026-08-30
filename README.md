@@ -20,6 +20,22 @@ npm run hero:image -- 2 /path/to/new-photo.jpg
 
 This crops the photo to 3:2 and creates the responsive WebP sizes. Then update its `alt` description in `src/site/content.ts`.
 
+### Special events in Google Sheets
+
+Use one row per activity in the **Special Events** tab of [Website Schedule](https://docs.google.com/spreadsheets/d/13UZD5ahlBMz33xVWwqqsor7CHcdPoL1xNYMDoqPoN4U/edit#gid=1922996257):
+
+| Date | Time | Activity | Location | Title | URL |
+| --- | --- | --- | --- | --- | --- |
+| 2026-10-17 | 6:15–7 PM | Beginner swing crash course | Willard Straight Hall Memorial Room (4th floor) | | |
+| 2026-10-17 | 7–10 PM | Live music | Willard Straight Hall Memorial Room (4th floor) | | |
+
+- Repeat the date on every activity row; rows with the same date become one event. Do not merge cells.
+- Keep activities in the order they should appear. Events follow the first appearance of each date.
+- Title and URL are optional. Fill them in once per date; the first nonblank value is used. A blank title stays blank, and a URL links the date when there is no title.
+- Enter Time as readable text, such as `6:15–7 PM` or `TBA`. Activity is the name of that part of the event.
+- Repeat Location for each activity. A shared location appears once; different locations appear beside their activities. Blank times and locations display `Time TBA` and `Location TBA`.
+- A date-only row can reserve a future event before its details are known.
+
 ## Develop and verify
 
 ```sh
