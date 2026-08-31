@@ -62,7 +62,7 @@ it("hydrates a previous-day snapshot without replacing it, then refreshes both t
   })
   expect(container.querySelector(".schedule-row")).toBe(originalRow)
   expect(container.querySelectorAll(".is-past")).toHaveLength(2)
-  expect(container.querySelectorAll('[data-status="past"] .past-label')).toHaveLength(2)
+  expect(container.querySelectorAll('[data-status="past"]')).toHaveLength(2)
   expect(container.textContent).not.toContain("Loading")
   expect([...requests.keys()].sort()).toEqual(["/special", "/weekly"])
   expect(errors).not.toHaveBeenCalled()

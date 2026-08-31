@@ -164,7 +164,6 @@ function ScheduleRow({ event, today }: { event: SheetRow; today: string }) {
     <article className={`schedule-row${past ? " is-past" : ""}`} data-status={past ? "past" : undefined}>
       <time className="schedule-date" dateTime={isoDate(event.Date)}>
         {formatDate(event.Date)}
-        {past && <span className="past-label">Past</span>}
       </time>
       <div className="schedule-location">{event.Location || "TBA"}</div>
       <div className="schedule-program">
@@ -247,7 +246,6 @@ function SpecialEventRow({ activities, today }: { activities: SheetRow[]; today:
     >
       <time className="special-event-date" dateTime={isoDate(date)}>
         {formatDate(date)}
-        {past && <span className="past-label">Past</span>}
       </time>
       <div className="special-event-details">
         <h3 className="special-event-title">
