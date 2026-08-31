@@ -25,7 +25,8 @@ test("the initial HTML contains the existing public copy and working join links 
 test("canonical, search metadata, and organization identity describe the same public site", () => {
   assert.equal(document.querySelectorAll('link[rel="canonical"]').length, 1)
   assert.equal(document.querySelector('link[rel="canonical"]').href, canonical)
-  assert.match(document.title, /Cornell Swing Dance.*Ithaca/)
+  assert.equal(document.title, "Swing Syndicate at Cornell")
+  assert.equal(document.querySelector('meta[property="og:title"]').content, document.title)
   assert.match(document.querySelector('meta[name="description"]').content, /Ithaca/)
   assert.equal(document.querySelector('meta[property="og:url"]').content, canonical)
   assert.ok(!document.querySelector('meta[name="robots"]')?.content.includes("noindex"))
