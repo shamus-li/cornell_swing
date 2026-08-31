@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import {
   Carousel,
@@ -10,14 +10,31 @@ import { siteContent } from "../content"
 
 const AUTOPLAY_DELAY = 6000
 const imageSizes =
-  "(max-width: 700px) calc(100vw - 32px), (max-width: 960px) calc(100vw - 40px), 920px"
+  "(max-width: 632px) calc(100vw - 32px), (max-width: 760px) 600px, (max-width: 960px) calc(100vw - 40px), 920px"
 
 export function HeroCarousel() {
+  const firstImage = useRef<HTMLImageElement>(null)
+  const [loadOtherImages, setLoadOtherImages] = useState(false)
   const [api, setApi] = useState<CarouselApi>()
   const [current, setCurrent] = useState(0)
   const [count, setCount] = useState(0)
   const [restart, setRestart] = useState(0)
   const [reduceMotion, setReduceMotion] = useState(false)
+
+  useEffect(() => {
+    const image = firstImage.current!
+    const loadRemaining = () => setLoadOtherImages(true)
+
+    // Native lazy loading also fetches nearby horizontal slides. Keep their
+    // requests out of the first photo's loading path, including before hydration.
+    if (image.complete) loadRemaining()
+    image.addEventListener("load", loadRemaining)
+    image.addEventListener("error", loadRemaining)
+    return () => {
+      image.removeEventListener("load", loadRemaining)
+      image.removeEventListener("error", loadRemaining)
+    }
+  }, [])
 
   useEffect(() => {
     if (!api) return
@@ -88,15 +105,16 @@ export function HeroCarousel() {
               aria-label={`${index + 1} of ${siteContent.hero.slides.length}`}
             >
               <img
-                src={slide.src}
-                srcSet={slide.srcSet}
+                ref={index === 0 ? firstImage : undefined}
+                src={index === 0 || index === current || loadOtherImages ? slide.src : undefined}
+                srcSet={index === 0 || index === current || loadOtherImages ? slide.srcSet : undefined}
                 sizes={imageSizes}
                 alt={slide.alt}
                 width={slide.width}
                 height={slide.height}
                 loading={index === 0 ? "eager" : "lazy"}
-                fetchPriority={index === 0 ? "high" : "auto"}
-                decoding="async"
+                fetchPriority={index === 0 ? "high" : "low"}
+                decoding={index === 0 ? "sync" : "async"}
               />
             </CarouselItem>
           ))}

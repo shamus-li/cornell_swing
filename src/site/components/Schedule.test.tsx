@@ -111,4 +111,6 @@ it("renders weekly rows with labeled programs, past-date marking, and TBA fallba
   expect(html).toContain('<time class="schedule-date">9.7</time>')
   expect(html.match(/TBA/g)).toHaveLength(3) // second row's location and program, third row's program
   expect(html.match(/schedule-row is-past/g)).toHaveLength(1)
+  expect(html.match(/data-status="past"/g)).toHaveLength(1)
+  expect(html.match(/<span class="past-label">Past<\/span>/g)).toHaveLength(1)
 })

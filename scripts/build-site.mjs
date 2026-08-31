@@ -12,15 +12,16 @@ await build({
 })
 
 const { render } = await import("../dist-ssr/entry-server.js")
-const { html, socialImage } = render()
+const { html, socialImage, scheduleData } = await render()
 const template = await readFile("dist/index.html", "utf8")
 
-if (!template.includes("<!--app-html-->") || !template.includes("<!--social-image-->")) {
+if (!["<!--app-html-->", "<!--social-image-->", "<!--schedule-data-->"].every((placeholder) => template.includes(placeholder))) {
   throw new Error("Homepage template is missing its prerender placeholders")
 }
 
 await writeFile(
   "dist/index.html",
   template.replace("<!--app-html-->", () => html)
-    .replace("<!--social-image-->", () => socialImage),
+    .replace("<!--social-image-->", () => socialImage)
+    .replace("<!--schedule-data-->", () => scheduleData),
 )

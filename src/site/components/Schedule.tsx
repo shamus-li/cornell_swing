@@ -1,8 +1,17 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react"
 
 type SheetRow = Record<string, string>
 type LoadStatus = "loading" | "loaded" | "error"
 type EventsState = { events: SheetRow[]; status: LoadStatus }
+export type ScheduleSnapshot = {
+  schedule: SheetRow[]
+  specialEvents: SheetRow[]
+  today: string
+}
+
+export function todayInIthaca() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" })
+}
 
 export function parseCsv(csv: string): SheetRow[] {
   const rows: string[][] = []
@@ -51,35 +60,48 @@ export function parseCsv(csv: string): SheetRow[] {
   )
 }
 
-async function fetchEvents(url: string, signal: AbortSignal) {
+export async function fetchEvents(url: string, signal: AbortSignal) {
   const response = await fetch(url, { signal })
   if (!response.ok) {
     throw new Error(`Event request failed with ${response.status}`)
   }
 
-  const events = parseCsv(await response.text())
-  if (!events.length) throw new Error("Events are empty")
-  return events
+  const csv = await response.text()
+  if (!/^"?Date"?,/.test(csv.trimStart())) {
+    throw new Error("Schedule CSV is missing the Date column")
+  }
+  return parseCsv(csv)
 }
 
 const loadingEvents: EventsState = { events: [], status: "loading" }
 
-export function useScheduleData(scheduleUrl: string, specialEventsUrl: string) {
-  const [schedule, setSchedule] = useState<EventsState>(loadingEvents)
-  const [specialEvents, setSpecialEvents] = useState<EventsState>(loadingEvents)
+export function useScheduleData(
+  scheduleUrl: string,
+  specialEventsUrl: string,
+  initial?: ScheduleSnapshot,
+) {
+  const [schedule, setSchedule] = useState<EventsState>(initial
+    ? { events: initial.schedule, status: "loaded" }
+    : loadingEvents)
+  const [specialEvents, setSpecialEvents] = useState<EventsState>(initial
+    ? { events: initial.specialEvents, status: "loaded" }
+    : loadingEvents)
+  // The first browser render must use the build's date, even days after deploy.
+  const [today, setToday] = useState(initial?.today ?? todayInIthaca())
 
   useEffect(() => {
     const controller = new AbortController()
-    setSchedule(loadingEvents)
-    setSpecialEvents(loadingEvents)
+    setToday(todayInIthaca())
 
-    const load = (url: string, setState: (state: EventsState) => void) =>
+    const load = (url: string, setState: Dispatch<SetStateAction<EventsState>>) =>
       fetchEvents(url, controller.signal)
         .then((events) => setState({ events, status: "loaded" }))
         .catch((error: unknown) => {
           if (error instanceof DOMException && error.name === "AbortError") return
           console.error(error)
-          setState({ events: [], status: "error" })
+          setState((current) => current.status === "loaded"
+            ? current
+            : { events: [], status: "error" })
         })
 
     void Promise.allSettled([
@@ -90,7 +112,7 @@ export function useScheduleData(scheduleUrl: string, specialEventsUrl: string) {
     return () => controller.abort()
   }, [scheduleUrl, specialEventsUrl])
 
-  return { schedule, specialEvents }
+  return { schedule, specialEvents, today }
 }
 
 // Accepts 2026-09-07, 9/7/2026, and 9/7 so either Sheet style renders.
@@ -126,25 +148,23 @@ function isoDate(value: string) {
   return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`
 }
 
-function isPastDate(value: string) {
-  const parts = parseDateParts(value)
-  if (!parts || parts.year === null) return false
-
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return new Date(parts.year, parts.month - 1, parts.day) < today
+function isPastDate(value: string, today: string) {
+  const date = isoDate(value)
+  return date !== undefined && date < today
 }
 
-function ScheduleRow({ event }: { event: SheetRow }) {
+function ScheduleRow({ event, today }: { event: SheetRow; today: string }) {
+  const past = isPastDate(event.Date, today)
   const programs = [
     { label: "Beginner", value: event["Beginner Program"] },
     { label: "Advanced", value: event["Advanced Program"] },
   ].filter(({ value }) => value && value !== "—")
 
   return (
-    <article className={`schedule-row${isPastDate(event.Date) ? " is-past" : ""}`}>
+    <article className={`schedule-row${past ? " is-past" : ""}`} data-status={past ? "past" : undefined}>
       <time className="schedule-date" dateTime={isoDate(event.Date)}>
         {formatDate(event.Date)}
+        {past && <span className="past-label">Past</span>}
       </time>
       <div className="schedule-location">{event.Location || "TBA"}</div>
       <div className="schedule-program">
@@ -164,11 +184,12 @@ function ScheduleRow({ event }: { event: SheetRow }) {
   )
 }
 
-export function Schedule({ title, times, events, status }: {
+export function Schedule({ title, times, events, status, today = todayInIthaca() }: {
   title: string
   times: string
   events: SheetRow[]
   status: LoadStatus
+  today?: string
 }) {
   return (
     <section id="schedule" className="section" aria-labelledby="schedule-title">
@@ -196,6 +217,7 @@ export function Schedule({ title, times, events, status }: {
             <ScheduleRow
               key={`${event.Date}-${event.Location}-${index}`}
               event={event}
+              today={today}
             />
           ))}
       </div>
@@ -203,8 +225,9 @@ export function Schedule({ title, times, events, status }: {
   )
 }
 
-function SpecialEventRow({ activities }: { activities: SheetRow[] }) {
+function SpecialEventRow({ activities, today }: { activities: SheetRow[]; today: string }) {
   const date = activities[0].Date
+  const past = isPastDate(date, today)
   const title = activities.find((activity) => activity.Title)?.Title || "TBA"
   const url = activities.find((activity) => activity.URL)?.URL
   const location = activities.find(
@@ -219,10 +242,12 @@ function SpecialEventRow({ activities }: { activities: SheetRow[] }) {
 
   return (
     <article
-      className={`special-event-row${isPastDate(date) ? " is-past" : ""}`}
+      className={`special-event-row${past ? " is-past" : ""}`}
+      data-status={past ? "past" : undefined}
     >
       <time className="special-event-date" dateTime={isoDate(date)}>
         {formatDate(date)}
+        {past && <span className="past-label">Past</span>}
       </time>
       <div className="special-event-details">
         <h3 className="special-event-title">
@@ -244,10 +269,11 @@ function SpecialEventRow({ activities }: { activities: SheetRow[] }) {
   )
 }
 
-export function SpecialEvents({ title, events, status }: {
+export function SpecialEvents({ title, events, status, today = todayInIthaca() }: {
   title: string
   events: SheetRow[]
   status: LoadStatus
+  today?: string
 }) {
   const eventsByDate = new Map<string, SheetRow[]>()
   for (const event of events) {
@@ -283,6 +309,7 @@ export function SpecialEvents({ title, events, status }: {
             <SpecialEventRow
               key={date}
               activities={activities}
+              today={today}
             />
           ))}
       </div>

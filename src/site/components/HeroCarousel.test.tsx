@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { HeroCarousel } from "./HeroCarousel"
 
-describe("hero carousel autoplay", () => {
+describe("hero carousel", () => {
   let root: Root
   let container: HTMLDivElement
   let style: HTMLStyleElement
@@ -82,6 +82,30 @@ describe("hero carousel autoplay", () => {
     vi.useRealTimers()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+  })
+
+  it.each(["load", "error"])("defers hidden photo requests until the first photo finishes with %s", async (event) => {
+    await mount()
+    const photos = Array.from(container.querySelectorAll("img"))
+    expect(photos.filter((photo) => photo.hasAttribute("src"))).toHaveLength(1)
+    expect(photos.filter((photo) => photo.hasAttribute("srcset"))).toHaveLength(1)
+
+    await act(async () => photos[0].dispatchEvent(new Event(event)))
+    expect(photos.every((photo) => photo.hasAttribute("src") && photo.hasAttribute("srcset"))).toBe(true)
+  })
+
+  it("loads the remaining photos when the first photo was cached before hydration", async () => {
+    vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(true)
+    await mount()
+    expect(container.querySelectorAll("img[src][srcset]")).toHaveLength(4)
+  })
+
+  it("can request a manually selected photo while the first photo is still loading", async () => {
+    await mount()
+    await choosePhoto(4)
+    const photo = container.querySelectorAll("img")[3]
+    expect(currentPhoto()).toBe("Go to photo 4")
+    expect(photo.hasAttribute("src") && photo.hasAttribute("srcset")).toBe(true)
   })
 
   it("keeps the current photo while hidden, then resumes one photo at a time after a full countdown", async () => {

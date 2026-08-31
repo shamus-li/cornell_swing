@@ -19,7 +19,66 @@ test("the initial HTML contains the existing public copy and working join links 
   assert.ok(document.querySelector('a[href="https://lists.cornell.edu/GRAD-SWING-DANCE-L/subscribe"]'))
   assert.ok(document.querySelector('a[href="https://cornell.campusgroups.com/gcss/club_signup"]'))
   assert.ok(document.querySelector("#schedule .schedule-times").textContent.includes("8:00"))
-  assert.doesNotMatch(html, /<!--app-html-->|<!--social-image-->/)
+  assert.doesNotMatch(html, /<!--app-html-->|<!--social-image-->|<!--schedule-data-->/)
+})
+
+test("both public Sheet tabs are readable before JavaScript and have matching hydration data", () => {
+  const data = document.querySelector("#schedule-data")
+  assert.ok(data, "The build must embed the Sheet snapshot for hydration")
+  const snapshot = JSON.parse(data.textContent)
+  assert.match(snapshot.today, /^\d{4}-\d{2}-\d{2}$/)
+  assert.equal(document.querySelectorAll(".schedule-status").length, 0)
+  assert.equal(document.querySelectorAll(".schedule-row").length, snapshot.schedule.length)
+  for (const event of snapshot.schedule) {
+    assert.ok(document.querySelector("#schedule").textContent.includes(event.Location || "TBA"))
+  }
+  for (const event of snapshot.specialEvents) {
+    if (event.Activity) assert.ok(document.querySelector("#special-events").textContent.includes(event.Activity))
+  }
+})
+
+test("the initial HTML starts only the visible carousel photo request", () => {
+  const photos = Array.from(document.querySelectorAll(".hero-carousel img"))
+  assert.equal(photos.length, 4)
+  assert.ok(photos[0].getAttribute("srcset"))
+  assert.equal(photos[0].getAttribute("loading"), "eager")
+  assert.equal(photos[0].getAttribute("fetchpriority"), "high")
+  for (const photo of photos.slice(1)) {
+    assert.equal(photo.getAttribute("src"), null)
+    assert.equal(photo.getAttribute("srcset"), null)
+  }
+  const preloads = document.querySelectorAll('link[rel="preload"][as="image"]')
+  assert.equal(preloads.length, 1)
+  assert.equal(preloads[0].getAttribute("imagesrcset"), photos[0].getAttribute("srcset"))
+  assert.equal(preloads[0].getAttribute("imagesizes"), photos[0].getAttribute("sizes"))
+})
+
+test("the build renderer includes fetched event text without allowing Sheet text to inject scripts", async (t) => {
+  const maliciousText = '</script><script id="injected">alert(1)</script>'
+  const csvTitle = '"' + maliciousText.replaceAll('"', '""') + '"'
+  const urls = []
+  t.mock.method(globalThis, "fetch", async (url) => {
+    urls.push(new URL(url))
+    return new Response(new URL(url).searchParams.get("gid") === "0"
+      ? 'Date,Location,Beginner Program\n2099-10-17,Test barn,"Swingouts & turns"'
+      : `Date,Title,Time,Activity,Location,URL\n2099-10-17,${csvTitle},7:00 PM,Live jazz,Test hall,`)
+  })
+  const { render } = await import("../dist-ssr/entry-server.js")
+  const result = await render()
+  const rendered = new JSDOM(result.html + result.scheduleData).window.document
+  assert.match(rendered.querySelector("#schedule").textContent, /Test barn.*Swingouts & turns/)
+  assert.equal(rendered.querySelector(".special-event-title").textContent, maliciousText)
+  assert.match(rendered.querySelector("#special-events").textContent, /7:00 PM.*Live jazz/)
+  assert.equal(rendered.querySelector("#injected"), null)
+  assert.equal(JSON.parse(rendered.querySelector("#schedule-data").textContent).specialEvents[0].Title, maliciousText)
+  assert.equal(urls.length, 2)
+  assert.ok(urls.every((url) => url.origin === "https://docs.google.com" && url.pathname.endsWith("/pub")))
+})
+
+test("a failed Sheet fetch stops prerendering instead of publishing an empty schedule", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => new Response("Unavailable", { status: 503 }))
+  const { render } = await import("../dist-ssr/entry-server.js")
+  await assert.rejects(render, /Event request failed with 503/)
 })
 
 test("canonical, search metadata, and organization identity describe the same public site", () => {
