@@ -466,6 +466,8 @@ h3 {
 @media (max-width: 760px) {
   :root {
     --page: min(100% - 32px, 600px);
+    --serif: Georgia, "Times New Roman", serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   }
 
   .hero {

@@ -67,6 +67,19 @@ test("the homepage stylesheet is inlined to avoid a render-blocking request", ()
   assert.match(style.textContent, /@font-face/)
 })
 
+test("mobile avoids custom-font competition and starts hydration after the initial load", async () => {
+  const fontPreloads = Array.from(document.querySelectorAll('link[rel="preload"][as="font"]'))
+  assert.equal(fontPreloads.length, 2)
+  assert.ok(fontPreloads.every((preload) => preload.getAttribute("media") === "(min-width: 761px)"))
+
+  const loader = document.querySelector('script[type="module"][src]')
+  assert.ok(loader)
+  const loaderSource = await readFile(new URL(`../dist${loader.getAttribute("src")}`, import.meta.url), "utf8")
+  assert.match(loaderSource, /addEventListener\([`'\"]load/)
+  assert.match(loaderSource, /import\(/)
+  assert.equal(document.querySelectorAll('link[rel="modulepreload"][href*="/main-"]').length, 0)
+})
+
 test("the build renderer includes fetched event text without allowing Sheet text to inject scripts", async (t) => {
   const maliciousText = '</script><script id="injected">alert(1)</script>'
   const csvTitle = '"' + maliciousText.replaceAll('"', '""') + '"'

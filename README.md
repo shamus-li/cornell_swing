@@ -6,7 +6,7 @@ One React/Vite site and one Cloudflare Worker serve:
 - `/check-in/` — the protected kiosk in `check-in/src/`
 - `/check-in/api/*` — the check-in API in `check-in/worker/`
 
-The Worker serves the built static assets, handles the API, and runs the nightly attendance sync. The public homepage is pre-rendered from React during the build, then hydrated in the browser. The check-in page stays client-rendered.
+The Worker serves the built static assets, handles the API, and runs the nightly attendance sync. The public homepage is pre-rendered from React during the build, then hydrated after the initial page resources load. The check-in page stays client-rendered.
 
 ## Edit the public site
 
@@ -20,7 +20,7 @@ npm run hero:image -- 2 /path/to/new-photo.jpg
 
 This crops the photo to 3:2 and creates the responsive WebP sizes. Then update its `alt` description in `src/site/content.ts`.
 
-The first carousel photo is preloaded at high priority and decoded with the initial paint. The next photo loads at low priority after it, and each selection queues the following photo; selecting an unloaded photo requests it immediately. Keep the carousel's `sizes` attribute in sync with the page widths in `styles.css` so phones and tablets request the appropriate image size.
+The first carousel photo is preloaded at high priority and decoded with the initial paint. The next photo loads at low priority after it, and each selection queues the following photo; selecting an unloaded photo requests it immediately. Keep the carousel's `sizes` attribute in sync with the page widths in `styles.css` so phones and tablets request the appropriate image size. Mobile uses system fonts so custom font downloads do not compete with the hero image; larger screens retain the custom fonts.
 
 ### Special events in Google Sheets
 
