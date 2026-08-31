@@ -53,6 +53,12 @@ test("the initial HTML starts only the visible carousel photo request", () => {
   assert.equal(preloads[0].getAttribute("imagesizes"), photos[0].getAttribute("sizes"))
 })
 
+test("the initial HTML includes the carousel controls so hydration does not repaint the hero overlay", () => {
+  const dots = document.querySelectorAll(".hero-carousel-dot")
+  assert.equal(dots.length, 4)
+  assert.equal(dots[0].getAttribute("aria-current"), "true")
+})
+
 test("the homepage stylesheet is inlined to avoid a render-blocking request", () => {
   assert.equal(document.querySelectorAll('link[rel="stylesheet"]').length, 0)
   const style = document.querySelector("head > style")

@@ -19,7 +19,7 @@ export function HeroCarousel() {
   )
   const [api, setApi] = useState<CarouselApi>()
   const [current, setCurrent] = useState(0)
-  const [count, setCount] = useState(0)
+  const [count, setCount] = useState<number>(siteContent.hero.slides.length)
   const [restart, setRestart] = useState(0)
   const [reduceMotion, setReduceMotion] = useState(false)
 
