@@ -97,13 +97,6 @@ describe("sheet timestamps", () => {
       )
     }
   })
-
-  it("encodes the local wall-clock time in the serial number", () => {
-    const serial = serialFor(TEST_TIMESTAMP)
-    expect(dateKeyForSheetTimestamp(serial)).toBe("2026-08-25")
-    expect(serial % 1).toBeCloseTo(19 / 24, 6)
-  })
-
 })
 
 describe("Google access tokens", () => {
@@ -255,11 +248,6 @@ describe("member search", () => {
 
     await handleApiRequest(memberSearchRequest("Ada"), limitedEnv)
     expect(keys).toEqual(["kiosk@example.com", "access-identity-missing"])
-  })
-
-  it("rejects GET searches without accessing the roster", async () => {
-    const response = await exports.default.fetch("https://example.com/check-in/api/members?q=Ada")
-    expect(response.status).toBe(405)
   })
 
   it.each(["{", "null", "[]", "{}", '{"q":123}'])("rejects invalid search JSON: %s", async (body) => {

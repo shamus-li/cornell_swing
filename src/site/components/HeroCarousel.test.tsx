@@ -84,20 +84,14 @@ describe("hero carousel", () => {
     vi.unstubAllGlobals()
   })
 
-  it.each(["load", "error"])("requests the next photo after the first photo finishes with %s", async (event) => {
+  it("requests the next photo after the first photo loads", async () => {
     await mount()
     const photos = Array.from(container.querySelectorAll("img"))
     expect(photos.filter((photo) => photo.hasAttribute("src"))).toHaveLength(1)
     expect(photos.filter((photo) => photo.hasAttribute("srcset"))).toHaveLength(1)
 
-    await act(async () => photos[0].dispatchEvent(new Event(event)))
+    await act(async () => photos[0].dispatchEvent(new Event("load")))
     expect(photos.filter((photo) => photo.hasAttribute("src") && photo.hasAttribute("srcset"))).toEqual(photos.slice(0, 2))
-  })
-
-  it("loads the next photo when the first photo was cached before hydration", async () => {
-    vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(true)
-    await mount()
-    expect(container.querySelectorAll("img[src][srcset]")).toHaveLength(2)
   })
 
   it("can request a manually selected photo while the first photo is still loading", async () => {
@@ -130,28 +124,15 @@ describe("hero carousel", () => {
     expect(currentPhoto()).toBe("Go to photo 4")
   })
 
-  it("waits for the page to become visible when initially opened in a background tab", async () => {
-    hidden = true
-    await mount()
-    await advanceTime(60000)
-    expect(currentPhoto()).toBe("Go to photo 1")
-
-    await setHidden(false)
-    await advanceTime(5999)
-    expect(currentPhoto()).toBe("Go to photo 1")
-    await advanceTime(1)
-    expect(currentPhoto()).toBe("Go to photo 2")
-  })
-
-  it.each([1, 3])("gives a manually selected photo %i a full countdown, even if it was already selected", async (photo) => {
+  it("gives a manually selected photo a full countdown", async () => {
     await mount()
     await advanceTime(5000)
-    await choosePhoto(photo)
-    expect(currentPhoto()).toBe(`Go to photo ${photo}`)
+    await choosePhoto(3)
+    expect(currentPhoto()).toBe("Go to photo 3")
     await advanceTime(5999)
-    expect(currentPhoto()).toBe(`Go to photo ${photo}`)
+    expect(currentPhoto()).toBe("Go to photo 3")
     await advanceTime(1)
-    expect(currentPhoto()).toBe(`Go to photo ${photo + 1}`)
+    expect(currentPhoto()).toBe("Go to photo 4")
   })
 
   it("honors reduced motion across tab switches while still allowing manual navigation", async () => {

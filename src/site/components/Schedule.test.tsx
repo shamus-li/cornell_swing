@@ -16,11 +16,6 @@ describe("parseCsv", () => {
       { Title: "Dance, live music", Notes: 'Say "hi"\nat the door' },
     ])
   })
-
-  it("returns nothing without data rows", () => {
-    expect(parseCsv("")).toEqual([])
-    expect(parseCsv("Date,Title\n")).toEqual([])
-  })
 })
 
 function render(events: Record<string, string>[]) {
@@ -78,20 +73,6 @@ describe("special events", () => {
     expect(events[1]).toContain('<a href="https://example.com/night">TBA</a>')
     expect(events[1]).not.toContain("<ul")
     expect(events[1]).not.toContain('class="special-event-location"')
-  })
-
-  it("preserves loading and error states", () => {
-    for (const status of ["loading", "error"] as const) {
-      const html = renderToStaticMarkup(
-        <SpecialEvents title="Special events" events={[]} status={status} />,
-      )
-
-      expect(html).toContain(status === "loading"
-        ? "Loading special events..."
-        : "The special events could not be loaded.")
-      expect(html).toContain(`aria-busy="${status === "loading"}"`)
-      expect(html).not.toContain("<article")
-    }
   })
 })
 

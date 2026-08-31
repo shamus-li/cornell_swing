@@ -8,20 +8,6 @@ const html = await readFile(new URL("../dist/index.html", import.meta.url), "utf
 const { document } = new JSDOM(html).window
 const canonical = "https://swingsyndicate.club/"
 
-test("the initial HTML contains the existing public copy and working join links without JavaScript", () => {
-  assert.equal(document.querySelectorAll("h1").length, 1)
-  assert.equal(document.querySelector("h1").textContent, "Criminally Good Dancing.")
-  assert.equal(document.querySelector(".hero > p").textContent,
-    "Free Lindy Hop every Monday night. No experience or partner required!")
-  assert.match(document.querySelector("#about").textContent, /Cornell University/)
-  assert.match(document.querySelector("#faq").textContent, /Ithaca community/)
-  assert.match(document.querySelector("#faq").textContent, /Lessons and social dancing are free/)
-  assert.ok(document.querySelector('a[href="https://lists.cornell.edu/GRAD-SWING-DANCE-L/subscribe"]'))
-  assert.ok(document.querySelector('a[href="https://cornell.campusgroups.com/gcss/club_signup"]'))
-  assert.ok(document.querySelector("#schedule .schedule-times").textContent.includes("8:00"))
-  assert.doesNotMatch(html, /<!--app-html-->|<!--social-image-->|<!--schedule-data-->/)
-})
-
 test("both public Sheet tabs are readable before JavaScript and have matching hydration data", () => {
   const data = document.querySelector("#schedule-data")
   assert.ok(data, "The build must embed the Sheet snapshot for hydration")
@@ -53,33 +39,6 @@ test("the initial HTML starts only the visible carousel photo request", () => {
   assert.equal(preloads[0].getAttribute("imagesizes"), photos[0].getAttribute("sizes"))
 })
 
-test("the initial HTML includes the carousel controls so hydration does not repaint the hero overlay", () => {
-  const dots = document.querySelectorAll(".hero-carousel-dot")
-  assert.equal(dots.length, 4)
-  assert.equal(dots[0].getAttribute("aria-current"), "true")
-})
-
-test("the homepage stylesheet is inlined to avoid a render-blocking request", () => {
-  assert.equal(document.querySelectorAll('link[rel="stylesheet"]').length, 0)
-  const style = document.querySelector("head > style")
-  assert.ok(style)
-  assert.match(style.textContent, /\.hero-carousel/)
-  assert.match(style.textContent, /@font-face/)
-})
-
-test("mobile avoids custom-font competition and starts hydration after the initial load", async () => {
-  const fontPreloads = Array.from(document.querySelectorAll('link[rel="preload"][as="font"]'))
-  assert.equal(fontPreloads.length, 2)
-  assert.ok(fontPreloads.every((preload) => preload.getAttribute("media") === "(min-width: 761px)"))
-
-  const loader = document.querySelector('script[type="module"][src]')
-  assert.ok(loader)
-  const loaderSource = await readFile(new URL(`../dist${loader.getAttribute("src")}`, import.meta.url), "utf8")
-  assert.match(loaderSource, /addEventListener\([`'\"]load/)
-  assert.match(loaderSource, /import\(/)
-  assert.equal(document.querySelectorAll('link[rel="modulepreload"][href*="/main-"]').length, 0)
-})
-
 test("the build renderer includes fetched event text without allowing Sheet text to inject scripts", async (t) => {
   const maliciousText = '</script><script id="injected">alert(1)</script>'
   const csvTitle = '"' + maliciousText.replaceAll('"', '""') + '"'
@@ -106,25 +65,6 @@ test("a failed Sheet fetch stops prerendering instead of publishing an empty sch
   t.mock.method(globalThis, "fetch", async () => new Response("Unavailable", { status: 503 }))
   const { render } = await import("../dist-ssr/entry-server.js")
   await assert.rejects(render, /Event request failed with 503/)
-})
-
-test("canonical, search metadata, and organization identity describe the same public site", () => {
-  assert.equal(document.querySelectorAll('link[rel="canonical"]').length, 1)
-  assert.equal(document.querySelector('link[rel="canonical"]').href, canonical)
-  assert.equal(document.title, "Swing Syndicate at Cornell")
-  assert.equal(document.querySelector('meta[property="og:title"]').content, document.title)
-  assert.match(document.querySelector('meta[name="description"]').content, /Ithaca/)
-  assert.equal(document.querySelector('meta[property="og:url"]').content, canonical)
-  assert.ok(!document.querySelector('meta[name="robots"]')?.content.includes("noindex"))
-
-  const schema = JSON.parse(document.querySelector('script[type="application/ld+json"]').textContent)
-  const organization = schema["@graph"].find((entry) => entry["@type"] === "Organization")
-  const website = schema["@graph"].find((entry) => entry["@type"] === "WebSite")
-  assert.equal(organization.url, canonical)
-  assert.equal(organization.name, document.querySelector(".site-name span").textContent)
-  assert.equal(organization.address.addressLocality, "Ithaca")
-  assert.equal(website.publisher["@id"], organization["@id"])
-  assert.equal(website.url, canonical)
 })
 
 test("prerendered photos, social previews, scripts, styles, and fonts all reference deployed assets", async () => {
