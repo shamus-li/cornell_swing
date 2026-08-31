@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 import {
   Carousel,
@@ -14,45 +14,63 @@ const imageSizes =
 
 export function HeroCarousel() {
   const firstImage = useRef<HTMLImageElement>(null)
-  const [loadOtherImages, setLoadOtherImages] = useState(false)
+  const [loadImages, setLoadImages] = useState(() =>
+    siteContent.hero.slides.map((_, index) => index === 0),
+  )
   const [api, setApi] = useState<CarouselApi>()
   const [current, setCurrent] = useState(0)
   const [count, setCount] = useState(0)
   const [restart, setRestart] = useState(0)
   const [reduceMotion, setReduceMotion] = useState(false)
 
+  const requestImages = useCallback((...indices: number[]) => {
+    setLoadImages((current) => {
+      if (indices.every((index) => current[index])) return current
+      const next = [...current]
+      for (const index of indices) next[index] = true
+      return next
+    })
+  }, [])
+
   useEffect(() => {
     const image = firstImage.current!
-    const loadRemaining = () => setLoadOtherImages(true)
+    const loadNext = () => requestImages(1)
 
     // Native lazy loading also fetches nearby horizontal slides. Keep their
     // requests out of the first photo's loading path, including before hydration.
-    if (image.complete) loadRemaining()
-    image.addEventListener("load", loadRemaining)
-    image.addEventListener("error", loadRemaining)
+    if (image.complete) loadNext()
+    image.addEventListener("load", loadNext)
+    image.addEventListener("error", loadNext)
     return () => {
-      image.removeEventListener("load", loadRemaining)
-      image.removeEventListener("error", loadRemaining)
+      image.removeEventListener("load", loadNext)
+      image.removeEventListener("error", loadNext)
     }
-  }, [])
+  }, [requestImages])
 
   useEffect(() => {
     if (!api) return
 
     const updateSelection = () => {
-      setCount(api.scrollSnapList().length)
-      setCurrent(api.selectedScrollSnap())
+      const slideCount = api.scrollSnapList().length
+      const selected = api.selectedScrollSnap()
+      setCount(slideCount)
+      setCurrent(selected)
+    }
+    const updateSelectionAndLoadNext = () => {
+      updateSelection()
+      const slideCount = api.scrollSnapList().length
+      requestImages(api.selectedScrollSnap(), (api.selectedScrollSnap() + 1) % slideCount)
     }
 
     updateSelection()
-    api.on("select", updateSelection)
+    api.on("select", updateSelectionAndLoadNext)
     api.on("reInit", updateSelection)
 
     return () => {
-      api.off("select", updateSelection)
+      api.off("select", updateSelectionAndLoadNext)
       api.off("reInit", updateSelection)
     }
-  }, [api])
+  }, [api, requestImages])
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)")
@@ -87,6 +105,7 @@ export function HeroCarousel() {
 
   const selectSlide = (index: number) => {
     setRestart((value) => value + 1)
+    requestImages(index)
     api?.scrollTo(index)
   }
 
@@ -106,8 +125,8 @@ export function HeroCarousel() {
             >
               <img
                 ref={index === 0 ? firstImage : undefined}
-                src={index === 0 || index === current || loadOtherImages ? slide.src : undefined}
-                srcSet={index === 0 || index === current || loadOtherImages ? slide.srcSet : undefined}
+                src={loadImages[index] ? slide.src : undefined}
+                srcSet={loadImages[index] ? slide.srcSet : undefined}
                 sizes={imageSizes}
                 alt={slide.alt}
                 width={slide.width}

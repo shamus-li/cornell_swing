@@ -20,7 +20,7 @@ npm run hero:image -- 2 /path/to/new-photo.jpg
 
 This crops the photo to 3:2 and creates the responsive WebP sizes. Then update its `alt` description in `src/site/content.ts`.
 
-The first carousel photo is preloaded at high priority and decoded with the initial paint. Hidden photos receive their image URLs after the first photo loads (or fails), at low priority; selecting a photo can load it immediately. Keep the carousel's `sizes` attribute in sync with the page widths in `styles.css` so phones and tablets request the appropriate image size.
+The first carousel photo is preloaded at high priority and decoded with the initial paint. The next photo loads at low priority after it, and each selection queues the following photo; selecting an unloaded photo requests it immediately. Keep the carousel's `sizes` attribute in sync with the page widths in `styles.css` so phones and tablets request the appropriate image size.
 
 ### Special events in Google Sheets
 

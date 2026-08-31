@@ -53,6 +53,14 @@ test("the initial HTML starts only the visible carousel photo request", () => {
   assert.equal(preloads[0].getAttribute("imagesizes"), photos[0].getAttribute("sizes"))
 })
 
+test("the homepage stylesheet is inlined to avoid a render-blocking request", () => {
+  assert.equal(document.querySelectorAll('link[rel="stylesheet"]').length, 0)
+  const style = document.querySelector("head > style")
+  assert.ok(style)
+  assert.match(style.textContent, /\.hero-carousel/)
+  assert.match(style.textContent, /@font-face/)
+})
+
 test("the build renderer includes fetched event text without allowing Sheet text to inject scripts", async (t) => {
   const maliciousText = '</script><script id="injected">alert(1)</script>'
   const csvTitle = '"' + maliciousText.replaceAll('"', '""') + '"'

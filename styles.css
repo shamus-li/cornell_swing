@@ -172,6 +172,7 @@ h3 {
 .hero-carousel [data-slot="carousel-content"] > div {
   display: flex;
   margin-left: 0;
+  transform: translate3d(0, 0, 0);
 }
 
 .hero-carousel [data-slot="carousel-item"] {
@@ -207,12 +208,6 @@ h3 {
 
 .hero-carousel-dot[data-active] {
   width: 18px;
-}
-
-.hero-carousel-dot::before {
-  content: "";
-  position: absolute;
-  inset: -18px -3px;
 }
 
 .hero-carousel-dot:focus-visible {
