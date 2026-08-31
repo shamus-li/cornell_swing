@@ -49,11 +49,23 @@ export function HeroCarousel() {
   useEffect(() => {
     if (!api || count < 2 || reduceMotion) return
 
-    const timer = window.setTimeout(() => {
-      api.scrollNext()
-    }, AUTOPLAY_DELAY)
+    let timer: number | undefined
+    const onVisibilityChange = () => {
+      window.clearTimeout(timer)
+      if (!document.hidden) setRestart((value) => value + 1)
+    }
 
-    return () => window.clearTimeout(timer)
+    if (!document.hidden) {
+      timer = window.setTimeout(() => {
+        if (!document.hidden) api.scrollNext()
+      }, AUTOPLAY_DELAY)
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange)
+
+    return () => {
+      window.clearTimeout(timer)
+      document.removeEventListener("visibilitychange", onVisibilityChange)
+    }
   }, [api, count, current, reduceMotion, restart])
 
   const selectSlide = (index: number) => {

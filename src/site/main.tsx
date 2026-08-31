@@ -1,5 +1,5 @@
 import { StrictMode } from "react"
-import { createRoot } from "react-dom/client"
+import { createRoot, hydrateRoot } from "react-dom/client"
 
 import App from "./App"
 import { siteContent } from "./content"
@@ -7,8 +7,15 @@ import { siteContent } from "./content"
 document.querySelector<HTMLLinkElement>('link[rel="icon"]')!.href =
   siteContent.brand.faviconUrl
 
-createRoot(document.getElementById("root")!).render(
+const root = document.getElementById("root")!
+const app = (
   <StrictMode>
     <App />
-  </StrictMode>,
+  </StrictMode>
 )
+
+if (import.meta.env.PROD) {
+  hydrateRoot(root, app)
+} else {
+  createRoot(root).render(app)
+}

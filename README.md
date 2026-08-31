@@ -6,7 +6,7 @@ One React/Vite site and one Cloudflare Worker serve:
 - `/check-in/` — the protected kiosk in `check-in/src/`
 - `/check-in/api/*` — the check-in API in `check-in/worker/`
 
-The Worker serves the built static assets, handles the API, and runs the nightly attendance sync. `index.html` and `check-in/index.html` are only Vite entry shells.
+The Worker serves the built static assets, handles the API, and runs the nightly attendance sync. The public homepage is pre-rendered from React during the build, then hydrated in the browser. The check-in page stays client-rendered.
 
 ## Edit the public site
 
@@ -44,11 +44,22 @@ npm ci
 npm run dev
 npm test
 npm run build
+npm run test:build
 ```
 
 `npm run dev` serves both React pages. To exercise the built site and Worker together with local secrets from `check-in/.dev.vars`, use `npm run dev:worker`.
 
 `npm run worker:check` builds the site and validates the Worker bundle without deploying it. Run `npm run worker:types` after changing Worker bindings.
+
+### Search visibility
+
+`scripts/build-site.mjs` builds the browser assets and a temporary server bundle in `dist-ssr/`, then renders the existing homepage into `dist/index.html`. Only `dist/` is deployed. This makes the public copy, FAQ, and links readable without running JavaScript, without adding runtime Worker or Google API requests. The dated schedule still loads live from the public Google Sheet in the browser; it is not a build-time snapshot.
+
+Search titles, descriptions, canonical URL, and organization metadata live in `index.html`. The social preview uses the first carousel photo automatically. `public/sitemap.xml` lists only the homepage; `public/robots.txt` excludes check-in crawling, and the kiosk also has a `noindex` tag. These are search hints, not access controls—Cloudflare Access remains responsible for privacy.
+
+`npm run test:build` checks the actual production HTML without executing JavaScript, verifies referenced assets exist, and checks public/private indexing boundaries. CI runs it after the build and before deployment.
+
+After deployment, use Google Search Console to verify the `swingsyndicate.club` domain, submit `https://swingsyndicate.club/sitemap.xml`, inspect the homepage, and request indexing. Track impressions and clicks for Cornell swing dance, Cornell swing, Ithaca swing dance, and Lindy Hop searches. Ask the maintainers of the Cornell CampusGroups profile, current Cornell event listings, and relevant Ithaca dance directories to link to the canonical website. Technical improvements help discovery; they do not guarantee a particular ranking.
 
 ## Check-in data flow
 
