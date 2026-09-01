@@ -27,7 +27,6 @@ type MembersResponse = {
 
 const MEMBER_SEARCH_DELAY_MS = 75
 const MEMBER_SEARCH_CACHE_LIMIT = 12
-const WAIVER_URL = "https://cglink.me/2ee/s96437"
 
 function memberSearchKey(query: string): string {
   return query.toLocaleLowerCase()
@@ -62,30 +61,22 @@ function WaiverCallout() {
     >
       <div className="min-w-0 flex-1">
         <h2 id="waiver-title" className="font-sans text-lg leading-tight font-semibold">
-          Before you dance
+          Cornell affiliates
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
           Please complete the{" "}
-          <a
-            className="font-medium text-foreground underline underline-offset-4"
-            href={WAIVER_URL}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Physical Activity Waiver
-          </a>
-          .
+          <span className="font-medium text-foreground">Physical Activity Waiver</span>.
         </p>
       </div>
-      <a
-        className="shrink-0 rounded-sm bg-white p-1"
-        href={WAIVER_URL}
-        target="_blank"
-        rel="noreferrer"
-        aria-label="Open the physical activity waiver"
-      >
-        <img className="size-24" src={waiverQrUrl} width="444" height="444" alt="" />
-      </a>
+      <div className="shrink-0 rounded-sm bg-white p-1">
+        <img
+          className="size-24"
+          src={waiverQrUrl}
+          width="444"
+          height="444"
+          alt="QR code for the Physical Activity Waiver"
+        />
+      </div>
     </aside>
   )
 }
@@ -306,7 +297,7 @@ export default function App() {
           )}
 
           <label className="sr-only" htmlFor="name">
-            Name
+            Full Name
           </label>
           <Combobox<Member>
             items={members}
@@ -330,7 +321,7 @@ export default function App() {
               id="name"
               name="name"
               className="h-13 w-full rounded-md [&_[data-slot=input-group-control]]:text-base"
-              placeholder="Name"
+              placeholder="Full Name"
               autoComplete="off"
               data-1p-ignore
               showTrigger={false}
