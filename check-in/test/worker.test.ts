@@ -464,13 +464,17 @@ describe("check-in", () => {
       { email: "" },
       { affiliation: "Wizard" },
       { memberId: "short" },
+      { name: "" },
+      { name: "123 --" },
       { name: "x".repeat(161) },
     ]
 
     for (const overrides of badPayloads) {
       const response = await handleCheckin(checkinRequest(overrides), env, token, TEST_TIMESTAMP)
       expect(response.status).toBe(400)
-      expect(await response.json()).toEqual({ message: "Enter a valid email and affiliation" })
+      expect(await response.json()).toEqual({
+        message: "Enter a valid name, email, and affiliation",
+      })
     }
 
     const notJson = await handleCheckin(

@@ -1,4 +1,9 @@
-import { isAffiliation, type Affiliation } from "../src/lib/checkin"
+import {
+  isAffiliation,
+  isValidName,
+  normalizeName,
+  type Affiliation,
+} from "../src/lib/checkin"
 import { findCachedMemberById, refreshMemberCache, searchCachedMembers } from "./cache"
 import {
   type CheckinRow,
@@ -72,15 +77,15 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-function validateAttendee(value: unknown): Attendee | null {
+function validateAttendee(value: unknown, requireName = false): Attendee | null {
   if (!isRecord(value)) return null
   const email = typeof value.email === "string" ? value.email.trim().toLowerCase() : ""
   const memberId = typeof value.memberId === "string" ? value.memberId.trim() : null
-  const enteredName = typeof value.name === "string" ? value.name.trim() : ""
+  const enteredName = typeof value.name === "string" ? normalizeName(value.name) : ""
   const name = enteredName.toLowerCase() === email ? "" : enteredName
   if (
     (memberId !== null && !MEMBER_ID_PATTERN.test(memberId)) ||
-    name.length > 160 ||
+    (name ? !isValidName(name) : requireName) ||
     !email ||
     email.length > 254 ||
     !EMAIL_PATTERN.test(email) ||
@@ -133,8 +138,8 @@ export async function handleCheckin(
   } catch {
     return json({ message: "Invalid check-in data" }, 400)
   }
-  const attendee = validateAttendee(payload)
-  if (!attendee) return json({ message: "Enter a valid email and affiliation" }, 400)
+  const attendee = validateAttendee(payload, true)
+  if (!attendee) return json({ message: "Enter a valid name, email, and affiliation" }, 400)
 
   if (attendee.memberId) {
     const member = await findCachedMemberById(env, attendee.memberId)
