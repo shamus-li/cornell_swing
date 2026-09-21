@@ -51,11 +51,23 @@ main,
 }
 
 .site-name {
+  display: inline-flex;
+  align-items: center;
   color: var(--ink);
-  font-family: Fraunces, Georgia, serif;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   font-size: 1.1rem;
   font-weight: 700;
   text-decoration: none;
+}
+
+.site-name img {
+  width: auto;
+  height: 34px;
+  margin-right: -4px;
+  position: relative;
+  top: -1px;
+  z-index: 1;
+  flex: none;
 }
 
 .hero {
@@ -66,13 +78,12 @@ h1,
 h2,
 h3 {
   margin: 0;
-  font-family: Fraunces, Georgia, serif;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   font-weight: 700;
   line-height: 1.1;
 }
 
 h1 {
-  max-width: 640px;
   font-size: clamp(2.5rem, 5.5vw, 3.8rem);
   letter-spacing: -0.01em;
 }
@@ -91,7 +102,7 @@ h2 {
   margin-top: 24px;
   display: flex;
   align-items: center;
-  gap: 22px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
@@ -100,6 +111,7 @@ h2 {
   padding: 11px 20px;
   color: #fff;
   background: var(--accent);
+  border: 1px solid transparent;
   border-radius: 999px;
   font-weight: 700;
   text-decoration: none;
@@ -111,14 +123,22 @@ h2 {
   text-decoration: none;
 }
 
+.button-secondary {
+  color: var(--ink);
+  background: #fff;
+  border-color: var(--ink);
+}
+
+.button-secondary:hover {
+  background: #f2f1ee;
+}
+
 .hero img {
   width: 100%;
   height: auto;
-  max-height: 480px;
   margin-top: 36px;
   display: block;
   border-radius: 8px;
-  object-fit: cover;
 }
 
 .section {
@@ -133,7 +153,17 @@ h2 {
 .schedule-header,
 .schedule-row {
   display: grid;
+  gap: 22px;
+}
+
+.schedule-header,
+.schedule-row {
   grid-template-columns: 110px 170px minmax(0, 1fr);
+}
+
+.special-event-row {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
   gap: 22px;
 }
 
@@ -145,16 +175,19 @@ h2 {
   font-weight: 700;
 }
 
-.schedule-row {
+.schedule-row,
+.special-event-row {
   padding: 14px 0;
   border-bottom: 1px solid var(--line);
 }
 
-.schedule-row:last-child {
+.schedule-row:last-child,
+.special-event-row:last-child {
   border-bottom: 0;
 }
 
-.schedule-date {
+.schedule-date,
+.special-event-date {
   font-family: Fraunces, Georgia, serif;
   font-size: 1rem;
   font-weight: 700;
@@ -163,6 +196,21 @@ h2 {
 .schedule-location,
 .schedule-program,
 .schedule-detail {
+  font-size: 0.9rem;
+}
+
+.special-events-list {
+  margin-top: 30px;
+}
+
+.special-event-title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.special-event-meta {
+  margin: 4px 0 0;
+  color: var(--muted);
   font-size: 0.9rem;
 }
 
@@ -184,9 +232,47 @@ h2 {
   padding: 14px 0;
 }
 
+.etiquette h2,
 .faq h2,
 .about h2 {
   margin-bottom: 26px;
+}
+
+.etiquette-intro,
+.etiquette-item,
+.etiquette-contact {
+  max-width: 700px;
+}
+
+.etiquette-intro {
+  margin: 0 0 26px;
+  color: var(--muted);
+}
+
+.etiquette-item + .etiquette-item {
+  margin-top: 22px;
+}
+
+.etiquette-item h3 {
+  font-size: 1.1rem;
+}
+
+.etiquette-item p,
+.etiquette-item ul {
+  margin: 8px 0 0;
+}
+
+.etiquette-item ul {
+  padding-left: 1.25rem;
+}
+
+.etiquette-item li + li {
+  margin-top: 6px;
+}
+
+.etiquette-contact {
+  margin: 26px 0 0;
+  color: var(--muted);
 }
 
 .faq-item + .faq-item {
@@ -225,6 +311,10 @@ h2 {
   margin: 0;
 }
 
+.site-footer p + p {
+  margin-top: 8px;
+}
+
 @media (max-width: 760px) {
   :root {
     --page: min(100% - 32px, 600px);
@@ -248,6 +338,12 @@ h2 {
 
   .schedule-row {
     display: block;
+    padding: 12px 0;
+  }
+
+  .special-event-row {
+    grid-template-columns: 76px minmax(0, 1fr);
+    gap: 14px;
     padding: 12px 0;
   }
 

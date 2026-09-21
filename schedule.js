@@ -1,5 +1,5 @@
 const SCHEDULE_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTMACS7bEK5TUm1wmzyu65DBGkbGSegPM8Vj5NqYywksSDJeSejUjTOmvFSbz_pQ70eMvOOH1SMW53G/pub?gid=0&single=true&output=csv";
-const CAMPUSGROUPS_URL = "https://cornell.campusgroups.com/gcss/club_signup";
+const SPECIAL_EVENTS_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTMACS7bEK5TUm1wmzyu65DBGkbGSegPM8Vj5NqYywksSDJeSejUjTOmvFSbz_pQ70eMvOOH1SMW53G/pub?gid=1922996257&single=true&output=csv";
 
 function parseCsv(csv) {
   const rows = [];
@@ -46,13 +46,17 @@ function element(tag, className, text) {
   return node;
 }
 
+function formatDate(value) {
+  const [, month, day] = value.split("-");
+  return `${month}.${day}`;
+}
+
 function scheduleRow(event) {
-  const date = new Date(`${event.Date}T12:00:00`);
   const article = element("article", "schedule-row");
 
   const dateCell = element("time", "schedule-date");
   dateCell.dateTime = event.Date;
-  dateCell.textContent = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
+  dateCell.textContent = formatDate(event.Date);
 
   const locationCell = element("div", "schedule-location", event.Location || "TBA");
 
@@ -63,7 +67,7 @@ function scheduleRow(event) {
   ].filter(([, program]) => program && program !== "—");
 
   if (!programs.length) {
-    programCell.append(element("p", "", "To be announced"));
+    programCell.append(element("p", "", "TBA"));
   } else {
     programs.forEach(([name, program]) => {
       const line = element("p");
@@ -79,13 +83,45 @@ function scheduleRow(event) {
   return article;
 }
 
+function specialEventMeta(event) {
+  const details = [event.Time, event.Location].filter(Boolean);
+  return details.length ? details.join(" · ") : "TBA";
+}
+
+function specialEventRow(event) {
+  const article = element("article", "special-event-row");
+
+  const dateCell = element("time", "special-event-date", formatDate(event.Date));
+  dateCell.dateTime = event.Date;
+
+  const details = element("div", "special-event-details");
+  const title = element("h3", "special-event-title");
+  const titleText = event.Title || "TBA";
+  if (event.URL) {
+    const link = element("a", "", titleText);
+    link.href = event.URL;
+    title.append(link);
+  } else {
+    title.textContent = titleText;
+  }
+  const meta = element("p", "special-event-meta", specialEventMeta(event));
+
+  details.append(title, meta);
+  article.append(dateCell, details);
+  return article;
+}
+
+async function fetchEvents(url) {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Event request failed with ${response.status}`);
+  return parseCsv(await response.text());
+}
+
 async function loadSchedule() {
   const list = document.querySelector("#schedule-list");
 
   try {
-    const response = await fetch(SCHEDULE_URL, { cache: "no-store" });
-    if (!response.ok) throw new Error(`Schedule request failed with ${response.status}`);
-    const events = parseCsv(await response.text());
+    const events = await fetchEvents(SCHEDULE_URL);
     if (!events.length) throw new Error("Schedule is empty");
 
     list.replaceChildren(...events.map(scheduleRow));
@@ -93,14 +129,33 @@ async function loadSchedule() {
     window.__scheduleReady = true;
   } catch (error) {
     console.error(error);
-    const message = element("p", "schedule-status", "The schedule could not be loaded. Please check ");
-    const link = element("a", "", "CampusGroups");
-    link.href = CAMPUSGROUPS_URL;
-    message.append(link, " for the latest details.");
+    const message = element("p", "schedule-status", "The schedule could not be loaded.");
     list.replaceChildren(message);
     list.setAttribute("aria-busy", "false");
     window.__scheduleReady = false;
   }
 }
 
-loadSchedule();
+async function loadSpecialEvents() {
+  const list = document.querySelector("#special-events-list");
+
+  try {
+    const events = await fetchEvents(SPECIAL_EVENTS_URL);
+    if (!events.length) throw new Error("Special events are empty");
+
+    list.replaceChildren(...events.map(specialEventRow));
+    list.setAttribute("aria-busy", "false");
+    window.__specialEventsReady = true;
+  } catch (error) {
+    console.error(error);
+    const message = element("p", "schedule-status", "The special events could not be loaded.");
+    list.replaceChildren(message);
+    list.setAttribute("aria-busy", "false");
+    window.__specialEventsReady = false;
+  }
+}
+
+window.addEventListener("load", () => {
+  loadSchedule();
+  loadSpecialEvents();
+}, { once: true });
