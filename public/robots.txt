@@ -1,0 +1,4 @@
+User-agent: *
+Disallow: /check-in
+
+Sitemap: https://swingsyndicate.club/sitemap.xml

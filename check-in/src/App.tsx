@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import {
   Combobox,
   ComboboxContent,
+  ComboboxEmpty,
   ComboboxInput,
   ComboboxItem,
   ComboboxList,
@@ -19,7 +20,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { AFFILIATIONS, type Affiliation, type Member } from "@/lib/checkin"
+import {
+  AFFILIATIONS,
+  hasUnusualNameCapitalization,
+  isValidName,
+  normalizeName,
+  type Affiliation,
+  type Member,
+} from "@/lib/checkin"
 
 type MembersResponse = {
   members?: Member[]
@@ -27,7 +35,6 @@ type MembersResponse = {
 
 const MEMBER_SEARCH_DELAY_MS = 75
 const MEMBER_SEARCH_CACHE_LIMIT = 12
-const WAIVER_URL = "https://cglink.me/2ee/s96437"
 
 function memberSearchKey(query: string): string {
   return query.toLocaleLowerCase()
@@ -36,6 +43,9 @@ function memberSearchKey(query: string): string {
 function MemberResults() {
   return (
     <ComboboxContent className="rounded-md">
+      <ComboboxEmpty className="justify-start px-3 py-2.5 text-left text-base">
+        Don&apos;t see your name? Continue below.
+      </ComboboxEmpty>
       <ComboboxList>
         {(member: Member) => (
           <ComboboxItem key={member.id} value={member} className="items-start px-3 py-2.5 text-base">
@@ -62,30 +72,22 @@ function WaiverCallout() {
     >
       <div className="min-w-0 flex-1">
         <h2 id="waiver-title" className="font-sans text-lg leading-tight font-semibold">
-          Before you dance
+          Cornell affiliates
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
           Please complete the{" "}
-          <a
-            className="font-medium text-foreground underline underline-offset-4"
-            href={WAIVER_URL}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Physical Activity Waiver
-          </a>
-          .
+          <span className="font-medium text-foreground">Physical Activity Waiver</span>.
         </p>
       </div>
-      <a
-        className="shrink-0 rounded-sm bg-white p-1"
-        href={WAIVER_URL}
-        target="_blank"
-        rel="noreferrer"
-        aria-label="Open the physical activity waiver"
-      >
-        <img className="size-24" src={waiverQrUrl} width="444" height="444" alt="" />
-      </a>
+      <div className="shrink-0 rounded-sm bg-white p-1">
+        <img
+          className="size-24"
+          src={waiverQrUrl}
+          width="444"
+          height="444"
+          alt="QR code for the Physical Activity Waiver"
+        />
+      </div>
     </aside>
   )
 }
@@ -97,6 +99,8 @@ export default function App() {
   const [members, setMembers] = useState<Member[]>([])
   const [selectedMember, setSelectedMember] = useState<Member | null>(null)
   const [memberSearchOpen, setMemberSearchOpen] = useState(false)
+  const [nameFocused, setNameFocused] = useState(false)
+  const [nameTouched, setNameTouched] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState("")
   const [confirmation, setConfirmation] = useState<string | null>(() =>
@@ -108,6 +112,8 @@ export default function App() {
 
   const query = name.trim()
   const searchKey = memberSearchKey(query)
+  const showNameCasePrompt =
+    nameTouched && !nameFocused && hasUnusualNameCapitalization(name)
   useEffect(() => {
     if (selectedMember) {
       setMembers([])
@@ -123,7 +129,7 @@ export default function App() {
     const cached = memberSearchCache.current.get(searchKey)
     if (cached) {
       setMembers(cached)
-      setMemberSearchOpen(cached.length > 0)
+      setMemberSearchOpen(true)
       return
     }
 
@@ -149,7 +155,7 @@ export default function App() {
           if (oldestKey) memberSearchCache.current.delete(oldestKey)
         }
         setMembers(matches)
-        setMemberSearchOpen(matches.length > 0)
+        setMemberSearchOpen(true)
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return
         if (!active) return
@@ -178,6 +184,7 @@ export default function App() {
     setMembers([])
     memberSearchCache.current.clear()
     setMemberSearchOpen(false)
+    setNameTouched(false)
     setMessage("")
   }
 
@@ -185,6 +192,7 @@ export default function App() {
     if (!member) return
     setSelectedMember(member)
     memberSearchCache.current.clear()
+    setNameTouched(false)
 
     setName(member.name)
     setEmail(member.email)
@@ -196,6 +204,14 @@ export default function App() {
   async function submitCheckin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setMessage("")
+
+    const normalizedName = normalizeName(name)
+    setName(normalizedName)
+    if (!isValidName(normalizedName)) {
+      setNameTouched(true)
+      setMessage("Enter your full name.")
+      return
+    }
 
     if (!event.currentTarget.checkValidity()) {
       event.currentTarget.reportValidity()
@@ -209,7 +225,7 @@ export default function App() {
     setIsSubmitting(true)
     const attendee = {
       memberId: selectedMember?.id ?? null,
-      name: name.trim(),
+      name: normalizedName,
       email: email.trim().toLowerCase(),
       affiliation,
     }
@@ -256,6 +272,7 @@ export default function App() {
     memberSearchCache.current.clear()
     setSelectedMember(null)
     setMemberSearchOpen(false)
+    setNameTouched(false)
     setMessage("")
     setConfirmation(null)
   }
@@ -305,39 +322,59 @@ export default function App() {
             </div>
           )}
 
-          <label className="sr-only" htmlFor="name">
-            Name
-          </label>
-          <Combobox<Member>
-            items={members}
-            filteredItems={members}
-            value={selectedMember}
-            inputValue={name}
-            open={memberSearchOpen}
-            onOpenChange={(open) =>
-              setMemberSearchOpen(open && !selectedMember && name.trim().length >= 1)
-            }
-            onInputValueChange={(value, details) => {
-              if (details.reason === "input-change") updateName(value)
-            }}
-            onValueChange={chooseMember}
-            itemToStringLabel={(member) => member.name}
-            itemToStringValue={(member) => member.id}
-            isItemEqualToValue={(member, value) => member.id === value.id}
-            autoHighlight
-          >
-            <ComboboxInput
-              id="name"
-              name="name"
-              className="h-13 w-full rounded-md [&_[data-slot=input-group-control]]:text-base"
-              placeholder="Name"
-              autoComplete="off"
-              data-1p-ignore
-              showTrigger={false}
-              autoFocus
-            />
-            <MemberResults />
-          </Combobox>
+          <div>
+            <label className="sr-only" htmlFor="name">
+              Full Name
+            </label>
+            <Combobox<Member>
+              items={members}
+              filteredItems={members}
+              value={selectedMember}
+              inputValue={name}
+              open={memberSearchOpen && nameFocused}
+              onOpenChange={(open) =>
+                setMemberSearchOpen(open && !selectedMember && name.trim().length >= 1)
+              }
+              onInputValueChange={(value, details) => {
+                if (details.reason === "input-change") updateName(value)
+              }}
+              onValueChange={chooseMember}
+              itemToStringLabel={(member) => member.name}
+              itemToStringValue={(member) => member.id}
+              isItemEqualToValue={(member, value) => member.id === value.id}
+              autoHighlight
+            >
+              <ComboboxInput
+                id="name"
+                name="name"
+                className="h-13 w-full rounded-md [&_[data-slot=input-group-control]]:text-base"
+                placeholder="Full Name"
+                autoComplete="off"
+                autoCapitalize="words"
+                aria-describedby={showNameCasePrompt ? "name-case-prompt" : undefined}
+                onFocus={() => setNameFocused(true)}
+                onBlur={() => {
+                  setNameFocused(false)
+                  setName(normalizeName(name))
+                  setNameTouched(true)
+                }}
+                data-1p-ignore
+                required
+                showTrigger={false}
+                autoFocus
+              />
+              <MemberResults />
+            </Combobox>
+            {showNameCasePrompt && (
+              <p
+                id="name-case-prompt"
+                className="mt-2 px-3 text-sm leading-5 text-muted-foreground"
+                role="status"
+              >
+                Is your name capitalized?
+              </p>
+            )}
+          </div>
 
           <label className="sr-only" htmlFor="email">
             Email

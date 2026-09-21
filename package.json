@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "dev:worker": "npm run build && wrangler dev --env-file check-in/.dev.vars",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && node scripts/build-site.mjs",
+    "test:build": "node --test scripts/site-build.test.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -39,6 +40,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^6.1.0",
+    "jsdom": "^30.0.1",
     "msw": "^2.15.0",
     "sharp": "^0.35.2",
     "tailwindcss": "^4.3.3",

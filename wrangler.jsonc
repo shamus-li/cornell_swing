@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "swing-checkin-sync",
+  "name": "swing-syndicate",
   "account_id": "826a8805e6c445803da24e740d6912e3",
   "main": "check-in/worker/index.ts",
   "compatibility_date": "2026-08-26",

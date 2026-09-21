@@ -1,13 +1,14 @@
 import { Button } from "@/components/ui/button"
 
 import { HeroCarousel } from "./components/HeroCarousel"
-import { Schedule, SpecialEvents, useScheduleData } from "./components/Schedule"
+import { Schedule, SpecialEvents, useScheduleData, type ScheduleSnapshot } from "./components/Schedule"
 import { siteContent } from "./content"
 
-export default function App() {
-  const { schedule, specialEvents } = useScheduleData(
+export default function App({ initialSchedule }: { initialSchedule?: ScheduleSnapshot }) {
+  const { schedule, specialEvents, today } = useScheduleData(
     siteContent.schedule.url,
     siteContent.specialEvents.url,
+    initialSchedule,
   )
 
   return (
@@ -46,9 +47,10 @@ export default function App() {
         <Schedule
           title={siteContent.schedule.title}
           times={siteContent.schedule.times}
+          today={today}
           {...schedule}
         />
-        <SpecialEvents title={siteContent.specialEvents.title} {...specialEvents} />
+        <SpecialEvents title={siteContent.specialEvents.title} today={today} {...specialEvents} />
 
         <section
           id="etiquette"

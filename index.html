@@ -5,10 +5,54 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Free Monday swing dance lessons and social dancing with Swing Syndicate at Cornell. No experience or partner required."
+      content="Free swing dance lessons and Lindy Hop at Cornell in Ithaca, NY. Join Swing Syndicate on Mondays. Open to everyone; no experience or partner needed."
     />
     <meta name="theme-color" content="#ffffff" />
     <title>Swing Syndicate at Cornell</title>
+    <link rel="canonical" href="https://swingsyndicate.club/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Swing Syndicate at Cornell" />
+    <meta property="og:title" content="Swing Syndicate at Cornell" />
+    <meta
+      property="og:description"
+      content="Free swing dance lessons and Lindy Hop at Cornell in Ithaca, NY. Open to everyone; no experience or partner needed."
+    />
+    <meta property="og:url" content="https://swingsyndicate.club/" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <!--social-image-->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://swingsyndicate.club/#organization",
+            "name": "Swing Syndicate at Cornell",
+            "alternateName": "Swing Syndicate",
+            "url": "https://swingsyndicate.club/",
+            "description": "A Cornell University student organization offering free swing dance lessons and social dancing for students and the Ithaca community.",
+            "email": "cugradswing@gmail.com",
+            "address": {
+              "@type": "PostalAddress",
+              "addressLocality": "Ithaca",
+              "addressRegion": "NY",
+              "addressCountry": "US"
+            },
+            "sameAs": [
+              "https://cornell.campusgroups.com/gcss/",
+              "https://www.instagram.com/cornell_swing/"
+            ]
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://swingsyndicate.club/#website",
+            "url": "https://swingsyndicate.club/",
+            "name": "Swing Syndicate at Cornell",
+            "publisher": { "@id": "https://swingsyndicate.club/#organization" }
+          }
+        ]
+      }
+    </script>
     <link rel="icon" href="assets/favicon.png" type="image/png" sizes="128x128" />
     <link
       rel="preload"
@@ -16,6 +60,7 @@
       as="font"
       type="font/woff2"
       crossorigin
+      media="(min-width: 761px)"
     />
     <link
       rel="preload"
@@ -23,11 +68,15 @@
       as="font"
       type="font/woff2"
       crossorigin
+      media="(min-width: 761px)"
     />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/site/main.tsx"></script>
+    <div id="root"><!--app-html--></div>
+    <!--schedule-data-->
+    <script type="module">
+      window.addEventListener("load", () => import("/src/site/main.tsx"), { once: true })
+    </script>
   </body>
 </html>

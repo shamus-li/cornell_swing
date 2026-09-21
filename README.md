@@ -6,11 +6,11 @@ One React/Vite site and one Cloudflare Worker serve:
 - `/check-in/` — the protected kiosk in `check-in/src/`
 - `/check-in/api/*` — the check-in API in `check-in/worker/`
 
-The Worker serves the built static assets, handles the API, and runs the nightly attendance sync. `index.html` and `check-in/index.html` are only Vite entry shells.
+The Worker serves the built static assets, handles the API, and runs the nightly attendance sync. The public homepage is pre-rendered from React during the build, then hydrated after the initial page resources load. The check-in page stays client-rendered.
 
 ## Edit the public site
 
-Edit `src/site/content.ts` for copy, links, carousel order, image descriptions, and the semester heading. The weekly schedule and special events load in parallel from the two published Google Sheet tabs, so changing those rows does not require a deployment.
+Edit `src/site/content.ts` for copy, links, carousel order, image descriptions, and the semester heading. Each build includes the weekly schedule and special events from the two published Google Sheet tabs. The browser refreshes both tabs in parallel, so changing those rows still does not require a deployment.
 
 To replace a carousel photo, choose its position from 1 to 4 and run:
 
@@ -19,6 +19,8 @@ npm run hero:image -- 2 /path/to/new-photo.jpg
 ```
 
 This crops the photo to 3:2 and creates the responsive WebP sizes. Then update its `alt` description in `src/site/content.ts`.
+
+The first carousel photo is preloaded at high priority and decoded with the initial paint. The next photo loads at low priority after it, and each selection queues the following photo; selecting an unloaded photo requests it immediately. Keep the carousel's `sizes` attribute in sync with the page widths in `styles.css` so phones and tablets request the appropriate image size. Mobile uses system fonts so custom font downloads do not compete with the hero image; larger screens retain the custom fonts.
 
 ### Special events in Google Sheets
 
@@ -44,11 +46,26 @@ npm ci
 npm run dev
 npm test
 npm run build
+npm run test:build
 ```
 
 `npm run dev` serves both React pages. To exercise the built site and Worker together with local secrets from `check-in/.dev.vars`, use `npm run dev:worker`.
 
 `npm run worker:check` builds the site and validates the Worker bundle without deploying it. Run `npm run worker:types` after changing Worker bindings.
+
+### Search visibility
+
+`scripts/build-site.mjs` builds the browser assets and a temporary server bundle in `dist-ssr/`, then renders the existing homepage into `dist/index.html`. Only `dist/` is deployed. The build fetches the two public Sheet CSVs in parallel and embeds their rows in both the rendered HTML and escaped JSON for hydration. Copy, FAQ, links, dates, locations, and activities are readable without JavaScript. No credentials or private check-in data are involved, and this adds only two public CSV requests per build, not runtime Worker requests.
+
+The browser keeps the snapshot visible while fetching current Sheet rows, replacing each tab independently when it succeeds. If a refresh fails, its snapshot remains visible. A valid header-only tab clears that tab's events. The first browser render uses the snapshot's date to avoid hydration mismatches, then updates past-event styling to today's date in Ithaca.
+
+Without JavaScript, the schedule reflects the last successful deployment; rebuilding refreshes that snapshot. Builds fail if either public Sheet is unavailable, takes more than 15 seconds, or lacks its Date header, so CI cannot deploy a broken fetch as an empty schedule. Local development still loads the Sheets directly.
+
+Search titles, descriptions, canonical URL, and organization metadata live in `index.html`. The social preview uses the first carousel photo automatically. `public/sitemap.xml` lists only the homepage; `public/robots.txt` excludes check-in crawling, and the kiosk also has a `noindex` tag. These are search hints, not access controls—Cloudflare Access remains responsible for privacy.
+
+`npm run test:build` checks the actual production HTML without executing JavaScript, verifies referenced assets exist, and checks public/private indexing boundaries. CI runs it after the build and before deployment.
+
+After deployment, use Google Search Console to verify the `swingsyndicate.club` domain, submit `https://swingsyndicate.club/sitemap.xml`, inspect the homepage, and request indexing. Track impressions and clicks for Cornell swing dance, Cornell swing, Ithaca swing dance, and Lindy Hop searches. Ask the maintainers of the Cornell CampusGroups profile, current Cornell event listings, and relevant Ithaca dance directories to link to the canonical website. Technical improvements help discovery; they do not guarantee a particular ranking.
 
 ## Check-in data flow
 
