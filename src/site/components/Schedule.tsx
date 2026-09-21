@@ -203,22 +203,42 @@ export function Schedule({ title, times, events, status }: {
   )
 }
 
-function SpecialEventRow({ event }: { event: SheetRow }) {
-  const title = event.Title || "TBA"
-  const details = [event.Time, event.Location].filter(Boolean).join(" · ") || "TBA"
+function SpecialEventRow({ activities }: { activities: SheetRow[] }) {
+  const date = activities[0].Date
+  const title = activities.find((activity) => activity.Title)?.Title || "TBA"
+  const url = activities.find((activity) => activity.URL)?.URL
+  const location = activities.find(
+    (activity) => activity.Location && activity.Location.toUpperCase() !== "TBA",
+  )?.Location
+  const schedule = activities
+    .map(({ Time, Activity }) => ({
+      time: Time?.toUpperCase() === "TBA" ? "" : Time,
+      activity: Activity,
+    }))
+    .filter(({ time, activity }) => time || activity)
 
   return (
     <article
-      className={`special-event-row${isPastDate(event.Date) ? " is-past" : ""}`}
+      className={`special-event-row${isPastDate(date) ? " is-past" : ""}`}
     >
-      <time className="special-event-date" dateTime={isoDate(event.Date)}>
-        {formatDate(event.Date)}
+      <time className="special-event-date" dateTime={isoDate(date)}>
+        {formatDate(date)}
       </time>
       <div className="special-event-details">
         <h3 className="special-event-title">
-          {event.URL ? <a href={event.URL}>{title}</a> : title}
+          {url ? <a href={url}>{title}</a> : title}
         </h3>
-        <p className="special-event-meta">{details}</p>
+        {location && <p className="special-event-location">{location}</p>}
+        {schedule.length > 0 && (
+          <ul className="special-event-activities">
+            {schedule.map(({ time, activity }, index) => (
+              <li className="special-event-activity" key={index}>
+                {time && <span className="special-event-time">{time}</span>}
+                {activity && <p>{activity}</p>}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </article>
   )
@@ -229,6 +249,14 @@ export function SpecialEvents({ title, events, status }: {
   events: SheetRow[]
   status: LoadStatus
 }) {
+  const eventsByDate = new Map<string, SheetRow[]>()
+  for (const event of events) {
+    const date = isoDate(event.Date) || event.Date
+    const activities = eventsByDate.get(date)
+    if (activities) activities.push(event)
+    else eventsByDate.set(date, [event])
+  }
+
   return (
     <section
       id="special-events"
@@ -251,10 +279,10 @@ export function SpecialEvents({ title, events, status }: {
           </p>
         )}
         {status === "loaded" &&
-          events.map((event, index) => (
+          Array.from(eventsByDate, ([date, activities]) => (
             <SpecialEventRow
-              key={`${event.Date}-${event.Title}-${index}`}
-              event={event}
+              key={date}
+              activities={activities}
             />
           ))}
       </div>

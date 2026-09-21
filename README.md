@@ -20,6 +20,23 @@ npm run hero:image -- 2 /path/to/new-photo.jpg
 
 This crops the photo to 3:2 and creates the responsive WebP sizes. Then update its `alt` description in `src/site/content.ts`.
 
+### Special events in Google Sheets
+
+Use one row per activity in the **Special Events** tab of [Website Schedule](https://docs.google.com/spreadsheets/d/13UZD5ahlBMz33xVWwqqsor7CHcdPoL1xNYMDoqPoN4U/edit#gid=1922996257):
+
+| Date | Title | Time | Activity | Location | URL |
+| --- | --- | --- | --- | --- | --- |
+| 2026-10-17 | | 6:15–7:00 PM | Beginner swing crash course | Willard Straight Hall Memorial Room (4th floor) | |
+| 2026-10-17 | | 7:00–10:00 PM | Live music | | |
+
+- Repeat the date on every activity row; rows with the same date become one event. Do not merge cells.
+- Keep activities in the order they should appear. Events follow the first appearance of each date.
+- Title, Location, and URL belong to the whole event. Enter them once on the first row for that date, then leave them blank on additional activity rows. The first nonblank value for each field is used, ignoring `TBA` for Location; later values do not override it. The title is shown in bold, or `TBA` if blank. A URL links the title.
+- Gray Title, Location, and URL cells mark additional rows with the same date. The sheet uses conditional formatting on `B2:B` and `E2:F` with `=AND($A2<>"",COUNTIF($A$2:$A2,$A2)>1)`; it is a visual cue, not a restriction or formula that fills cells.
+- Enter Time as readable text with minutes on every time, such as `6:15–7:00 PM`, `7:00–10:00 PM`, or `TBA`. Activity is the name of that part of the event.
+- The first known event location appears once above its activities. Blank or `TBA` locations and times are hidden. An activity without a known time still appears; rows with neither a known time nor an activity are omitted from the schedule.
+- A date-only row can reserve a future event before its details are known.
+
 ## Develop and verify
 
 ```sh
