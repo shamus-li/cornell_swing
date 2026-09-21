@@ -1,159 +1,34 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Free Monday swing dance lessons and social dancing with Swing Syndicate at Cornell. No experience or partner required.">
-    <meta name="theme-color" content="#ffffff">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Free Monday swing dance lessons and social dancing with Swing Syndicate at Cornell. No experience or partner required."
+    />
+    <meta name="theme-color" content="#ffffff" />
     <title>Swing Syndicate at Cornell</title>
-    <link rel="icon" href="assets/favicon.png" type="image/png" sizes="128x128">
-    <link rel="preload" href="assets/fonts/fraunces-latin.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="preload" href="assets/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="stylesheet" href="styles.css">
-    <script type="module" src="schedule.js"></script>
+    <link rel="icon" href="assets/favicon.png" type="image/png" sizes="128x128" />
+    <link
+      rel="preload"
+      href="assets/fonts/fraunces-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="assets/fonts/inter-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="styles.css" />
   </head>
-  <body id="top">
-    <header class="site-header">
-      <a class="site-name" href="#top">
-        <img src="assets/shoe-logo.png" alt="" width="52" height="128">
-        <span>Swing Syndicate at Cornell</span>
-      </a>
-    </header>
-
-    <main id="main">
-      <section class="hero" aria-labelledby="hero-title">
-        <h1 id="hero-title">Criminally Good Dancing.</h1>
-        <p>Free Lindy Hop every Monday night. No experience or partner required!</p>
-        <div class="hero-links">
-          <a class="button" data-slot="button" data-variant="default" data-size="default" href="https://lists.cornell.edu/GRAD-SWING-DANCE-L/subscribe">Get emails</a>
-          <a class="button" data-slot="button" data-variant="outline" data-size="default" href="https://cornell.campusgroups.com/gcss/club_signup">Join</a>
-        </div>
-        <img
-          src="assets/hero-960.webp"
-          srcset="assets/hero-480.webp 480w, assets/hero-720.webp 720w, assets/hero-960.webp 960w, assets/hero-1800.webp 1800w"
-          sizes="(max-width: 700px) calc(100vw - 32px), (max-width: 960px) calc(100vw - 40px), 920px"
-          alt="Swing dancers high-five while other couples dance around them"
-          width="1800"
-          height="1200"
-          fetchpriority="high">
-      </section>
-
-      <section id="schedule" class="section" aria-labelledby="schedule-title">
-        <h2 id="schedule-title">Fall 2026 schedule</h2>
-        <p class="schedule-times">Lesson 8–9 PM · Social dance 9–10 PM</p>
-
-        <div class="schedule-header" aria-hidden="true">
-          <span>Date</span>
-          <span>Location</span>
-          <span>Lesson program</span>
-        </div>
-        <div id="schedule-list" class="schedule-list" aria-live="polite" aria-busy="true">
-          <p class="schedule-status">Loading schedule...</p>
-        </div>
-        <noscript>
-          <p class="schedule-status">JavaScript is needed to load the schedule.</p>
-        </noscript>
-      </section>
-
-      <section id="special-events" class="section" aria-labelledby="special-events-title">
-        <h2 id="special-events-title">Special Events</h2>
-
-        <div id="special-events-list" class="special-events-list" aria-live="polite" aria-busy="true">
-          <p class="schedule-status">Loading special events...</p>
-        </div>
-        <noscript>
-          <p class="schedule-status">JavaScript is needed to load special events.</p>
-        </noscript>
-      </section>
-
-      <section id="etiquette" class="section etiquette" aria-labelledby="etiquette-title">
-        <h2 id="etiquette-title">Dance etiquette</h2>
-        <p class="etiquette-intro">Dancing is a joyful experience! We prioritize all dancers’ safety and comfort. Please review this guidance before participating in Swing Syndicate social dances.</p>
-
-        <div class="etiquette-item">
-          <h3>Consent</h3>
-          <ul>
-            <li>Anyone may ask for a dance, regardless of their preferred dance role or gender identity.</li>
-            <li>Anyone may decline a dance. No explanation is needed.</li>
-            <li>Clearly ask a partner to dance, and respectfully accept if they do not wish to.</li>
-            <li>Ask for clear consent before performing close-connection moves, such as Balboa or blues.</li>
-          </ul>
-        </div>
-
-        <div class="etiquette-item">
-          <h3>Connection</h3>
-          <ul>
-            <li>Be considerate. Do not dance in ways that are painful or uncomfortable for your partner. If asked, respectfully adjust your connection style.</li>
-            <li>You are free to stop dancing at any time. No one is obligated to dance an entire song.</li>
-          </ul>
-        </div>
-
-        <div class="etiquette-item">
-          <h3>Floor craft</h3>
-          <ul>
-            <li>It is both dancers’ responsibility to prioritize safety. Be aware of your surroundings.</li>
-            <li>Acknowledge and apologize if you or your partner run into someone.</li>
-          </ul>
-        </div>
-
-        <div class="etiquette-item">
-          <h3>Hygiene</h3>
-          <ul>
-            <li>Come to Swing Syndicate events clean and scent-free. Be prepared to freshen up as needed.</li>
-          </ul>
-        </div>
-
-        <div class="etiquette-item">
-          <h3>Dips, lifts, and aerials</h3>
-          <ul>
-            <li>Do not do aerials during Swing Syndicate events. Our dance floors are not safe for these moves.</li>
-            <li>Do not do large lifts or jumps. Dancers performing risky moves will be asked to stop.</li>
-            <li>Always ask your partner for consent before doing dips, small lifts, or small jumps.</li>
-          </ul>
-        </div>
-
-        <p class="etiquette-contact">Our events also follow the <a href="https://policy.cornell.edu/policy-library/student-code-conduct">Cornell Student Code of Conduct</a>.</p>
-      </section>
-
-      <section id="faq" class="section faq" aria-labelledby="faq-title">
-        <h2 id="faq-title">FAQ</h2>
-        <div class="faq-item">
-          <h3>Do I need experience or a partner?</h3>
-          <p>No. Our lessons are designed for dancers with no previous experience and we rotate partners throughout. Most people come by themselves.</p>
-        </div>
-        <div class="faq-item">
-          <h3>How much does it cost?</h3>
-          <p>Nothing! Lessons and social dancing are free.</p>
-        </div>
-        <div class="faq-item">
-          <h3>Who can come?</h3>
-          <p>Everyone. We're a graduate student organization, but our events are open to undergraduates, faculty, staff, and the Ithaca community.</p>
-        </div>
-        <div class="faq-item">
-          <h3>What should I wear?</h3>
-          <p>Whatever you're comfortable moving in. We recommend flat shoes that you can turn in.</p>
-        </div>
-        <div class="faq-item">
-          <h3>Can I come for just part of the night?</h3>
-          <p>Yes. Come for the lesson, the social dance, or both.</p>
-        </div>
-      </section>
-
-      <section id="about" class="section about" aria-labelledby="about-title">
-        <h2 id="about-title">About</h2>
-        <p>We teach and promote swing dance to Cornell University students and community members. Our organization focuses on dances called swing dance—dances danced to swing jazz music—such as Lindy Hop, Charleston, Shag, Blues, and Balboa swing dances.</p>
-        <p class="about-links">
-          <a href="https://cornell.campusgroups.com/gcss/club_signup">CampusGroups</a>
-          <a href="https://www.instagram.com/cornell_swing/">Instagram</a>
-          <a href="https://cglink.me/2ee/s96437">Waiver</a>
-          <a href="https://lists.cornell.edu/GRAD-SWING-DANCE-L/subscribe">Mailing list</a>
-          <a href="mailto:cugradswing@gmail.com">Email</a>
-        </p>
-      </section>
-    </main>
-
-    <footer class="site-footer">
-      <p>Swing Syndicate is a registered student organization of Cornell University.</p>
-    </footer>
+  <body>
+    <div id="root"></div>
+    <noscript>This website requires JavaScript.</noscript>
+    <script type="module" src="/src/site/main.tsx"></script>
   </body>
 </html>
