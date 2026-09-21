@@ -1,0 +1,13 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "swingsyndicate",
+  "pages_build_output_dir": "./dist",
+  "compatibility_date": "2026-08-26",
+  "compatibility_flags": ["nodejs_compat"],
+  "services": [
+    {
+      "binding": "CHECKIN_API",
+      "service": "swing-checkin-sync"
+    }
+  ]
+}

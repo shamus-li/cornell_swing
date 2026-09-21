@@ -2,6 +2,10 @@
 .*
 !.gitignore
 
+# Local design explorations
+logo-concepts-*/
+favicon-concepts-*/
+
 # Browser, dependency, test, and build artifacts
 output/
 node_modules/
@@ -9,5 +13,7 @@ playwright-report/
 test-results/
 coverage/
 dist/
+dist-ssr/
 build/
+*.local
 *.log

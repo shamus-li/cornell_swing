@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["vite/client", "@cloudflare/vitest-plugin/types", "@cloudflare/workers-types"],
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "@/*": ["./check-in/src/*"]
+    }
+  },
+  "include": [
+    "check-in/src",
+    "check-in/worker",
+    "check-in/test",
+    "functions",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "pages-configuration.d.ts",
+    "worker-configuration.d.ts"
+  ]
+}
