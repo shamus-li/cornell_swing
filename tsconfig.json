@@ -17,7 +17,8 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "paths": {
-      "@/*": ["./check-in/src/*"]
+      "@/*": ["./check-in/src/*"],
+      "@shared/*": ["./src/*"]
     }
   },
   "include": [
@@ -25,10 +26,8 @@
     "check-in/src",
     "check-in/worker",
     "check-in/test",
-    "functions",
     "vite.config.ts",
     "vitest.config.ts",
-    "pages-configuration.d.ts",
     "worker-configuration.d.ts"
   ]
 }

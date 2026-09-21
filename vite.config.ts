@@ -9,6 +9,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./check-in/src", import.meta.url)),
+      "@shared": fileURLToPath(new URL("./src", import.meta.url)),
     },
     dedupe: ["react", "react-dom"],
   },

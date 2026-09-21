@@ -1,6 +1,9 @@
 # Hidden local artifacts (keep this file tracked)
 .*
 !.gitignore
+!.github/
+!.github/workflows/
+!.github/workflows/deploy.yml
 
 # Local design explorations
 logo-concepts-*/

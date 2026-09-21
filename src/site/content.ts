@@ -159,6 +159,7 @@ export const siteContent = {
       { label: "Waiver", href: "https://cglink.me/2ee/s96437" },
       { label: "Mailing list", href: mailingListUrl },
       { label: "Email", href: "mailto:cugradswing@gmail.com" },
+      { label: "Check in", href: "/check-in/" },
     ],
   },
   footer:

@@ -2,14 +2,7 @@ import { useEffect, useState } from "react"
 
 type SheetRow = Record<string, string>
 type LoadStatus = "loading" | "loaded" | "error"
-type ReadyFlag = "__scheduleReady" | "__specialEventsReady"
-
-declare global {
-  interface Window {
-    __scheduleReady?: boolean
-    __specialEventsReady?: boolean
-  }
-}
+type EventsState = { events: SheetRow[]; status: LoadStatus }
 
 function parseCsv(csv: string): SheetRow[] {
   const rows: string[][] = []
@@ -59,7 +52,7 @@ function parseCsv(csv: string): SheetRow[] {
 }
 
 async function fetchEvents(url: string, signal: AbortSignal) {
-  const response = await fetch(url, { cache: "no-store", signal })
+  const response = await fetch(url, { signal })
   if (!response.ok) {
     throw new Error(`Event request failed with ${response.status}`)
   }
@@ -69,32 +62,35 @@ async function fetchEvents(url: string, signal: AbortSignal) {
   return events
 }
 
-function useEvents(url: string, readyFlag: ReadyFlag) {
-  const [events, setEvents] = useState<SheetRow[]>([])
-  const [status, setStatus] = useState<LoadStatus>("loading")
+const loadingEvents: EventsState = { events: [], status: "loading" }
+
+export function useScheduleData(scheduleUrl: string, specialEventsUrl: string) {
+  const [schedule, setSchedule] = useState<EventsState>(loadingEvents)
+  const [specialEvents, setSpecialEvents] = useState<EventsState>(loadingEvents)
 
   useEffect(() => {
     const controller = new AbortController()
-    window[readyFlag] = false
-    setStatus("loading")
+    setSchedule(loadingEvents)
+    setSpecialEvents(loadingEvents)
 
-    fetchEvents(url, controller.signal)
-      .then((nextEvents) => {
-        setEvents(nextEvents)
-        setStatus("loaded")
-        window[readyFlag] = true
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return
-        console.error(error)
-        setStatus("error")
-        window[readyFlag] = false
-      })
+    const load = (url: string, setState: (state: EventsState) => void) =>
+      fetchEvents(url, controller.signal)
+        .then((events) => setState({ events, status: "loaded" }))
+        .catch((error: unknown) => {
+          if (error instanceof DOMException && error.name === "AbortError") return
+          console.error(error)
+          setState({ events: [], status: "error" })
+        })
+
+    void Promise.allSettled([
+      load(scheduleUrl, setSchedule),
+      load(specialEventsUrl, setSpecialEvents),
+    ])
 
     return () => controller.abort()
-  }, [readyFlag, url])
+  }, [scheduleUrl, specialEventsUrl])
 
-  return { events, status }
+  return { schedule, specialEvents }
 }
 
 // Accepts 2026-09-07, 9/7/2026, and 9/7 so either Sheet style renders.
@@ -168,13 +164,12 @@ function ScheduleRow({ event }: { event: SheetRow }) {
   )
 }
 
-export function Schedule({ title, times, url }: {
+export function Schedule({ title, times, events, status }: {
   title: string
   times: string
-  url: string
+  events: SheetRow[]
+  status: LoadStatus
 }) {
-  const { events, status } = useEvents(url, "__scheduleReady")
-
   return (
     <section id="schedule" className="section" aria-labelledby="schedule-title">
       <h2 id="schedule-title">{title}</h2>
@@ -229,9 +224,11 @@ function SpecialEventRow({ event }: { event: SheetRow }) {
   )
 }
 
-export function SpecialEvents({ title, url }: { title: string; url: string }) {
-  const { events, status } = useEvents(url, "__specialEventsReady")
-
+export function SpecialEvents({ title, events, status }: {
+  title: string
+  events: SheetRow[]
+  status: LoadStatus
+}) {
   return (
     <section
       id="special-events"

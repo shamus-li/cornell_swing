@@ -1,9 +1,8 @@
 import { importPKCS8, SignJWT } from "jose"
 
-import { createMemberId } from "./member-id"
-
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
+const ACCESS_TOKEN_CACHE_MS = 50 * 60 * 1000
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504])
 
 export type SheetValue = string | number | boolean | null
@@ -57,6 +56,28 @@ export async function getGoogleAccessToken(env: Env): Promise<string> {
     throw new Error(`Google authentication failed with ${response.status}`)
   }
   return payload.access_token
+}
+
+export function createCachedGoogleAccessTokenProvider(
+  fetchAccessToken: (env: Env) => Promise<string> = getGoogleAccessToken,
+  now: () => number = Date.now,
+): (env: Env) => Promise<string> {
+  let cached: { token: string; expiresAt: number } | null = null
+  let refresh: Promise<string> | null = null
+
+  return async (env) => {
+    if (cached && cached.expiresAt > now()) return cached.token
+
+    refresh ??= fetchAccessToken(env)
+      .then((token) => {
+        cached = { token, expiresAt: now() + ACCESS_TOKEN_CACHE_MS }
+        return token
+      })
+      .finally(() => {
+        refresh = null
+      })
+    return refresh
+  }
 }
 
 function quoteSheetTitle(title: string): string {
@@ -122,6 +143,48 @@ export async function readCheckins(env: Env, accessToken: string): Promise<Check
       memberId: stringValue(source[4]).trim(),
     }
   })
+}
+
+function columnValues(valueRange: unknown): SheetValue[] {
+  if (!isRecord(valueRange) || !Array.isArray(valueRange.values)) return []
+  return valueRange.values.map((row) => sheetValue(Array.isArray(row) ? row[0] : null))
+}
+
+export async function readCheckinKeys(
+  env: Env,
+  accessToken: string,
+  dateKey: string,
+): Promise<string[]> {
+  const url = new URL(`${spreadsheetUrl(env)}/values:batchGet`)
+  for (const range of ["A2:A", "C2:C", "E2:E"]) {
+    url.searchParams.append("ranges", sheetRange(env, range))
+  }
+  url.searchParams.set("valueRenderOption", "UNFORMATTED_VALUE")
+  url.searchParams.set("dateTimeRenderOption", "SERIAL_NUMBER")
+
+  const response = await sheetsRequest(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  const payload: unknown = await response.json()
+  if (!response.ok || !isRecord(payload) || !Array.isArray(payload.valueRanges)) {
+    throw new Error(`Google Sheets key read failed with ${response.status}`)
+  }
+
+  const [timestamps, emails, memberIds] = payload.valueRanges.map(columnValues)
+  const rowCount = Math.max(timestamps?.length ?? 0, emails?.length ?? 0, memberIds?.length ?? 0)
+  const keys = new Set<string>()
+  for (let index = 0; index < rowCount; index += 1) {
+    if (dateKeyForSheetTimestamp(timestamps?.[index] ?? null) !== dateKey) continue
+    const email = stringValue(emails?.[index]).trim().toLowerCase()
+    const memberId = stringValue(memberIds?.[index]).trim()
+    if (email) keys.add(`email:${email}`)
+    if (memberId) {
+      keys.add(`id:${memberId}`)
+    } else if (email) {
+      keys.add(`legacy-email:${email}`)
+    }
+  }
+  return [...keys]
 }
 
 async function updateValues(
@@ -257,35 +320,21 @@ export function dateKeyInTimeZone(timestamp: number, timeZone: string): string {
   return `${year.toString().padStart(4, "0")}-${month.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`
 }
 
-export async function recordCheckin(
+export async function appendCheckin(
   env: Env,
   accessToken: string,
-  attendee: { memberId: string | null; name: string; email: string; affiliation: string },
+  attendee: { memberId: string; name: string; email: string; affiliation: string },
   timestamp: number,
-): Promise<"created" | "duplicate"> {
-  const rows = await readCheckins(env, accessToken)
-  const dateKey = dateKeyInTimeZone(timestamp, env.TIME_ZONE)
-  const duplicate = rows.some(
-    (row) =>
-      dateKeyForSheetTimestamp(row.timestamp) === dateKey &&
-      (attendee.memberId
-        ? row.memberId === attendee.memberId || (!row.memberId && row.email === attendee.email)
-        : row.email === attendee.email),
-  )
-  if (duplicate) return "duplicate"
-
-  // values:append is atomic on Google's side, so concurrent check-ins cannot
-  // claim the same row. The nightly sync restores newest-first ordering.
+): Promise<void> {
   await appendRows(env, accessToken, env.GOOGLE_SHEET_NAME, [
     [
       timestampForSheet(timestamp, env.TIME_ZONE),
       attendee.name,
       attendee.email,
       attendee.affiliation,
-      attendee.memberId ?? createMemberId(),
+      attendee.memberId,
     ],
   ])
-  return "created"
 }
 
 export async function updateCheckinMemberDetails(
