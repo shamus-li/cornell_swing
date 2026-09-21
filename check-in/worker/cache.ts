@@ -30,7 +30,11 @@ function isMemberSnapshot(value: unknown): value is MemberSnapshot {
 }
 
 export async function refreshMemberCache(env: Env): Promise<MemberSnapshot> {
-  const snapshot = { members: await listMembers(env) }
+  return storeMemberCache(env, await listMembers(env))
+}
+
+export async function storeMemberCache(env: Env, members: Member[]): Promise<MemberSnapshot> {
+  const snapshot = { members }
   await env.MEMBER_CACHE.put(MEMBER_CACHE_KEY, JSON.stringify(snapshot))
   return snapshot
 }

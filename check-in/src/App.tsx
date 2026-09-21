@@ -282,7 +282,7 @@ export default function App() {
       <main className="mx-auto flex min-h-svh w-full max-w-[540px] flex-col items-center justify-center gap-6 px-5 py-12 text-center sm:gap-8">
         <h1 className="text-[2rem] leading-tight font-bold">{confirmation}</h1>
         <WaiverCallout />
-        <Button className="h-13 px-5 text-base" onClick={resetForm}>
+        <Button size="lg" onClick={resetForm}>
           Check in another person
         </Button>
       </main>
@@ -312,7 +312,7 @@ export default function App() {
                 Updating {selectedMember.name || selectedMember.email}
               </span>
               <Button
-                className="h-auto shrink-0 px-0 py-0 text-sm"
+                size="sm"
                 type="button"
                 variant="link"
                 onClick={clearSelectedMember}
@@ -417,7 +417,7 @@ export default function App() {
             {message}
           </p>
 
-          <Button className="h-13 w-full text-base" type="submit" disabled={isSubmitting}>
+          <Button size="lg" className="w-full" type="submit" disabled={isSubmitting}>
             {isSubmitting ? "Checking in…" : "Check in"}
           </Button>
         </form>

@@ -17,7 +17,10 @@ import {
   timestampForSheet,
 } from "../worker/google"
 import { MEMBER_ID_PATTERN } from "../worker/member-id"
-import { ATTENDANCE_SYNC_STATE_KEY } from "../worker/sync-state"
+import {
+  ATTENDANCE_SYNC_STATE_KEY,
+  ATTENDANCE_SYNC_STATE_VERSION,
+} from "../worker/sync-state"
 import { FakeNotion, FakeSheets } from "./fakes"
 import { network } from "./network"
 
@@ -41,7 +44,7 @@ beforeEach(async () => {
   await env.MEMBER_CACHE.delete("members:v2")
   await env.MEMBER_CACHE.put(
     ATTENDANCE_SYNC_STATE_KEY,
-    JSON.stringify({ version: 1, fingerprints: [] }),
+    JSON.stringify({ version: ATTENDANCE_SYNC_STATE_VERSION, fingerprints: [] }),
   )
 })
 
@@ -702,6 +705,47 @@ describe("nightly sync", () => {
     ])
   })
 
+  it("backfills every event when upgrading a legacy checkpoint", async () => {
+    const { sheets, notion } = useFakes()
+    const august24 = notion.addEvent("2026-08-24")
+    const august31 = notion.addEvent("2026-08-31")
+    const ella = notion.addMember({
+      memberId: ADA_MEMBER_ID,
+      name: "Ella Kramer",
+      email: "ella@example.com",
+      affiliation: "Community Member",
+      events: [august31.pageId],
+    })
+    const stale = notion.addMember({
+      memberId: GRACE_MEMBER_ID,
+      name: "Stale Attendee",
+      email: "stale@example.com",
+      affiliation: "Community Member",
+      events: [august24.pageId],
+    })
+    august24.attendees = [stale.pageId]
+    august31.attendees = [ella.pageId]
+    sheets.rows.push(
+      [serialFor(Date.parse("2026-08-24T23:00:00Z")), "Earlier Name", "ella@example.com", "Community Member", ADA_MEMBER_ID],
+      [serialFor(Date.parse("2026-08-31T23:00:00Z")), "Ella Kramer", "ella@example.com", "Community Member", ADA_MEMBER_ID],
+    )
+    const legacyFingerprints = sheets.rows.map((row) => JSON.stringify(row))
+    await env.MEMBER_CACHE.put(
+      ATTENDANCE_SYNC_STATE_KEY,
+      JSON.stringify({ version: 1, fingerprints: legacyFingerprints }),
+    )
+
+    expect(await runNightlySync(env, token)).toEqual({ synced: 2, failed: 0 })
+    expect(august24.attendees).toEqual([ella.pageId])
+    expect(august31.attendees).toEqual([ella.pageId])
+    expect(ella.events.sort()).toEqual([august24.pageId, august31.pageId].sort())
+    expect(ella.name).toBe("Ella Kramer")
+    expect(stale.events).toEqual([])
+    expect(await env.MEMBER_CACHE.get(ATTENDANCE_SYNC_STATE_KEY, "json")).toMatchObject({
+      version: ATTENDANCE_SYNC_STATE_VERSION,
+    })
+  })
+
   it("resyncs a row when its Sheet data changes", async () => {
     const { sheets, notion } = useFakes()
     sheets.rows.push([
@@ -719,7 +763,7 @@ describe("nightly sync", () => {
     expect(notion.members[0].name).toBe("Changed in the Sheet")
   })
 
-  it("backfills newer Notion details into a legacy sheet row", async () => {
+  it("overwrites newer Notion details from a legacy Sheet row", async () => {
     const { sheets, notion } = useFakes()
     notion.addMember({
       memberId: ADA_MEMBER_ID,
@@ -734,16 +778,19 @@ describe("nightly sync", () => {
 
     expect(result).toEqual({ synced: 1, failed: 0 })
     expect(sheets.rows[0].slice(1)).toEqual([
-      "Ada Lovelace",
+      "Old Name",
       "ada@example.com",
-      "Graduate/Professional Student",
+      "Community Member",
       ADA_MEMBER_ID,
     ])
-    expect(notion.members[0].name).toBe("Ada Lovelace")
+    expect(notion.members[0]).toMatchObject({
+      name: "Old Name",
+      affiliation: "Community Member",
+    })
     expect(notion.members[0].events).toEqual([notion.events[0].pageId])
   })
 
-  it("prefers newer sheet details while preserving existing event relations", async () => {
+  it("uses Sheet details regardless of edit time while preserving existing event relations", async () => {
     const { sheets, notion } = useFakes()
     notion.addMember({
       memberId: ADA_MEMBER_ID,
@@ -751,7 +798,7 @@ describe("nightly sync", () => {
       email: "ada@example.com",
       affiliation: "Alumni",
       events: ["previous-event-id"],
-      lastEditedTime: "2026-08-25T18:00:00.000Z", // edited before the check-in
+      lastEditedTime: "2026-08-26T12:00:00.000Z", // edited after the check-in
     })
     sheets.rows.push([serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "Community Member", ""])
 
@@ -766,7 +813,105 @@ describe("nightly sync", () => {
     expect(sheets.rows[0][4]).toBe(ADA_MEMBER_ID)
   })
 
-  it("clears email-as-name placeholders from both systems", async () => {
+  it("creates a Notion member when a check-in Member ID is missing from the roster", async () => {
+    const { sheets, notion } = useFakes()
+    notion.addMember({
+      memberId: ADA_MEMBER_ID,
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      affiliation: "Community Member",
+    })
+    sheets.rows.push([
+      serialFor(TEST_TIMESTAMP),
+      "Grace Hopper",
+      "grace@example.com",
+      "Alumni",
+      GRACE_MEMBER_ID,
+    ])
+
+    expect(await runNightlySync(env, token)).toEqual({ synced: 1, failed: 0 })
+    expect(notion.members.find((member) => member.memberId === GRACE_MEMBER_ID)).toMatchObject({
+      name: "Grace Hopper",
+      email: "grace@example.com",
+      affiliation: "Alumni",
+    })
+  })
+
+  it("rejects an ID and email that point to different Notion members", async () => {
+    const { sheets, notion } = useFakes()
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+    notion.addMember({
+      memberId: ADA_MEMBER_ID,
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      affiliation: "Community Member",
+    })
+    sheets.rows.push([
+      serialFor(TEST_TIMESTAMP),
+      "Not Ada",
+      "ada@example.com",
+      "Alumni",
+      GRACE_MEMBER_ID,
+    ])
+
+    try {
+      await expect(runNightlySync(env, token)).rejects.toThrow("0 synced, 1 failed")
+      expect(notion.members).toHaveLength(1)
+      expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
+        "Check-in member ID and email refer to different Notion members",
+      ))
+    } finally {
+      consoleError.mockRestore()
+    }
+  })
+
+  it("syncs 50 attendees with a large roster in fewer than 25 Notion requests", async () => {
+    const { sheets, notion } = useFakes()
+    for (let index = 0; index < 40; index += 1) {
+      notion.addMember({
+        memberId: `Member${String(index).padStart(6, "0")}`,
+        name: `Member ${index}`,
+        email: `member${index}@example.com`,
+        affiliation: "Community Member",
+      })
+    }
+    for (let index = 0; index < 460; index += 1) {
+      notion.addMember({
+        memberId: `Filler${String(index).padStart(6, "0")}`,
+        name: `Filler ${index}`,
+        email: `filler${index}@example.com`,
+        affiliation: "Staff",
+      })
+    }
+    for (let index = 0; index < 50; index += 1) {
+      sheets.rows.push([
+        serialFor(TEST_TIMESTAMP + index * 60_000),
+        `Member ${index}`,
+        `member${index}@example.com`,
+        "Community Member",
+        `Member${String(index).padStart(6, "0")}`,
+      ])
+    }
+
+    expect(await runNightlySync(env, token)).toEqual({ synced: 50, failed: 0 })
+    expect(notion.requests).toBe(18)
+    expect(notion.events[0].attendees).toHaveLength(50)
+    expect(notion.members).toHaveLength(510)
+
+    const firstRunRequests = notion.requests
+    sheets.rows.push([
+      serialFor(TEST_TIMESTAMP + 50 * 60_000),
+      "Member 50",
+      "member50@example.com",
+      "Community Member",
+      "Member000050",
+    ])
+    expect(await runNightlySync(env, token)).toEqual({ synced: 1, failed: 0 })
+    expect(notion.requests - firstRunRequests).toBe(10)
+    expect(notion.events[0].attendees).toHaveLength(51)
+  })
+
+  it("clears email-as-name placeholders and fills the member ID with one sheet update", async () => {
     const { sheets, notion } = useFakes()
     notion.addMember({
       memberId: ADA_MEMBER_ID,
@@ -779,7 +924,7 @@ describe("nightly sync", () => {
       "ada@example.com",
       "ada@example.com",
       "Community Member",
-      ADA_MEMBER_ID,
+      "",
     ])
 
     const result = await runNightlySync(env, token)
@@ -787,6 +932,8 @@ describe("nightly sync", () => {
     expect(result).toEqual({ synced: 1, failed: 0 })
     expect(notion.members[0].name).toBe("")
     expect(sheets.rows[0][1]).toBe("")
+    expect(sheets.rows[0][4]).toBe(ADA_MEMBER_ID)
+    expect(sheets.updates).toBe(1)
   })
 
   it("keeps syncing the remaining rows when one row is invalid", async () => {
@@ -848,7 +995,7 @@ describe("nightly sync", () => {
     try {
       await expect(runNightlySync(env, token)).rejects.toThrow("403")
       expect(await env.MEMBER_CACHE.get(ATTENDANCE_SYNC_STATE_KEY, "json")).toEqual({
-        version: 1,
+        version: ATTENDANCE_SYNC_STATE_VERSION,
         fingerprints: [],
       })
 

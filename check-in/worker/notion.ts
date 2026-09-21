@@ -1,14 +1,13 @@
 import { isAffiliation, type Affiliation, type Member } from "../src/lib/checkin"
-import { timestampForSheet } from "./google"
 import { createMemberId } from "./member-id"
 
 const NOTION_API = "https://api.notion.com/v1"
 const NOTION_VERSION = "2026-03-11"
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504])
+const MAX_RELATION_ITEMS = 100
 
 type NotionPage = {
   id: string
-  lastEditedTime: string | null
   properties: Record<string, unknown>
 }
 
@@ -17,17 +16,33 @@ type QueryResult = {
   nextCursor: string | null
 }
 
+export type MemberRecord = Member & { pageId: string }
+
+export type MemberRoster = {
+  records: MemberRecord[]
+  byId: Map<string, MemberRecord>
+  byEmail: Map<string, MemberRecord[]>
+}
+
+export type AttendanceEvent = {
+  id: string
+  attendeePageIds: string[]
+}
+
+type AttendanceDetails = {
+  memberId: string | null
+  name: string
+  email: string
+  affiliation: Affiliation
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function asPage(value: unknown): NotionPage | null {
   if (!isRecord(value) || typeof value.id !== "string" || !isRecord(value.properties)) return null
-  return {
-    id: value.id,
-    lastEditedTime: typeof value.last_edited_time === "string" ? value.last_edited_time : null,
-    properties: value.properties,
-  }
+  return { id: value.id, properties: value.properties }
 }
 
 function property(page: NotionPage, name: string): Record<string, unknown> | null {
@@ -43,7 +58,7 @@ function plainText(value: unknown): string {
     .trim()
 }
 
-function pageToMember(page: NotionPage): Member {
+function pageToMemberRecord(page: NotionPage): MemberRecord {
   const memberId = plainText(property(page, "Member ID")?.rich_text)
   if (!memberId) throw new Error("Notion member is missing Member ID")
   const emailProperty = property(page, "Email")
@@ -52,10 +67,20 @@ function pageToMember(page: NotionPage): Member {
   const affiliation = select?.name
 
   return {
+    pageId: page.id,
     id: memberId,
     name: plainText(property(page, "Name")?.title),
     email: typeof emailProperty?.email === "string" ? emailProperty.email.trim().toLowerCase() : "",
     affiliation: isAffiliation(affiliation) ? affiliation : "",
+  }
+}
+
+function memberFromRecord(record: MemberRecord): Member {
+  return {
+    id: record.id,
+    name: record.name,
+    email: record.email,
+    affiliation: record.affiliation,
   }
 }
 
@@ -114,8 +139,31 @@ async function queryPages(
   }
 }
 
-export async function listMembers(env: Env): Promise<Member[]> {
-  const members: Member[] = []
+function addEmailIndex(roster: MemberRoster, record: MemberRecord): void {
+  if (!record.email) return
+  const matches = roster.byEmail.get(record.email) ?? []
+  matches.push(record)
+  roster.byEmail.set(record.email, matches)
+}
+
+function removeEmailIndex(roster: MemberRoster, record: MemberRecord, email: string): void {
+  if (!email) return
+  const matches = (roster.byEmail.get(email) ?? []).filter((candidate) => candidate !== record)
+  if (matches.length > 0) roster.byEmail.set(email, matches)
+  else roster.byEmail.delete(email)
+}
+
+function addRosterRecord(roster: MemberRoster, record: MemberRecord): void {
+  if (roster.byId.has(record.id)) {
+    throw new Error(`More than one Notion member has Member ID ${record.id}`)
+  }
+  roster.records.push(record)
+  roster.byId.set(record.id, record)
+  addEmailIndex(roster, record)
+}
+
+export async function loadMemberRoster(env: Env): Promise<MemberRoster> {
+  const pages: NotionPage[] = []
   let startCursor: string | null = null
 
   do {
@@ -128,57 +176,91 @@ export async function listMembers(env: Env): Promise<Member[]> {
       },
       ["Name", "Email", "Affiliation", "Member ID"],
     )
-    members.push(...result.pages.map(pageToMember).filter((member) => member.name || member.email))
+    pages.push(...result.pages)
     startCursor = result.nextCursor
   } while (startCursor)
 
-  return members
+  const roster: MemberRoster = { records: [], byId: new Map(), byEmail: new Map() }
+  for (const page of pages) addRosterRecord(roster, pageToMemberRecord(page))
+  return roster
 }
 
-async function findMemberById(env: Env, memberId: string): Promise<NotionPage | null> {
-  const pages = await queryPages(
-    env,
-    env.NOTION_MEMBERS_DATA_SOURCE_ID,
-    {
-      page_size: 2,
-      filter: { property: "Member ID", rich_text: { equals: memberId } },
-    },
-    ["Name", "Email", "Affiliation", "Member ID", "Events Attended"],
-  )
-  if (pages.pages.length > 1) throw new Error("More than one Notion member has this Member ID")
-  return pages.pages[0] ?? null
+export async function listMembers(env: Env): Promise<Member[]> {
+  const roster = await loadMemberRoster(env)
+  return roster.records
+    .filter((record) => record.name || record.email)
+    .map(memberFromRecord)
 }
 
-async function findMemberByEmail(env: Env, email: string): Promise<NotionPage | null> {
-  const pages = await queryPages(
-    env,
-    env.NOTION_MEMBERS_DATA_SOURCE_ID,
-    {
-      page_size: 2,
-      filter: { property: "Email", email: { equals: email } },
-    },
-    ["Name", "Email", "Affiliation", "Member ID", "Events Attended"],
-  )
-  if (pages.pages.length > 1) throw new Error("More than one Notion member has this email")
-  return pages.pages[0] ?? null
+function inlineRelation(
+  page: NotionPage,
+  name: string,
+): { propertyId: string; relationIds: string[]; hasMore: boolean } {
+  const relationProperty = property(page, name)
+  if (!relationProperty || typeof relationProperty.id !== "string" || !Array.isArray(relationProperty.relation)) {
+    throw new Error(`Notion page is missing the ${name} relation`)
+  }
+  return {
+    propertyId: relationProperty.id,
+    relationIds: relationProperty.relation.flatMap((item) =>
+      isRecord(item) && typeof item.id === "string" ? [item.id] : [],
+    ),
+    hasMore: relationProperty.has_more === true,
+  }
 }
 
-export async function findOrCreateEventForDate(env: Env, date: string): Promise<string> {
-  const pages = await queryPages(
+async function retrieveRelationIds(env: Env, pageId: string, propertyId: string): Promise<string[]> {
+  const relationIds: string[] = []
+  let cursor: string | null = null
+  const encodedPropertyId = encodeURIComponent(decodeURIComponent(propertyId))
+
+  do {
+    const query = new URLSearchParams({ page_size: "100" })
+    if (cursor) query.set("start_cursor", cursor)
+    const payload = await notionRequest(
+      env,
+      `/pages/${encodeURIComponent(pageId)}/properties/${encodedPropertyId}?${query.toString()}`,
+      { method: "GET" },
+    )
+    if (!isRecord(payload) || !Array.isArray(payload.results)) {
+      throw new Error("Notion returned an invalid relation response")
+    }
+    for (const item of payload.results) {
+      if (isRecord(item) && isRecord(item.relation) && typeof item.relation.id === "string") {
+        relationIds.push(item.relation.id)
+      }
+    }
+    cursor = payload.has_more === true && typeof payload.next_cursor === "string" ? payload.next_cursor : null
+  } while (cursor)
+
+  return relationIds
+}
+
+export async function findOrCreateEventForDate(env: Env, date: string): Promise<AttendanceEvent> {
+  const result = await queryPages(
     env,
     env.NOTION_EVENTS_DATA_SOURCE_ID,
     {
       page_size: 2,
       filter: { property: "Date", date: { equals: date } },
     },
-    ["Name", "Date"],
+    ["Name", "Date", "Attendees"],
   )
-  if (pages.pages.length > 1) {
-    throw new Error(`Expected at most one Notion event for ${date}, found ${pages.pages.length}`)
+  if (result.pages.length > 1) {
+    throw new Error(`Expected at most one Notion event for ${date}, found ${result.pages.length}`)
   }
-  if (pages.pages.length === 1) return pages.pages[0].id
+  if (result.pages.length === 1) {
+    const page = result.pages[0]
+    const relation = inlineRelation(page, "Attendees")
+    return {
+      id: page.id,
+      attendeePageIds: relation.hasMore
+        ? await retrieveRelationIds(env, page.id, relation.propertyId)
+        : relation.relationIds,
+    }
+  }
 
-  const created: unknown = await notionRequest(env, "/pages", {
+  const created = await notionRequest(env, "/pages", {
     method: "POST",
     body: JSON.stringify({
       parent: { type: "data_source_id", data_source_id: env.NOTION_EVENTS_DATA_SOURCE_ID },
@@ -191,7 +273,7 @@ export async function findOrCreateEventForDate(env: Env, date: string): Promise<
   if (!isRecord(created) || typeof created.id !== "string") {
     throw new Error("Notion returned an invalid created event")
   }
-  return created.id
+  return { id: created.id, attendeePageIds: [] }
 }
 
 async function createMember(
@@ -199,8 +281,8 @@ async function createMember(
   attendee: { memberId: string; name: string; email: string; affiliation: Affiliation },
   date: string,
   eventId: string,
-): Promise<void> {
-  await notionRequest(env, "/pages", {
+): Promise<MemberRecord> {
+  const created = await notionRequest(env, "/pages", {
     method: "POST",
     body: JSON.stringify({
       parent: { type: "data_source_id", data_source_id: env.NOTION_MEMBERS_DATA_SOURCE_ID },
@@ -218,138 +300,107 @@ async function createMember(
       },
     }),
   })
-}
-
-function inlineRelation(page: NotionPage): {
-  propertyId: string
-  relationIds: string[]
-  hasMore: boolean
-} {
-  const relationProperty = property(page, "Events Attended")
-  if (!relationProperty || typeof relationProperty.id !== "string" || !Array.isArray(relationProperty.relation)) {
-    throw new Error("Notion member is missing the Events Attended relation")
+  if (!isRecord(created) || typeof created.id !== "string") {
+    throw new Error("Notion returned an invalid created member")
   }
   return {
-    propertyId: relationProperty.id,
-    relationIds: relationProperty.relation.flatMap((item) =>
-      isRecord(item) && typeof item.id === "string" ? [item.id] : [],
-    ),
-    hasMore: relationProperty.has_more === true,
+    pageId: created.id,
+    id: attendee.memberId,
+    name: attendee.name,
+    email: attendee.email,
+    affiliation: attendee.affiliation,
   }
 }
 
-async function retrieveRelationIds(env: Env, pageId: string, propertyId: string): Promise<string[]> {
-  const relationIds: string[] = []
-  let cursor: string | null = null
-
-  do {
-    const query = new URLSearchParams({ page_size: "100" })
-    if (cursor) query.set("start_cursor", cursor)
-    const payload = await notionRequest(
-      env,
-      `/pages/${encodeURIComponent(pageId)}/properties/${encodeURIComponent(propertyId)}?${query.toString()}`,
-      { method: "GET" },
-    )
-    if (!isRecord(payload) || !Array.isArray(payload.results)) {
-      throw new Error("Notion returned an invalid relation response")
-    }
-    for (const item of payload.results) {
-      if (isRecord(item) && isRecord(item.relation) && typeof item.relation.id === "string") {
-        relationIds.push(item.relation.id)
-      }
-    }
-    cursor = payload.has_more === true && typeof payload.next_cursor === "string" ? payload.next_cursor : null
-  } while (cursor)
-
-  return relationIds
-}
-
-async function updateMember(
+async function updateMemberDetails(
   env: Env,
-  page: NotionPage,
-  eventId: string,
-  details: { name: string; email: string; affiliation: Affiliation } | null,
+  pageId: string,
+  details: { name: string; email: string; affiliation: Affiliation },
 ): Promise<void> {
-  const relation = inlineRelation(page)
-  const relationIds = relation.hasMore
-    ? await retrieveRelationIds(env, page.id, relation.propertyId)
-    : relation.relationIds
-  const properties: Record<string, unknown> = {}
-
-  if (details) {
-    properties.Name = details.name
-      ? { title: [{ type: "text", text: { content: details.name } }] }
-      : { title: [] }
-    properties.Affiliation = { select: { name: details.affiliation } }
-    properties.Email = { email: details.email }
-  }
-  if (!relationIds.includes(eventId)) {
-    properties["Events Attended"] = { relation: [...relationIds, eventId].map((id) => ({ id })) }
-  }
-  if (Object.keys(properties).length === 0) return
-
-  await notionRequest(env, `/pages/${encodeURIComponent(page.id)}`, {
+  await notionRequest(env, `/pages/${encodeURIComponent(pageId)}`, {
     method: "PATCH",
-    body: JSON.stringify({ properties }),
+    body: JSON.stringify({
+      properties: {
+        Name: details.name
+          ? { title: [{ type: "text", text: { content: details.name } }] }
+          : { title: [] },
+        Email: { email: details.email },
+        Affiliation: { select: { name: details.affiliation } },
+      },
+    }),
   })
+}
+
+function conflictingEmailRecords(
+  roster: MemberRoster,
+  email: string,
+  expected: MemberRecord | null,
+): MemberRecord[] {
+  return (roster.byEmail.get(email) ?? []).filter((record) => record !== expected)
 }
 
 export async function syncMemberAttendance(
   env: Env,
-  attendee: { memberId: string | null; name: string; email: string; affiliation: Affiliation },
+  roster: MemberRoster,
+  attendee: AttendanceDetails,
   date: string,
   eventId: string,
-  sheetTimestamp: number,
-): Promise<Member> {
-  const member = attendee.memberId
-    ? await findMemberById(env, attendee.memberId)
-    : await findMemberByEmail(env, attendee.email)
-  if (!member) {
-    const created = { ...attendee, memberId: attendee.memberId ?? createMemberId() }
-    await createMember(env, created, date, eventId)
-    return { id: created.memberId, name: created.name, email: created.email, affiliation: created.affiliation }
-  }
+): Promise<MemberRecord> {
+  let member: MemberRecord | null = null
 
-  const notionMember = pageToMember(member)
   if (attendee.memberId) {
-    const canonical = {
-      id: notionMember.id,
-      name: attendee.name,
-      email: attendee.email,
-      affiliation: attendee.affiliation,
+    member = roster.byId.get(attendee.memberId) ?? null
+    if (conflictingEmailRecords(roster, attendee.email, member).length > 0) {
+      throw new Error("Check-in member ID and email refer to different Notion members")
     }
-    const notionDetailsDiffer =
-      notionMember.name !== canonical.name ||
-      notionMember.email !== canonical.email ||
-      notionMember.affiliation !== canonical.affiliation
-    await updateMember(env, member, eventId, notionDetailsDiffer ? canonical : null)
-    return canonical
+  } else {
+    const matches = roster.byEmail.get(attendee.email) ?? []
+    if (matches.length > 1) throw new Error("More than one Notion member has this email")
+    member = matches[0] ?? null
   }
 
-  if (!member.lastEditedTime) throw new Error("Notion member is missing last_edited_time")
-  const notionEditedAt = Date.parse(member.lastEditedTime)
-  if (!Number.isFinite(notionEditedAt)) throw new Error("Notion member has an invalid last_edited_time")
+  if (!member) {
+    const memberId = attendee.memberId ?? createMemberId()
+    const created = await createMember(env, { ...attendee, memberId }, date, eventId)
+    addRosterRecord(roster, created)
+    return created
+  }
 
-  const notionIsNewer = timestampForSheet(notionEditedAt, env.TIME_ZONE) > sheetTimestamp
-  const notionName =
-    notionMember.name.toLowerCase() === attendee.email ? "" : notionMember.name
-  const name =
-    notionName && (!attendee.name || notionIsNewer) ? notionName : attendee.name
-  const affiliation =
-    notionIsNewer && isAffiliation(notionMember.affiliation)
-      ? notionMember.affiliation
-      : attendee.affiliation
-  const canonical = { id: notionMember.id, name, email: attendee.email, affiliation }
-  const notionDetailsDiffer =
-    notionMember.name !== name ||
-    notionMember.email !== attendee.email ||
-    notionMember.affiliation !== affiliation
+  const detailsDiffer =
+    member.name !== attendee.name ||
+    member.email !== attendee.email ||
+    member.affiliation !== attendee.affiliation
+  if (detailsDiffer) {
+    await updateMemberDetails(env, member.pageId, attendee)
+    const previousEmail = member.email
+    removeEmailIndex(roster, member, previousEmail)
+    member.name = attendee.name
+    member.email = attendee.email
+    member.affiliation = attendee.affiliation
+    addEmailIndex(roster, member)
+  }
+  return member
+}
 
-  await updateMember(
-    env,
-    member,
-    eventId,
-    notionDetailsDiffer ? canonical : null,
-  )
-  return canonical
+export async function syncEventAttendance(
+  env: Env,
+  event: AttendanceEvent,
+  attendeePageIds: Iterable<string>,
+): Promise<void> {
+  const relationIds = [...new Set(attendeePageIds)]
+  const existingIds = new Set(event.attendeePageIds)
+  if (relationIds.length === existingIds.size && relationIds.every((id) => existingIds.has(id))) return
+  if (relationIds.length > MAX_RELATION_ITEMS) {
+    throw new Error(`Notion event attendance exceeds the ${MAX_RELATION_ITEMS}-member relation limit`)
+  }
+
+  await notionRequest(env, `/pages/${encodeURIComponent(event.id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      properties: {
+        Attendees: { relation: relationIds.map((id) => ({ id })) },
+      },
+    }),
+  })
+  event.attendeePageIds = relationIds
 }

@@ -95,6 +95,7 @@ export type FakeEvent = {
   pageId: string
   name: string
   date: string
+  attendees: string[]
 }
 
 function richText(items: unknown): string {
@@ -112,6 +113,7 @@ export class FakeNotion {
   events: FakeEvent[] = []
   queries = 0
   writes = 0
+  requests = 0
 
   addMember(member: Partial<FakeMember> & { memberId: string }): FakeMember {
     const full: FakeMember = {
@@ -129,7 +131,7 @@ export class FakeNotion {
   }
 
   addEvent(date: string): FakeEvent {
-    const event = { pageId: `event-page-${this.events.length + 1}`, name: date, date }
+    const event = { pageId: `event-page-${this.events.length + 1}`, name: date, date, attendees: [] }
     this.events.push(event)
     return event
   }
@@ -137,6 +139,7 @@ export class FakeNotion {
   handlers() {
     return [
       http.post(`${NOTION_API}/data_sources/:dataSourceId/query`, async ({ params, request }) => {
+        this.requests += 1
         this.queries += 1
         const body = ((await request.json()) ?? {}) as Record<string, any>
         if (params.dataSourceId === env.NOTION_EVENTS_DATA_SOURCE_ID) {
@@ -168,6 +171,7 @@ export class FakeNotion {
         })
       }),
       http.post(`${NOTION_API}/pages`, async ({ request }) => {
+        this.requests += 1
         this.writes += 1
         const body = (await request.json()) as Record<string, any>
         const properties = body.properties ?? {}
@@ -176,6 +180,7 @@ export class FakeNotion {
             pageId: `event-page-${this.events.length + 1}`,
             name: richText(properties.Name?.title),
             date: String(properties.Date?.date?.start ?? ""),
+            attendees: [],
           }
           this.events.push(event)
           return HttpResponse.json({ object: "page", id: event.pageId, properties: {} })
@@ -192,13 +197,30 @@ export class FakeNotion {
           lastEditedTime: new Date().toISOString(),
         }
         this.members.push(member)
+        for (const eventId of member.events) {
+          const event = this.events.find((candidate) => candidate.pageId === eventId)
+          if (event && !event.attendees.includes(member.pageId)) event.attendees.push(member.pageId)
+        }
         return HttpResponse.json({ object: "page", id: member.pageId, properties: {} })
       }),
       http.patch(`${NOTION_API}/pages/:pageId`, async ({ params, request }) => {
+        this.requests += 1
         this.writes += 1
+        const properties = ((await request.json()) as Record<string, any>).properties ?? {}
+        const event = this.events.find((candidate) => candidate.pageId === params.pageId)
+        if (event) {
+          if ("Attendees" in properties) {
+            event.attendees = properties.Attendees.relation.map((item: { id: string }) => item.id)
+            for (const member of this.members) {
+              member.events = member.events.filter((eventId) => eventId !== event.pageId)
+              if (event.attendees.includes(member.pageId)) member.events.push(event.pageId)
+            }
+          }
+          return HttpResponse.json({ object: "page", id: event.pageId, properties: {} })
+        }
+
         const member = this.members.find((candidate) => candidate.pageId === params.pageId)
         if (!member) return new HttpResponse(null, { status: 404 })
-        const properties = ((await request.json()) as Record<string, any>).properties ?? {}
         if ("Name" in properties) member.name = richText(properties.Name.title)
         if ("Email" in properties) member.email = properties.Email.email
         if ("Affiliation" in properties) member.affiliation = properties.Affiliation.select?.name ?? null
@@ -207,6 +229,23 @@ export class FakeNotion {
         }
         member.lastEditedTime = new Date().toISOString()
         return HttpResponse.json({ object: "page", id: member.pageId, properties: {} })
+      }),
+      http.get(`${NOTION_API}/pages/:pageId/properties/:propertyId`, ({ params, request }) => {
+        this.requests += 1
+        const event = this.events.find((candidate) => candidate.pageId === params.pageId)
+        if (!event || params.propertyId !== "VmW{") {
+          return new HttpResponse(null, { status: 404 })
+        }
+        const url = new URL(request.url)
+        const pageSize = Number(url.searchParams.get("page_size") ?? 100)
+        const start = Number(url.searchParams.get("start_cursor") ?? 0)
+        const hasMore = start + pageSize < event.attendees.length
+        return HttpResponse.json({
+          object: "list",
+          has_more: hasMore,
+          next_cursor: hasMore ? String(start + pageSize) : null,
+          results: event.attendees.slice(start, start + pageSize).map((id) => ({ relation: { id } })),
+        })
       }),
     ]
   }
@@ -238,6 +277,12 @@ export class FakeNotion {
       properties: {
         Name: { title: [{ plain_text: event.name }] },
         Date: { date: { start: event.date } },
+        Attendees: {
+          id: "VmW%7B",
+          type: "relation",
+          relation: event.attendees.slice(0, 25).map((id) => ({ id })),
+          has_more: event.attendees.length > 25,
+        },
       },
     }
   }

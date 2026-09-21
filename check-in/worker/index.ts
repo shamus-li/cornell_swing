@@ -3,8 +3,9 @@ import {
   isValidName,
   normalizeName,
   type Affiliation,
+  type Member,
 } from "../src/lib/checkin"
-import { findCachedMemberById, refreshMemberCache, searchCachedMembers } from "./cache"
+import { findCachedMemberById, searchCachedMembers, storeMemberCache } from "./cache"
 import {
   type CheckinRow,
   dateKeyForSheetTimestamp,
@@ -12,12 +13,17 @@ import {
   getGoogleAccessToken,
   readCheckins,
   sortCheckins,
-  updateCheckinMemberDetails,
-  updateCheckinMemberId,
+  updateCheckinMember,
 } from "./google"
 import { MEMBER_ID_PATTERN } from "./member-id"
-import { findOrCreateEventForDate, syncMemberAttendance } from "./notion"
-import { ATTENDANCE_SYNC_STATE_KEY } from "./sync-state"
+import {
+  type AttendanceEvent,
+  findOrCreateEventForDate,
+  loadMemberRoster,
+  syncEventAttendance,
+  syncMemberAttendance,
+} from "./notion"
+import { ATTENDANCE_SYNC_STATE_KEY, ATTENDANCE_SYNC_STATE_VERSION } from "./sync-state"
 
 export { CheckinGuard } from "./checkin-guard"
 
@@ -46,10 +52,13 @@ async function readAttendanceSyncState(env: Env): Promise<Set<string> | null> {
   if (value === null) return null
   if (
     !isRecord(value) ||
-    value.version !== 1 ||
     !Array.isArray(value.fingerprints) ||
     !value.fingerprints.every((fingerprint) => typeof fingerprint === "string")
   ) {
+    throw new Error("Attendance sync state is invalid")
+  }
+  if (value.version === 1) return null
+  if (value.version !== ATTENDANCE_SYNC_STATE_VERSION) {
     throw new Error("Attendance sync state is invalid")
   }
   return new Set(value.fingerprints)
@@ -62,7 +71,7 @@ function sameFingerprints(left: Set<string>, right: Set<string>): boolean {
 async function writeAttendanceSyncState(env: Env, fingerprints: Set<string>): Promise<void> {
   await env.MEMBER_CACHE.put(
     ATTENDANCE_SYNC_STATE_KEY,
-    JSON.stringify({ version: 1, fingerprints: [...fingerprints] }),
+    JSON.stringify({ version: ATTENDANCE_SYNC_STATE_VERSION, fingerprints: [...fingerprints] }),
   )
 }
 
@@ -179,30 +188,46 @@ async function syncAttendance(env: Env, accessToken: string): Promise<{
   attempted: number
   previousFingerprints: Set<string> | null
   nextFingerprints: Set<string>
+  members: Member[]
 }> {
   const rows = await readCheckins(env, accessToken)
   const previousFingerprints = await readAttendanceSyncState(env)
   const processedFingerprints = previousFingerprints ?? new Set<string>()
   const nextFingerprints = new Set<string>()
-  const events = new Map<string, string>()
+  const roster = await loadMemberRoster(env)
+  const events = new Map<string, AttendanceEvent>()
+  const eventAttendees = new Map<string, Set<string>>()
+  const pendingDates = new Set(
+    rows.flatMap((row) => {
+      if (row.timestamp === null || !row.email || processedFingerprints.has(checkinFingerprint(row))) {
+        return []
+      }
+      const date = dateKeyForSheetTimestamp(row.timestamp)
+      return date ? [date] : []
+    }),
+  )
   let synced = 0
   let failed = 0
   let attempted = 0
 
-  for (const row of rows) {
+  const rowsOldestFirst = [...rows].sort((left, right) =>
+    Number(left.timestamp ?? 0) - Number(right.timestamp ?? 0),
+  )
+  for (const row of rowsOldestFirst) {
     if (row.timestamp === null || !row.email) continue
     const fingerprint = checkinFingerprint(row)
-    if (processedFingerprints.has(fingerprint)) {
+    const isPending = !processedFingerprints.has(fingerprint)
+    const date = dateKeyForSheetTimestamp(row.timestamp)
+    if (!isPending && (!date || !pendingDates.has(date))) {
       nextFingerprints.add(fingerprint)
       continue
     }
-    attempted += 1
+    if (isPending) attempted += 1
 
     try {
       if (typeof row.timestamp !== "number" || !Number.isFinite(row.timestamp)) {
         throw new Error("Check-in timestamp is not a Google Sheets date")
       }
-      const date = dateKeyForSheetTimestamp(row.timestamp)
       const attendee = validateAttendee({
         memberId: row.memberId || null,
         name: row.name,
@@ -212,28 +237,29 @@ async function syncAttendance(env: Env, accessToken: string): Promise<{
       if (!date) throw new Error("Check-in timestamp is not a Google Sheets date")
       if (!attendee) throw new Error("Check-in row has invalid member data")
 
-      let eventId = events.get(date)
-      if (!eventId) {
-        eventId = await findOrCreateEventForDate(env, date)
-        events.set(date, eventId)
+      let event = events.get(date)
+      if (!event) {
+        event = await findOrCreateEventForDate(env, date)
+        events.set(date, event)
       }
-      const member = await syncMemberAttendance(env, attendee, date, eventId, row.timestamp)
+      const member = await syncMemberAttendance(env, roster, attendee, date, event.id)
+      const attendeePageIds = eventAttendees.get(date) ?? new Set<string>()
+      attendeePageIds.add(member.pageId)
+      eventAttendees.set(date, attendeePageIds)
       if (
         member.name !== row.name ||
         member.email !== row.email ||
-        member.affiliation !== row.affiliation
+        member.affiliation !== row.affiliation ||
+        member.id !== row.memberId
       ) {
-        await updateCheckinMemberDetails(env, accessToken, row.rowNumber, member)
+        await updateCheckinMember(env, accessToken, row.rowNumber, member)
         row.name = member.name
         row.email = member.email
         row.affiliation = member.affiliation
-      }
-      if (member.id !== row.memberId) {
-        await updateCheckinMemberId(env, accessToken, row.rowNumber, member.id)
         row.memberId = member.id
       }
       nextFingerprints.add(checkinFingerprint(row))
-      synced += 1
+      if (isPending) synced += 1
     } catch (error) {
       failed += 1
       console.error(
@@ -246,7 +272,14 @@ async function syncAttendance(env: Env, accessToken: string): Promise<{
     }
   }
 
-  return { synced, failed, attempted, previousFingerprints, nextFingerprints }
+  for (const [date, event] of events) {
+    await syncEventAttendance(env, event, eventAttendees.get(date) ?? [])
+  }
+
+  const members = roster.records
+    .filter((record) => record.name || record.email)
+    .map(({ id, name, email, affiliation }) => ({ id, name, email, affiliation }))
+  return { synced, failed, attempted, previousFingerprints, nextFingerprints, members }
 }
 
 export async function runNightlySync(
@@ -256,11 +289,12 @@ export async function runNightlySync(
   const accessToken = await getAccessToken(env)
   const {
     attempted,
+    members,
     previousFingerprints,
     nextFingerprints,
     ...result
   } = await syncAttendance(env, accessToken)
-  await refreshMemberCache(env)
+  await storeMemberCache(env, members)
   if (attempted > 0) {
     await sortCheckins(env, accessToken)
   }
@@ -305,7 +339,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
 }
 
 export default {
-  async fetch(request, env): Promise<Response> {
+  async fetch(request: Request, env: Env): Promise<Response> {
     return new URL(request.url).pathname.startsWith("/check-in/api/")
       ? handleApiRequest(request, env)
       : env.ASSETS.fetch(request)

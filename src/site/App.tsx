@@ -1,28 +1,17 @@
 import { Button } from "@/components/ui/button"
 
 import { HeroCarousel } from "./components/HeroCarousel"
-import { Schedule, SpecialEvents, useScheduleData, type ScheduleSnapshot } from "./components/Schedule"
+import { EventSections, useEvents, type EventSnapshot } from "./components/Events"
 import { siteContent } from "./content"
+import { SiteBrand } from "./components/SiteBrand"
 
-export default function App({ initialSchedule }: { initialSchedule?: ScheduleSnapshot }) {
-  const { schedule, specialEvents, today } = useScheduleData(
-    siteContent.schedule.url,
-    siteContent.specialEvents.url,
-    initialSchedule,
-  )
+export default function App({ initialSchedule }: { initialSchedule?: EventSnapshot }) {
+  const { snapshot, error } = useEvents(initialSchedule)
 
   return (
     <div>
       <header className="site-header">
-        <a className="site-name" href="/">
-          <img
-            src={siteContent.brand.logoUrl}
-            alt=""
-            width="52"
-            height="128"
-          />
-          <span>{siteContent.brand.name}</span>
-        </a>
+        <SiteBrand />
       </header>
 
       <main id="main">
@@ -34,6 +23,7 @@ export default function App({ initialSchedule }: { initialSchedule?: ScheduleSna
               <Button
                 key={action.label}
                 asChild
+                size="lg"
                 variant={action.variant}
                 className="no-underline"
               >
@@ -44,13 +34,8 @@ export default function App({ initialSchedule }: { initialSchedule?: ScheduleSna
           <HeroCarousel />
         </section>
 
-        <Schedule
-          title={siteContent.schedule.title}
-          times={siteContent.schedule.times}
-          today={today}
-          {...schedule}
-        />
-        <SpecialEvents title={siteContent.specialEvents.title} today={today} {...specialEvents} />
+        {error && <p className="event-error" role="alert">{error}</p>}
+        <div id="event-sections"><EventSections {...snapshot} /></div>
 
         <section
           id="etiquette"

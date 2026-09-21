@@ -8,24 +8,19 @@ const html = await readFile(new URL("../dist/index.html", import.meta.url), "utf
 const { document } = new JSDOM(html).window
 const canonical = "https://swingsyndicate.club/"
 
-test("both public Sheet tabs are readable before JavaScript and have matching hydration data", () => {
+test("the build provides replaceable event markup and hydration data for the Worker", () => {
   const data = document.querySelector("#schedule-data")
-  assert.ok(data, "The build must embed the Sheet snapshot for hydration")
+  assert.ok(data)
   const snapshot = JSON.parse(data.textContent)
   assert.match(snapshot.today, /^\d{4}-\d{2}-\d{2}$/)
-  assert.equal(document.querySelectorAll(".schedule-status").length, 0)
-  assert.equal(document.querySelectorAll(".schedule-row").length, snapshot.schedule.length)
-  for (const event of snapshot.schedule) {
-    assert.ok(document.querySelector("#schedule").textContent.includes(event.Location || "TBA"))
-  }
-  for (const event of snapshot.specialEvents) {
-    if (event.Activity) assert.ok(document.querySelector("#special-events").textContent.includes(event.Activity))
-  }
+  assert.deepEqual(snapshot.events, [])
+  assert.ok(document.querySelector("#event-sections #schedule"))
+  assert.ok(document.querySelector("#event-sections #special-events"))
+  assert.ok(!html.includes("docs.google.com/spreadsheets"))
 })
 
 test("the initial HTML starts only the visible carousel photo request", () => {
   const photos = Array.from(document.querySelectorAll(".hero-carousel img"))
-  assert.equal(photos.length, 4)
   assert.ok(photos[0].getAttribute("srcset"))
   assert.equal(photos[0].getAttribute("loading"), "eager")
   assert.equal(photos[0].getAttribute("fetchpriority"), "high")
@@ -37,34 +32,6 @@ test("the initial HTML starts only the visible carousel photo request", () => {
   assert.equal(preloads.length, 1)
   assert.equal(preloads[0].getAttribute("imagesrcset"), photos[0].getAttribute("srcset"))
   assert.equal(preloads[0].getAttribute("imagesizes"), photos[0].getAttribute("sizes"))
-})
-
-test("the build renderer includes fetched event text without allowing Sheet text to inject scripts", async (t) => {
-  const maliciousText = '</script><script id="injected">alert(1)</script>'
-  const csvTitle = '"' + maliciousText.replaceAll('"', '""') + '"'
-  const urls = []
-  t.mock.method(globalThis, "fetch", async (url) => {
-    urls.push(new URL(url))
-    return new Response(new URL(url).searchParams.get("gid") === "0"
-      ? 'Date,Location,Beginner Program\n2099-10-17,Test barn,"Swingouts & turns"'
-      : `Date,Title,Time,Activity,Location,URL\n2099-10-17,${csvTitle},7:00 PM,Live jazz,Test hall,`)
-  })
-  const { render } = await import("../dist-ssr/entry-server.js")
-  const result = await render()
-  const rendered = new JSDOM(result.html + result.scheduleData).window.document
-  assert.match(rendered.querySelector("#schedule").textContent, /Test barn.*Swingouts & turns/)
-  assert.equal(rendered.querySelector(".special-event-title").textContent, maliciousText)
-  assert.match(rendered.querySelector("#special-events").textContent, /7:00 PM.*Live jazz/)
-  assert.equal(rendered.querySelector("#injected"), null)
-  assert.equal(JSON.parse(rendered.querySelector("#schedule-data").textContent).specialEvents[0].Title, maliciousText)
-  assert.equal(urls.length, 2)
-  assert.ok(urls.every((url) => url.origin === "https://docs.google.com" && url.pathname.endsWith("/pub")))
-})
-
-test("a failed Sheet fetch stops prerendering instead of publishing an empty schedule", async (t) => {
-  t.mock.method(globalThis, "fetch", async () => new Response("Unavailable", { status: 503 }))
-  const { render } = await import("../dist-ssr/entry-server.js")
-  await assert.rejects(render, /Event request failed with 503/)
 })
 
 test("prerendered photos, social previews, scripts, styles, and fonts all reference deployed assets", async () => {
@@ -99,6 +66,9 @@ test("search discovery includes only the public homepage and the kiosk is marked
   assert.doesNotMatch(robots, /^Disallow: \/\s*$/m)
   assert.match(robots, /^Sitemap: https:\/\/swingsyndicate\.club\/sitemap\.xml$/m)
 
+  const manager = await readFile(new URL("../dist/manage/index.html", import.meta.url), "utf8")
+  assert.match(new JSDOM(manager).window.document.querySelector('meta[name="robots"]').content, /noindex/)
+  assert.match(robots, /^Disallow: \/manage\s*$/m)
   const kiosk = await readFile(new URL("../dist/check-in/index.html", import.meta.url), "utf8")
   const kioskDocument = new JSDOM(kiosk).window.document
   assert.match(kioskDocument.querySelector('meta[name="robots"]').content, /noindex/)

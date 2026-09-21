@@ -32,7 +32,7 @@ function sheetValue(value: unknown): SheetValue {
   return null
 }
 
-export async function getGoogleAccessToken(env: Env): Promise<string> {
+export async function getGoogleAccessToken(env: Pick<Env, "GOOGLE_PRIVATE_KEY" | "GOOGLE_SERVICE_ACCOUNT_EMAIL">, signal?: AbortSignal): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   const key = await importPKCS8(env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"), "RS256")
   const assertion = await new SignJWT({ scope: SHEETS_SCOPE })
@@ -44,6 +44,7 @@ export async function getGoogleAccessToken(env: Env): Promise<string> {
     .sign(key)
 
   const response = await fetch(GOOGLE_TOKEN_URL, {
+    signal,
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -337,22 +338,13 @@ export async function appendCheckin(
   ])
 }
 
-export async function updateCheckinMemberDetails(
+export async function updateCheckinMember(
   env: Env,
   accessToken: string,
   rowNumber: number,
-  member: { name: string; email: string; affiliation: string },
+  member: { id: string; name: string; email: string; affiliation: string },
 ): Promise<void> {
-  await updateValues(env, accessToken, `B${rowNumber}:D${rowNumber}`, [
-    [member.name, member.email, member.affiliation],
+  await updateValues(env, accessToken, `B${rowNumber}:E${rowNumber}`, [
+    [member.name, member.email, member.affiliation, member.id],
   ])
-}
-
-export async function updateCheckinMemberId(
-  env: Env,
-  accessToken: string,
-  rowNumber: number,
-  memberId: string,
-): Promise<void> {
-  await updateValues(env, accessToken, `E${rowNumber}`, [[memberId]])
 }

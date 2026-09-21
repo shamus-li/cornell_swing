@@ -13,10 +13,12 @@ export default defineConfig({
     },
     dedupe: ["react", "react-dom"],
   },
+  server: { proxy: { "/api": "http://localhost:8787", "/manage/api": "http://localhost:8787" } },
   build: {
     rollupOptions: {
       input: {
         home: fileURLToPath(new URL("./index.html", import.meta.url)),
+        manage: fileURLToPath(new URL("./manage/index.html", import.meta.url)),
         checkin: fileURLToPath(new URL("./check-in/index.html", import.meta.url)),
       },
     },

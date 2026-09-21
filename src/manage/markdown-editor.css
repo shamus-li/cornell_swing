@@ -1,0 +1,17 @@
+.markdown-editor { margin-top: 0; min-width: 0; }
+.editor-label { font-size: var(--body-font-size); font-weight: 500; margin: 0 0 8px; }
+.inline-editor { border: 1px solid var(--line); border-radius: 10px; font-family: var(--sans); --accentBase: #fcf8fa; --accentBg: #f7edf1; --accentBgHover: #f0dce4; --accentBorder: #c888a0; --accentSolid: var(--accent); --accentText: var(--accent); --baseBase: #fff; }
+.inline-editor:focus-within { border-color: #c6b9be; box-shadow: 0 0 0 2px #a13a5e08; }
+.inline-editor [role="toolbar"] { background: #fff; border-radius: 10px 10px 0 0; border-bottom: 1px solid var(--line); flex-wrap: nowrap; gap: 2px; padding: 6px 8px; }
+.inline-editor [role="toolbar"] button { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; padding: 4px; border-radius: 5px; cursor: pointer; font-size: var(--body-font-size); }
+.inline-editor [role="toolbar"] button[role="combobox"] { min-width: 94px; justify-content: space-between; padding: 4px 6px; background: transparent; }
+.inline-editor [role="toolbar"] svg { width: 17px; height: 17px; color: #706c69; }
+.inline-editor [role="toolbar"] button[data-state="on"] svg { color: var(--accent); }
+.inline-editor [role="toolbar"] button:disabled { opacity: .35; }
+.inline-editor [role="toolbar"] [role="separator"] { margin: 0 5px; height: 14px; border-right: 0; border-left-color: var(--line); }
+.inline-editor .inline-editor-content { min-height: 160px; padding: 12px; font-size: var(--body-font-size); font-weight: 400; outline: none; }
+.inline-editor .inline-editor-content h1, .inline-editor .inline-editor-content h2 { font-size: 1.2rem; }
+.inline-editor .inline-editor-content h3 { font-size: 1rem; }
+@media (max-width: 620px) {
+  .inline-editor .inline-editor-content { padding: 12px; }
+}
