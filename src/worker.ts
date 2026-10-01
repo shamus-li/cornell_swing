@@ -1,7 +1,7 @@
 import checkin from '../check-in/worker'
 import events from './events/worker'
 
-export { CheckinGuard } from '../check-in/worker'
+export { AttendanceSync, CheckinGuard } from '../check-in/worker'
 
 export default {
   fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {

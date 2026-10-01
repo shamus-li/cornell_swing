@@ -6,8 +6,9 @@ import { EventDatePicker } from "./EventDatePicker"
 import { LocationPicker } from "./LocationPicker"
 import { DeleteEventButton } from "./DeleteEventButton"
 import { Markdown } from "../events/Markdown"
-import { EventLocation } from "../events/EventLocation"
-import { formatEventDate, type EventRecord } from "../events/model"
+import { formatEventLocation, type EventRecord } from "../events/model"
+import { DateBlock, DraftBadge } from "./EventDate"
+import { errorMessage } from "./api"
 
 type Programs = { beginner: string; advanced: string; notes: string }
 
@@ -65,36 +66,38 @@ export function NormalEventRow({ event, editing, onEdit, onSave, onDelete, onCan
     window.addEventListener("beforeunload", warn)
     return () => window.removeEventListener("beforeunload", warn)
   }, [dirty])
-  async function save(): Promise<boolean> {
+  async function save(published = event.published): Promise<boolean> {
     if (saving.current) return false
-    if (event.id && !dirty) { onCancel?.(); return true }
+    if (event.id && !dirty && published === event.published) { onCancel?.(); return true }
     saving.current = true; setBusy(true); setError("")
     try {
-      await onSave({ ...event, date, location, room, ...(locationUrl !== undefined && { locationUrl }), description: descriptionChanged ? serializePrograms(programs) : event.description })
+      await onSave({ ...event, published, date, location, room, ...(locationUrl !== undefined && { locationUrl }), description: descriptionChanged ? serializePrograms(programs) : event.description })
       onCancel?.()
       return true
     } catch (err) {
-      setError(err instanceof Error ? err.message : "This event could not be saved. Please try again.")
+      setError(errorMessage(err))
       return false
     } finally { saving.current = false; setBusy(false) }
   }
-  useImperativeHandle(ref, () => ({ save }))
+  useImperativeHandle(ref, () => ({ save: () => save() }))
   const change = (key: keyof Programs, value: string) => setPrograms(current => ({ ...current, [key]: value }))
   return <article className="normal-event-row">
-    {editing ? <form className="normal-event-edit event-form" onSubmit={e => { e.preventDefault(); void save() }}>
+    {editing ? <form className="normal-event-edit" onSubmit={e => { e.preventDefault(); void save() }}>
       <div className="normal-event-fields">
-        <div className="event-field"><span>Date</span><EventDatePicker value={date} onChange={setDate} disabled={busy} /></div>
-        <div className="event-field"><span>Location</span><LocationPicker value={location} url={locationUrl} room={room} onRoomChange={setRoom} onChange={(name, url) => { setLocation(name); setLocationUrl(url) }} disabled={busy} /></div>
-        <label>Beginner<Input value={programs.beginner} onChange={e => change("beginner", e.target.value)} disabled={busy} /></label>
-        <label>Advanced<Input value={programs.advanced} onChange={e => change("advanced", e.target.value)} disabled={busy} /></label>
-        <label className="full-width">Notes (optional)<Textarea rows={3} value={programs.notes} onChange={e => change("notes", e.target.value)} disabled={busy} /></label>
+        <div className="editor-row"><span>Date</span><EventDatePicker value={date} onChange={setDate} disabled={busy} /></div>
+        <div className="editor-row editor-row-top"><span>Location</span><LocationPicker value={location} url={locationUrl} room={room} onRoomChange={setRoom} onChange={(name, url) => { setLocation(name); setLocationUrl(url) }} disabled={busy} /></div>
+        <label className="editor-row"><span>Beginner</span><Input value={programs.beginner} onChange={e => change("beginner", e.target.value)} disabled={busy} /></label>
+        <label className="editor-row"><span>Advanced</span><Input value={programs.advanced} onChange={e => change("advanced", e.target.value)} disabled={busy} /></label>
+        <label className="editor-row editor-row-top"><span>Notes</span><Textarea rows={2} placeholder="Optional" value={programs.notes} onChange={e => change("notes", e.target.value)} disabled={busy} /></label>
       </div>
       {error && <p role="alert" className="event-error">{error}</p>}
-      <div className="normal-event-actions"><Button size="default" type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</Button><Button size="default" type="button" variant="outline" onClick={onCancel} disabled={busy}>Cancel</Button>{event.id && onDelete && <DeleteEventButton onDelete={onDelete} disabled={busy} onBusyChange={value => { saving.current = value; setBusy(value) }} />}</div>
-    </form> : <Button asChild variant="ghost" className="normal-event-summary"><div role="button" tabIndex={0} aria-label={`Edit event on ${event.date}`} onClick={e => { e.preventDefault(); onEdit() }} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onEdit() } }}>
-      <time dateTime={event.date}>{formatEventDate(event.date)}</time>
-      <div><EventLocation event={event} /></div>
-      <div className="normal-event-program">{event.description ? <Markdown>{event.description}</Markdown> : <p>TBA</p>}</div>
+      <div className="normal-event-actions"><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</Button><Button type="button" variant="outline" onClick={() => void save(!event.published)} disabled={busy}>{event.published ? "Unpublish" : "Publish"}</Button><Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>{event.id && onDelete && <span className="ml-auto"><DeleteEventButton onDelete={onDelete} disabled={busy} onBusyChange={value => { saving.current = value; setBusy(value) }} /></span>}</div>
+    </form> : <Button asChild variant="ghost" className="normal-event-summary"><div role="button" tabIndex={0} onClick={e => { e.preventDefault(); onEdit() }} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onEdit() } }}>
+      <DateBlock date={event.date} />
+      <div className="event-row-text">
+        <span className="event-row-title"><strong>{formatEventLocation(event)}</strong>{!event.published && <DraftBadge />}</span>
+        <div className="normal-event-program event-muted">{event.description ? <Markdown>{event.description}</Markdown> : <p>Lesson to be announced</p>}</div>
+      </div>
     </div></Button>}
   </article>
 }

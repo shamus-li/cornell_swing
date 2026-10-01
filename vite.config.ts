@@ -13,13 +13,15 @@ export default defineConfig({
     },
     dedupe: ["react", "react-dom"],
   },
-  server: { proxy: { "/api": "http://localhost:8787", "/manage/api": "http://localhost:8787" } },
+  server: { proxy: { "/api": "http://localhost:8787", "/manage/api": "http://localhost:8787", "/redirects/api": "http://localhost:8787" } },
   build: {
+    modulePreload: { polyfill: false },
     rollupOptions: {
       input: {
         home: fileURLToPath(new URL("./index.html", import.meta.url)),
         manage: fileURLToPath(new URL("./manage/index.html", import.meta.url)),
         checkin: fileURLToPath(new URL("./check-in/index.html", import.meta.url)),
+        redirects: fileURLToPath(new URL("./redirects/index.html", import.meta.url)),
       },
     },
   },

@@ -35,6 +35,11 @@ const token = async () => "test-access-token"
 const serialFor = (timestamp: number) => timestampForSheet(timestamp, "America/New_York")
 
 beforeEach(async () => {
+  for (const id of await listDurableObjectIds(env.ATTENDANCE_SYNC)) {
+    await runInDurableObject(env.ATTENDANCE_SYNC.get(id), async (_instance, state) => {
+      await state.storage.deleteAll()
+    })
+  }
   for (const id of await listDurableObjectIds(env.CHECKIN_GUARD)) {
     await runInDurableObject(env.CHECKIN_GUARD.get(id), (_instance, state) => {
       state.storage.sql.exec("DELETE FROM checkin_keys")
@@ -837,6 +842,23 @@ describe("nightly sync", () => {
     })
   })
 
+  it("links a check-in with a new Member ID to the existing member with that email", async () => {
+    const { sheets, notion } = useFakes()
+    notion.addMember({
+      memberId: ADA_MEMBER_ID,
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      affiliation: "Community Member",
+    })
+    // The kiosk assigns a fresh ID when someone checks in before reaching Notion.
+    sheets.rows.push([serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "Alumni", GRACE_MEMBER_ID])
+
+    expect(await runNightlySync(env, token)).toEqual({ synced: 1, failed: 0 })
+    expect(notion.members).toHaveLength(1)
+    expect(notion.members[0]).toMatchObject({ affiliation: "Alumni", events: [notion.events[0].pageId] })
+    expect(sheets.rows[0][4]).toBe(ADA_MEMBER_ID)
+  })
+
   it("rejects an ID and email that point to different Notion members", async () => {
     const { sheets, notion } = useFakes()
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
@@ -845,6 +867,12 @@ describe("nightly sync", () => {
       name: "Ada Lovelace",
       email: "ada@example.com",
       affiliation: "Community Member",
+    })
+    notion.addMember({
+      memberId: GRACE_MEMBER_ID,
+      name: "Grace Hopper",
+      email: "grace@example.com",
+      affiliation: "Alumni",
     })
     sheets.rows.push([
       serialFor(TEST_TIMESTAMP),
@@ -856,7 +884,7 @@ describe("nightly sync", () => {
 
     try {
       await expect(runNightlySync(env, token)).rejects.toThrow("0 synced, 1 failed")
-      expect(notion.members).toHaveLength(1)
+      expect(notion.members).toHaveLength(2)
       expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
         "Check-in member ID and email refer to different Notion members",
       ))

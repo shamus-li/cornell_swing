@@ -1,41 +1,15 @@
-/* Use the shared Button utilities without resetting the homepage's base styles. */
-@import "./src/button-theme.css";
+/* Tailwind utilities for the shared components, without resetting the homepage's base styles. */
 @layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities) source(none);
+@import "./src/theme.css";
 @source "./check-in/src/components/ui/button.tsx";
+@source "./check-in/src/components/ui/input.tsx";
+@source "./check-in/src/components/ui/floating-field.tsx";
+@source "./check-in/src/lib/sizes.ts";
 @source "./src/site/App.tsx";
 @source "./src/site/components/Events.tsx";
-@source "./src/manage/Manage.tsx";
-@source "./src/manage/NormalEventRow.tsx";
-@source "./src/manage/EventDatePicker.tsx";
-@source "./src/manage/EventTimePicker.tsx";
-@source "./src/manage/LocationPicker.tsx";
-@source "./src/manage/URLOnlyLinkDialog.tsx";
-@source "./check-in/src/components/ui/select.tsx";
-@source "./check-in/src/components/ui/combobox.tsx";
-@source "./check-in/src/components/ui/input-group.tsx";
-@source "./src/manage/SheetConnection.tsx";
-@source "./src/manage/DeleteEventButton.tsx";
-@source "./src/components/ui";
-@source "./check-in/src/components/ui/input.tsx";
-
-@theme inline {
-  --color-primary: var(--accent);
-  --color-primary-foreground: #fff;
-  --color-background: #fff;
-  --color-ring: var(--accent);
-  --color-muted: #f4f3f1;
-  --color-foreground: var(--ink);
-  --color-destructive: #a22031;
-  --color-input: #cfcdc7;
-  --color-border: var(--line);
-  --color-popover: #fff;
-  --color-popover-foreground: var(--ink);
-  --color-muted-foreground: var(--muted);
-  --color-accent: #f4f3f1;
-  --color-accent-foreground: var(--ink);
-}
+@source "./src/components/ui/carousel.tsx";
 
 @font-face {
   font-family: Fraunces;
@@ -45,26 +19,9 @@
   src: url("assets/fonts/fraunces-latin.woff2") format("woff2");
 }
 
-@font-face {
-  font-family: Inter;
-  font-style: normal;
-  font-weight: 400 700;
-  font-display: swap;
-  src: url("assets/fonts/inter-latin.woff2") format("woff2");
-}
-
 :root {
-  --body-font-size: .9rem;
-  --control-radius: 8px;
-  --ink: #232019;
-  --muted: #6d6a63;
-  --line: #e6e4e0;
-  --accent: #a13a5e;
-  --accent-hover: #aa4e6e;
-  --primary-hover: var(--accent-hover);
   --page: min(920px, calc(100% - 40px));
   --serif: Fraunces, Georgia, "Times New Roman", serif;
-  --sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
 * {
@@ -75,18 +32,14 @@ html {
   scroll-behavior: smooth;
 }
 
-html:has(.manage-page) {
-  scroll-behavior: auto;
-}
-
 body {
   margin: 0;
-  color: var(--ink);
-  background: #fff;
+  color: var(--foreground);
+  background: var(--background);
   font-family: var(--sans);
   font-size: var(--body-font-size);
   font-weight: 450;
-  line-height: 1.45;
+  line-height: 1.5;
 }
 
 a {
@@ -102,7 +55,7 @@ a:hover {
 }
 
 a:not([data-slot]):focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--foreground);
   outline-offset: 4px;
 }
 
@@ -119,26 +72,6 @@ main,
   align-items: center;
 }
 
-.site-name {
-  display: inline-flex;
-  align-items: center;
-  color: var(--ink);
-  font-family: var(--serif);
-  font-size: 1.1rem;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.site-name img {
-  width: auto;
-  height: 48px;
-  margin-right: -4px;
-  position: relative;
-  top: -1px;
-  z-index: 1;
-  flex: none;
-}
-
 .hero {
   padding: 48px 0 0;
 }
@@ -153,23 +86,23 @@ h3:not([data-slot]) {
 }
 
 h1:not([data-slot]) {
-  font-size: clamp(2.5rem, 5.5vw, 3.8rem);
+  font-size: clamp(2.5rem, 5.5vw, 3.75rem);
   font-weight: 700;
   letter-spacing: -0.01em;
 }
 
 h2:not([data-slot]) {
-  font-size: clamp(1.6rem, 3vw, 2.1rem);
+  font-size: clamp(1.75rem, 3vw, 2.25rem);
 }
 
 h3:not([data-slot]) {
-  font-size: 1.1rem;
+  font-size: 1.125rem;
 }
 
 .hero > p {
-  max-width: 600px;
+  max-width: 640px;
   margin: 16px 0 0;
-  font-size: 1.1rem;
+  font-size: 1.125rem;
 }
 
 .hero-links {
@@ -188,34 +121,27 @@ h3:not([data-slot]) {
   width: 100%;
   height: auto;
   display: block;
-  border-radius: var(--control-radius);
-}
-
-.hero-carousel {
-  position: relative;
+  border-radius: var(--radius);
 }
 
 .hero-carousel [data-slot="carousel-content"] {
-  overflow: hidden;
-  border-radius: var(--control-radius);
+  border-radius: var(--radius);
 }
 
+/* Full-width slides without the carousel component's gutter. */
 .hero-carousel [data-slot="carousel-content"] > div {
-  display: flex;
   margin-left: 0;
   transform: translate3d(0, 0, 0);
 }
 
 .hero-carousel [data-slot="carousel-item"] {
-  min-width: 0;
-  flex: 0 0 100%;
   padding-left: 0;
 }
 
 .hero-carousel-dots {
   position: absolute;
   left: 14px;
-  bottom: 14px;
+  bottom: 6px;
   z-index: 1;
   display: flex;
   align-items: center;
@@ -225,8 +151,10 @@ h3:not([data-slot]) {
 .hero-carousel-dot {
   width: 8px;
   height: 8px;
+  /* Taller tap area without spreading the dots apart. */
+  box-sizing: content-box;
   margin: 0;
-  padding: 0;
+  padding: 8px 0;
   position: relative;
   display: block;
   appearance: none;
@@ -242,6 +170,10 @@ h3:not([data-slot]) {
 }
 
 .hero-carousel-dot:focus-visible {
+  outline: none;
+}
+
+.hero-carousel-dot:focus-visible .hero-carousel-dot-track {
   outline: 2px solid #fff;
   outline-offset: 3px;
 }
@@ -284,7 +216,11 @@ h3:not([data-slot]) {
 
 .schedule-times {
   margin: 8px 0 32px;
-  color: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.schedule-times span {
+  white-space: nowrap;
 }
 
 .etiquette h2,
@@ -301,7 +237,7 @@ h3:not([data-slot]) {
 
 .etiquette-intro {
   margin: 0 0 24px;
-  color: var(--muted);
+  color: var(--muted-foreground);
 }
 
 .etiquette-item + .etiquette-item {
@@ -328,7 +264,7 @@ h3:not([data-slot]) {
 
 .etiquette-contact {
   margin: 24px 0 0;
-  color: var(--muted);
+  color: var(--muted-foreground);
 }
 
 .faq-item + .faq-item {
@@ -338,7 +274,7 @@ h3:not([data-slot]) {
 .faq-item p {
   max-width: 640px;
   margin: 8px 0 0;
-  color: var(--muted);
+  color: var(--muted-foreground);
 }
 
 .about > p {
@@ -355,8 +291,8 @@ h3:not([data-slot]) {
 
 .site-footer {
   padding: 64px 0 32px;
-  color: var(--muted);
-  font-size: var(--body-font-size);
+  color: var(--muted-foreground);
+  font-size: var(--small-font-size);
 }
 
 .site-footer p {
@@ -386,24 +322,8 @@ h3:not([data-slot]) {
     padding: 48px 0 0;
   }
 
-
   .schedule-times {
     margin-bottom: 16px;
-  }
-
-
-
-
-
-
-
-
-}
-
-@media (max-width: 430px) {
-  .site-name {
-    max-width: 170px;
-    line-height: 1.25;
   }
 }
 
@@ -412,15 +332,9 @@ h3:not([data-slot]) {
     scroll-behavior: auto;
   }
 
-  .hero-links [data-slot="button"] {
-    transition: none;
-  }
-
+  .hero-links [data-slot="button"],
+  .hero-carousel-dot,
   .hero-carousel-dot-track {
-    transition: none;
-  }
-
-  .hero-carousel-dot {
     transition: none;
   }
 

@@ -19,6 +19,9 @@ export class FakeSheets {
   transientFailures = 0
   failAppends = false
   failSort = false
+  failUpdates = false
+  // Runs before a single-row read, to simulate someone editing the Sheet mid-sync.
+  beforeRowRead: (() => void) | null = null
 
   handlers() {
     return [
@@ -34,11 +37,18 @@ export class FakeSheets {
           })),
         })
       }),
-      http.get(`${SHEETS_API}/:spreadsheetId/values/:range`, () => {
+      http.get(`${SHEETS_API}/:spreadsheetId/values/:range`, ({ params }) => {
         this.reads += 1
         if (this.transientFailures > 0) {
           this.transientFailures -= 1
           return new HttpResponse(null, { status: 503 })
+        }
+        const singleRow = String(params.range).match(/!A(\d+):E\1$/)
+        if (singleRow) {
+          this.beforeRowRead?.()
+          this.beforeRowRead = null
+          const row = this.rows[Number(singleRow[1]) - 2]
+          return HttpResponse.json({ values: row ? [[...row]] : [] })
         }
         return HttpResponse.json({ values: this.rows.map((row) => [...row]) })
       }),
@@ -51,6 +61,7 @@ export class FakeSheets {
         return HttpResponse.json({ updates: { updatedRows: body.values.length } })
       }),
       http.put(`${SHEETS_API}/:spreadsheetId/values/:range`, async ({ params, request }) => {
+        if (this.failUpdates) return new HttpResponse(null, { status: 403 })
         const body = (await request.json()) as { values: Cell[][] }
         this.applyUpdate(String(params.range), body.values)
         this.updates += 1
@@ -114,6 +125,22 @@ export class FakeNotion {
   queries = 0
   writes = 0
   requests = 0
+  memberCreates = 0
+  eventCreates = 0
+  createFailure: { kind: "member" | "event"; committed: boolean; network?: boolean } | null = null
+  beforeCreate: (() => Promise<void>) | null = null
+  hideMembers = false
+  requestTimes: number[] = []
+  rateLimitNext = 0
+
+  // Counts a request and answers it with a rate limit while rateLimitNext is positive.
+  private track() {
+    this.requests += 1
+    this.requestTimes.push(Date.now())
+    if (this.rateLimitNext <= 0) return null
+    this.rateLimitNext -= 1
+    return new HttpResponse(null, { status: 429, headers: { "Retry-After": "1" } })
+  }
 
   addMember(member: Partial<FakeMember> & { memberId: string }): FakeMember {
     const full: FakeMember = {
@@ -139,7 +166,8 @@ export class FakeNotion {
   handlers() {
     return [
       http.post(`${NOTION_API}/data_sources/:dataSourceId/query`, async ({ params, request }) => {
-        this.requests += 1
+        const limited = this.track()
+        if (limited) return limited
         this.queries += 1
         const body = ((await request.json()) ?? {}) as Record<string, any>
         if (params.dataSourceId === env.NOTION_EVENTS_DATA_SOURCE_ID) {
@@ -153,7 +181,7 @@ export class FakeNotion {
           })
         }
 
-        let matches = this.members
+        let matches = this.hideMembers ? [] : this.members
         const filter = body.filter as Record<string, any> | undefined
         if (filter?.property === "Member ID") {
           matches = matches.filter((member) => member.memberId === filter.rich_text?.equals)
@@ -171,11 +199,22 @@ export class FakeNotion {
         })
       }),
       http.post(`${NOTION_API}/pages`, async ({ request }) => {
-        this.requests += 1
+        const limited = this.track()
+        if (limited) return limited
         this.writes += 1
         const body = (await request.json()) as Record<string, any>
         const properties = body.properties ?? {}
-        if (body.parent?.data_source_id === env.NOTION_EVENTS_DATA_SOURCE_ID) {
+        const kind = body.parent?.data_source_id === env.NOTION_EVENTS_DATA_SOURCE_ID ? "event" : "member"
+        if (kind === "event") this.eventCreates += 1
+        else this.memberCreates += 1
+        await this.beforeCreate?.()
+        const failure = this.createFailure?.kind === kind ? this.createFailure : null
+        if (failure) this.createFailure = null
+        const failedResponse = () => failure?.network
+          ? HttpResponse.error()
+          : new HttpResponse(null, { status: 503 })
+        if (failure && !failure.committed) return failedResponse()
+        if (kind === "event") {
           const event = {
             pageId: `event-page-${this.events.length + 1}`,
             name: richText(properties.Name?.title),
@@ -183,6 +222,7 @@ export class FakeNotion {
             attendees: [],
           }
           this.events.push(event)
+          if (failure) return failedResponse()
           return HttpResponse.json({ object: "page", id: event.pageId, properties: {} })
         }
 
@@ -201,14 +241,17 @@ export class FakeNotion {
           const event = this.events.find((candidate) => candidate.pageId === eventId)
           if (event && !event.attendees.includes(member.pageId)) event.attendees.push(member.pageId)
         }
+        if (failure) return failedResponse()
         return HttpResponse.json({ object: "page", id: member.pageId, properties: {} })
       }),
       http.patch(`${NOTION_API}/pages/:pageId`, async ({ params, request }) => {
-        this.requests += 1
+        const limited = this.track()
+        if (limited) return limited
         this.writes += 1
         const properties = ((await request.json()) as Record<string, any>).properties ?? {}
         const event = this.events.find((candidate) => candidate.pageId === params.pageId)
         if (event) {
+          if (properties.Attendees?.relation?.length > 100) return new HttpResponse(null, { status: 400 })
           if ("Attendees" in properties) {
             event.attendees = properties.Attendees.relation.map((item: { id: string }) => item.id)
             for (const member of this.members) {
@@ -222,16 +265,34 @@ export class FakeNotion {
         const member = this.members.find((candidate) => candidate.pageId === params.pageId)
         if (!member) return new HttpResponse(null, { status: 404 })
         if ("Name" in properties) member.name = richText(properties.Name.title)
+        if ("Member ID" in properties) member.memberId = richText(properties["Member ID"].rich_text)
         if ("Email" in properties) member.email = properties.Email.email
         if ("Affiliation" in properties) member.affiliation = properties.Affiliation.select?.name ?? null
         if ("Events Attended" in properties) {
+          if (properties["Events Attended"].relation.length > 100) return new HttpResponse(null, { status: 400 })
           member.events = properties["Events Attended"].relation.map((item: { id: string }) => item.id)
+          // Events Attended and Attendees are two sides of one relation.
+          for (const event of this.events) {
+            const related = member.events.includes(event.pageId)
+            if (related && !event.attendees.includes(member.pageId)) event.attendees.push(member.pageId)
+            if (!related) event.attendees = event.attendees.filter((id) => id !== member.pageId)
+          }
         }
         member.lastEditedTime = new Date().toISOString()
         return HttpResponse.json({ object: "page", id: member.pageId, properties: {} })
       }),
+      http.get(`${NOTION_API}/pages/:pageId`, ({ params }) => {
+        const limited = this.track()
+        if (limited) return limited
+        const member = this.members.find((candidate) => candidate.pageId === params.pageId)
+        if (member) return HttpResponse.json(this.memberPage(member))
+        const event = this.events.find((candidate) => candidate.pageId === params.pageId)
+        if (event) return HttpResponse.json(this.eventPage(event))
+        return new HttpResponse(null, { status: 404 })
+      }),
       http.get(`${NOTION_API}/pages/:pageId/properties/:propertyId`, ({ params, request }) => {
-        this.requests += 1
+        const limited = this.track()
+        if (limited) return limited
         const event = this.events.find((candidate) => candidate.pageId === params.pageId)
         if (!event || params.propertyId !== "VmW{") {
           return new HttpResponse(null, { status: 404 })

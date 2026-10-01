@@ -2,8 +2,7 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import Manage from "./Manage"
 import type { ManagedEvent } from "../events/model"
-import "../../styles.css"
-import "../events/events.css"
+import "./manage.css"
 
 const initialData = JSON.parse(document.getElementById("manage-data")!.textContent!) as { events: ManagedEvent[] } | null
 

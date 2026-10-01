@@ -1,45 +1,47 @@
 import { useEffect, useRef, useState, type FormEvent } from "react"
+import { XIcon } from "lucide-react"
 import { Input } from "../../../check-in/src/components/ui/input"
+import { FloatingField, floatingInputClass } from "../../../check-in/src/components/ui/floating-field"
 import { Button } from "../../../check-in/src/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../components/ui/dropdown-menu"
-import { formatEventLocation, formatEventDate, todayInNewYork, type EventRecord } from "../../events/model"
+import { largeButtonClass } from "../../../check-in/src/lib/sizes"
+import { formatEventLocation, formatEventDate, formatEventTime, hasEventDetails, scheduleTitle, todayInNewYork, type EventRecord } from "../../events/model"
 import { EventLocation } from "../../events/EventLocation"
 import { Markdown } from "../../events/Markdown"
 
 export type EventSnapshot = { events: EventRecord[]; today: string }
-const formatTime = (time: string) => new Date(`2000-01-01T${time}`).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
-export const eventTime = (event: EventRecord) => event.startTime ? `${formatTime(event.startTime)}${event.endTime ? `–${formatTime(event.endTime)}` : ""}` : "TBA"
 
-export function CalendarLinks({ event, scope = "page" }: { event: EventRecord; scope?: "page" | "rsvp" }) {
-  const [container, setContainer] = useState<HTMLDivElement | null>(null)
+function CalendarLinks({ event, scope = "page" }: { event: EventRecord; scope?: "page" | "rsvp" }) {
   if (event.kind !== "special" || !event.date || !event.startTime || !event.endTime) return null
   const stamp = (time: string) => `${event.date.replaceAll("-", "")}T${time.replace(":", "")}00`
   const query = new URLSearchParams({ action: "TEMPLATE", text: event.title, dates: `${stamp(event.startTime)}/${stamp(event.endTime)}`, ctz: "America/New_York", location: formatEventLocation(event), details: event.description })
   const id = `calendar-${scope}-${event.id}`
-  return <div ref={setContainer}><DropdownMenu modal={false}>
-    <DropdownMenuTrigger id={id} aria-controls={`${id}-menu`} asChild><Button variant="outline">Add to calendar</Button></DropdownMenuTrigger>
-    <DropdownMenuContent id={`${id}-menu`} aria-labelledby={id} container={container} className="w-48">
-      <DropdownMenuItem asChild><a href={`/api/events/${event.id}/calendar`}>Apple / Outlook (.ics)</a></DropdownMenuItem>
-      <DropdownMenuItem asChild><a href={`https://calendar.google.com/calendar/render?${query}`} target="_blank" rel="noreferrer">Google Calendar ↗</a></DropdownMenuItem>
-    </DropdownMenuContent>
-  </DropdownMenu></div>
+  return <>
+    <Button variant="outline" popoverTarget={id} style={{ anchorName: `--${id}` }}>Add to calendar</Button>
+    <div id={id} popover="auto" className="calendar-menu" style={{ positionAnchor: `--${id}` }}>
+      <a href={`/api/events/${event.id}/calendar`}>Apple / Outlook (.ics)</a>
+      <a href={`https://calendar.google.com/calendar/render?${query}`} target="_blank" rel="noreferrer">Google Calendar ↗</a>
+    </div>
+  </>
 }
 
 function RsvpDialog({ event, onClose }: { event: EventRecord; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const [state, setState] = useState<"idle" | "saving" | "done">("idle")
   const [error, setError] = useState("")
+  const [name, setName] = useState("")
+  const [email, setEmail] = useState("")
   useEffect(() => {
     const element = dialog.current!
     element.showModal()
+    // showModal focuses the first control, the close button; start on the name field instead.
+    element.querySelector<HTMLInputElement>('input[name="name"]')!.focus()
     const previous = document.body.style.overflow
     document.body.style.overflow = "hidden"
     return () => { element.close(); document.body.style.overflow = previous }
   }, [])
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    const form = new FormData(e.currentTarget)
-    const body = JSON.stringify({ name: form.get("name"), email: form.get("email") })
+    const body = JSON.stringify({ name, email })
     setState("saving"); setError("")
     for (let attempt = 0; attempt < 2; attempt++) {
       let response: Response
@@ -61,18 +63,21 @@ function RsvpDialog({ event, onClose }: { event: EventRecord; onClose: () => voi
     }
   }
   return <dialog ref={dialog} className="event-dialog" aria-labelledby="rsvp-title" onCancel={onClose} onClick={e => { if (e.target === dialog.current) onClose() }}>
-    <Button type="button" variant="ghost" size="icon" className="dialog-close" aria-label="Close RSVP" onClick={onClose}>×</Button>
-    <p className="event-eyebrow">{formatEventDate(event.date)} · {eventTime(event)}</p>
+    {/* The padding lives on this wrapper so only clicks on the backdrop reach the dialog itself. */}
+    <div className="event-dialog-body">
+    <Button type="button" variant="ghost" size="icon" className="dialog-close" aria-label="Close RSVP" onClick={onClose}><XIcon /></Button>
+    <p className="event-eyebrow">{formatEventDate(event.date)} · {formatEventTime(event)}</p>
     <h2 id="rsvp-title">{state === "done" ? "See you on the dance floor!" : event.title}</h2>
     {state === "done" ? <div className="event-actions"><CalendarLinks event={event} scope="rsvp" /><Button type="button" onClick={onClose}>Done</Button></div> : <>
       <p className="event-muted"><EventLocation event={event} /></p>
       <form onSubmit={submit} className="event-form">
-        <label>Name<Input name="name" autoComplete="name" required maxLength={120} autoFocus /></label>
-        <label>Email<Input name="email" type="email" autoComplete="email" required maxLength={254} /></label>
+        <FloatingField id="rsvp-name" label="Name" filled={!!name}><Input id="rsvp-name" name="name" className={floatingInputClass} autoComplete="name" required maxLength={120} value={name} onChange={e => setName(e.target.value)} /></FloatingField>
+        <FloatingField id="rsvp-email" label="Email" filled={!!email}><Input id="rsvp-email" name="email" type="email" className={floatingInputClass} autoComplete="email" required maxLength={254} value={email} onChange={e => setEmail(e.target.value)} /></FloatingField>
         {error && <p role="alert" className="event-error">{error}</p>}
-        <Button type="submit" size="lg" className="mt-1" disabled={state === "saving"}>{state === "saving" ? "Saving…" : "RSVP"}</Button>
+        <Button type="submit" className={`mt-1 ${largeButtonClass}`} disabled={state === "saving"}>{state === "saving" ? "Saving…" : "RSVP"}</Button>
       </form>
     </>}
+    </div>
   </dialog>
 }
 
@@ -80,10 +85,10 @@ export function EventSections({ events, today }: EventSnapshot) {
   const [selected, setSelected] = useState<EventRecord | null>(null)
   return <>
     {(["normal", "special"] as const).map(kind => <section id={kind === "normal" ? "schedule" : "special-events"} className="section" key={kind} aria-labelledby={`${kind}-events-title`}>
-      <h2 id={`${kind}-events-title`}>{kind === "normal" ? "Fall 2026 schedule" : "Special events"}</h2>
+      <h2 id={`${kind}-events-title`}>{kind === "normal" ? scheduleTitle(events, today) : "Special events"}</h2>
       {kind === "normal" && <>
-        <p className="schedule-times">Lesson 8:00–9:00 PM · Social dance 9:00–10:00 PM</p>
-        <div className="schedule-header" aria-hidden="true"><span>Date</span><span>Location</span><span>Lesson program</span></div>
+        <p className="schedule-times"><span>Lesson 8:00–9:00 PM</span> · <span>Social dance 9:00–10:00 PM</span></p>
+        {events.some(event => event.kind === "normal") && <div className="schedule-header" aria-hidden="true"><span>Date</span><span>Location</span><span>Lesson program</span></div>}
       </>}
       <div className={kind === "normal" ? "schedule-list" : "event-list"}>{events.filter(event => event.kind === kind).map(event => kind === "normal" ? <article key={event.id} id={`event-${event.id}`} className={`schedule-row${event.date && event.date < today ? " is-past" : ""}`}>
         <time dateTime={event.date} className="schedule-date">{formatEventDate(event.date)}</time>
@@ -93,9 +98,9 @@ export function EventSections({ events, today }: EventSnapshot) {
         <time dateTime={event.date} className="event-date">{formatEventDate(event.date)}</time>
         <div className="event-content">
           <h3>{event.title}</h3>
-          <p className="event-meta">{!event.location && !event.room && !event.startTime ? "TBA" : <><EventLocation event={event} /><br />{eventTime(event)}</>}</p>
+          <p className="event-meta">{!event.location && !event.room && !event.startTime ? "TBA" : <><EventLocation event={event} /><br />{formatEventTime(event)}</>}</p>
           <Markdown>{event.description}</Markdown>
-          <div className="event-actions">{(!event.date || event.date >= today) && <Button onClick={() => setSelected(event)}>RSVP</Button>}<CalendarLinks event={event} /></div>
+          <div className="event-actions">{(!event.date || event.date >= today) && hasEventDetails(event) && <Button onClick={() => setSelected(event)}>RSVP</Button>}<CalendarLinks event={event} /></div>
         </div>
       </article>)}</div>
       {!events.some(event => event.kind === kind) && <p className="event-muted">Events will be announced here.</p>}

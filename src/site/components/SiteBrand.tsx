@@ -1,8 +1,8 @@
-import { siteContent } from "../content"
+import logoUrl from "../../../assets/shoe-logo.png"
 
 export function SiteBrand() {
   return <a className="site-name" href="/">
-    <img src={siteContent.brand.logoUrl} alt="" width="52" height="128" />
-    <span>{siteContent.brand.name}</span>
+    <img src={logoUrl} alt="" width="52" height="128" />
+    <span>Swing Syndicate at Cornell</span>
   </a>
 }

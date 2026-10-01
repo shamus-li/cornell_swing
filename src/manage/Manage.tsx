@@ -1,36 +1,52 @@
-import { useEffect, useRef, useState, type FormEvent } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
+import { Check, Copy } from "lucide-react"
 import { Button } from "../../check-in/src/components/ui/button"
-import { formatEventLocation, formatEventDate, todayInNewYork, type EventRecord, type ManagedEvent, type RSVP } from "../events/model"
-import { Input } from "../../check-in/src/components/ui/input"
+import { todayInNewYork, type EventRecord, type ManagedEvent, type RSVP } from "../events/model"
 import { EventTimePicker } from "./EventTimePicker"
 import { LocationPicker } from "./LocationPicker"
 import { EventDatePicker } from "./EventDatePicker"
 import { NormalEventRow, type NormalEventHandle } from "./NormalEventRow"
 import { DiscardChangesButton } from "./DiscardChangesButton"
 import { DeleteEventButton } from "./DeleteEventButton"
+import { ConfirmButton } from "./ConfirmButton"
 import { SheetConnection } from "./SheetConnection"
-import { api } from "./api"
+import { api, errorMessage } from "./api"
 import { MarkdownEditor } from "./MarkdownEditor"
 import { SiteBrand } from "../site/components/SiteBrand"
+import { DateBlock, DraftBadge, eventSummary } from "./EventDate"
+import { Tabs } from "./Tabs"
+import { Person } from "../../check-in/src/components/ui/person"
 
-const message = (error: unknown) => error instanceof Error ? error.message : "Something went wrong. Please try again."
-const newEvent = (kind: EventRecord["kind"]): EventRecord => ({ id: "", kind, title: "", date: todayInNewYork(), startTime: kind === "normal" ? "20:00" : "", endTime: kind === "normal" ? "22:00" : "", location: "", description: "", updatedAt: "" })
+type View = "special" | "lessons" | "settings"
+const views: { value: View; label: string }[] = [{ value: "special", label: "Special events" }, { value: "lessons", label: "Lessons" }, { value: "settings", label: "Settings" }]
+const byDate = (a: EventRecord, b: EventRecord) => (a.date || "9999").localeCompare(b.date || "9999") || a.startTime.localeCompare(b.startTime)
+const newEvent = (kind: EventRecord["kind"]): EventRecord => ({ id: "", kind, title: kind === "normal" ? "Monday swing" : "", date: todayInNewYork(), startTime: kind === "normal" ? "20:00" : "", endTime: kind === "normal" ? "22:00" : "", location: "", description: "", published: false, updatedAt: "" })
+const searchParam = (name: string) => new URLSearchParams(window.location.search).get(name)
 
 export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent[] }) {
-  const [events, setEvents] = useState<ManagedEvent[]>(() => [...(initialEvents ?? [])].sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999") || a.startTime.localeCompare(b.startTime)))
+  const [events, setEvents] = useState<ManagedEvent[]>(() => [...(initialEvents ?? [])].sort(byDate))
   const [loading, setLoading] = useState(initialEvents === undefined)
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
-  const [editingId, setEditingId] = useState<string | null>(() => new URLSearchParams(window.location.search).get("event"))
-  const editing = editingId === "new" ? newEvent("special") : events.find(event => event.id === editingId) ?? null
+  const [view, setView] = useState<View>(() => views.find(item => item.value === searchParam("view"))?.value ?? "special")
+  const [editingId, setEditingId] = useState<string | null>(() => searchParam("event"))
+  const editing = editingId === "new" ? { ...newEvent("special"), rsvpCount: 0 } : events.find(event => event.id === editingId) ?? null
   const [activeNormal, setActiveNormal] = useState<string | null>(null)
   const normalEditor = useRef<NormalEventHandle>(null)
   const switching = useRef(false)
   useEffect(() => {
-    const navigate = () => setEditingId(new URLSearchParams(window.location.search).get("event"))
+    const navigate = () => setEditingId(searchParam("event"))
     window.addEventListener("popstate", navigate)
     return () => window.removeEventListener("popstate", navigate)
   }, [])
+  function changeView(next: View) {
+    void openEvent(() => {
+      const url = new URL(window.location.href)
+      url.searchParams.set("view", next)
+      window.history.replaceState(window.history.state, "", url)
+      setView(next)
+    })
+  }
   function openSpecial(event: EventRecord) {
     const url = new URL(window.location.href)
     url.searchParams.set("event", event.id || "new")
@@ -48,9 +64,9 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
   }
   async function load() {
     const data = await api<{ events: ManagedEvent[] }>("/events")
-    setEvents(data.events.sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999") || a.startTime.localeCompare(b.startTime)))
+    setEvents(data.events.sort(byDate))
   }
-  useEffect(() => { if (initialEvents === undefined) void load().catch(err => setError(message(err))).finally(() => setLoading(false)) }, [])
+  useEffect(() => { if (initialEvents === undefined) void load().catch(err => setError(errorMessage(err))).finally(() => setLoading(false)) }, [])
   function acceptDeletedEvent(id: string) {
     setEvents(current => current.filter(event => event.id !== id))
     setActiveNormal(null)
@@ -60,6 +76,7 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
   function removeRsvpCount(id: string) {
     setEvents(current => current.map(event => event.id === id ? { ...event, rsvpCount: Math.max(0, event.rsvpCount - 1) } : event))
   }
+  // Saves the open lesson before switching, so leaving a row never loses edits.
   async function openEvent(action: () => void) {
     if (switching.current) return
     switching.current = true
@@ -69,36 +86,57 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
     } finally { switching.current = false }
   }
   function acceptSavedEvent(event: EventRecord) {
-    setEvents(current => [...current.filter(item => item.id !== event.id), { ...event, rsvpCount: current.find(item => item.id === event.id)?.rsvpCount ?? 0 }].sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999") || a.startTime.localeCompare(b.startTime)))
+    setEvents(current => [...current.filter(item => item.id !== event.id), { ...event, rsvpCount: current.find(item => item.id === event.id)?.rsvpCount ?? 0 }].sort(byDate))
     setNotice(""); setError("")
   }
   async function saveNormal(draft: EventRecord) {
     const { event } = await api<{ event: EventRecord }>(`/events${draft.id ? `/${draft.id}` : ""}`, { method: draft.id ? "PUT" : "POST", body: JSON.stringify(draft) })
     acceptSavedEvent(event)
   }
+  const lessonRow = (event: EventRecord) => <NormalEventRow key={`${event.id}-${event.updatedAt}-${activeNormal === event.id}`} ref={activeNormal === event.id ? normalEditor : undefined} editing={activeNormal === event.id} onEdit={() => { void openEvent(() => setActiveNormal(event.id)) }} event={event} onSave={saveNormal} onCancel={() => setActiveNormal(null)} onDelete={async () => { await api(`/events/${event.id}`, { method: "DELETE" }); acceptDeletedEvent(event.id) }} />
+  const specialRow = (event: ManagedEvent) => <Button key={event.id} variant="ghost" className="event-row-button" onClick={() => { void openEvent(() => openSpecial(event)) }}>
+    <DateBlock date={event.date} />
+    <span className="event-row-text"><span className="event-row-title"><strong>{event.title}</strong>{!event.published && <DraftBadge />}</span><span className="event-muted">{eventSummary(event)}</span></span>
+    <span className="guest-count event-muted">{event.rsvpCount} RSVP{event.rsvpCount === 1 ? "" : "s"}</span>
+  </Button>
+
   return <>
-    <header className="site-header manage-header"><SiteBrand /></header>
+    <header className="site-header manage-header"><SiteBrand /><Button asChild variant="ghost" size="sm"><a href="/" target="_blank" rel="noreferrer">View site ↗</a></Button></header>
     <main className="manage-main">
-      {editing ? <EventEditor key={editing.id || `new-${editing.kind}`} event={editing} onCancel={closeSpecial} onRsvpChange={() => removeRsvpCount(editing.id)} onSave={event => { acceptSavedEvent(event); closeSpecial() }} onDelete={() => acceptDeletedEvent(editing.id)} /> : <>
-        <h1>Manage events</h1>
-        {notice && <p role="status">{notice}</p>}
-        {error && <p role="alert" className="event-error">{error} <Button variant="ghost" size="default" className="event-text-button" onClick={() => window.location.reload()}>Reload</Button></p>}
-        {loading ? <p role="status">Loading events…</p> : (["normal", "special"] as const).map(kind => <section className="manage-section" key={kind}>
-          <div className="manage-section-heading"><div><h2>{kind === "normal" ? "Normal events" : "Special events"}</h2></div><Button variant="outline" size="default" onClick={() => { if (kind === "normal" && activeNormal === "") return; void openEvent(() => kind === "normal" ? setActiveNormal("") : openSpecial(newEvent(kind))) }}>Add event</Button></div>
-          <div className="manage-list">{kind === "normal" && activeNormal === "" && <NormalEventRow ref={normalEditor} editing onEdit={() => {}} event={{ ...newEvent("normal"), title: "Monday swing" }} onSave={saveNormal} onCancel={() => setActiveNormal(null)} />}
-          {events.filter(event => event.kind === kind).map(event => kind === "normal" ? <NormalEventRow key={`${event.id}-${event.updatedAt}-${activeNormal === event.id}`} ref={activeNormal === event.id ? normalEditor : undefined} editing={activeNormal === event.id} onEdit={() => { void openEvent(() => setActiveNormal(event.id)) }} event={event} onSave={saveNormal} onCancel={() => setActiveNormal(null)} onDelete={async () => { await api(`/events/${event.id}`, { method: "DELETE" }); acceptDeletedEvent(event.id) }} /> : <div className={`manage-row${event.date && event.date < todayInNewYork() ? " is-past" : ""}`} key={event.id}>
-            <Button variant="ghost" className="event-title-button" aria-label={`Manage ${event.title} on ${event.date}`} onClick={() => { void openEvent(() => openSpecial(event)) }}><time dateTime={event.date}>{formatEventDate(event.date)}</time><span><strong>{event.title}</strong><span className="event-muted event-row-location">{formatEventLocation(event)}</span></span><span className="guest-count event-muted">{event.rsvpCount} RSVP{event.rsvpCount === 1 ? "" : "s"}</span></Button>
-          </div>)}</div>
-          {!events.some(event => event.kind === kind) && <p className="event-muted">No events yet.</p>}
-        </section>)}
+      {editing ? <EventEditor key={editing.id || "new"} event={editing} onCancel={closeSpecial} onRsvpChange={() => removeRsvpCount(editing.id)} onSave={event => { acceptSavedEvent(event); closeSpecial() }} onDelete={() => acceptDeletedEvent(editing.id)} /> : <>
+        <div className="manage-title">
+          <h1>Events</h1>
+          {view === "special" && <Button onClick={() => { void openEvent(() => openSpecial(newEvent("special"))) }}>New event</Button>}
+          {view === "lessons" && <Button onClick={() => { if (activeNormal !== "") void openEvent(() => setActiveNormal("")) }}>Add lesson</Button>}
+        </div>
+        <Tabs label="Event views" tabs={views} value={view} onChange={changeView} />
+        {notice && <p role="status" className="manage-notice">{notice}</p>}
+        {error && <p role="alert" className="event-error manage-notice">{error} <Button variant="link" size="sm" onClick={() => window.location.reload()}>Reload</Button></p>}
+        <div role="tabpanel" className="manage-panel" aria-label={views.find(item => item.value === view)!.label}>
+          {view === "settings" ? <SheetConnection onSync={load} /> : loading ? <p role="status" className="event-muted manage-notice">Loading events…</p> : view === "special"
+            ? <EventGroups events={events.filter(event => event.kind === "special")} render={specialRow} empty="No special events yet." />
+            : <EventGroups events={events.filter(event => event.kind === "normal")} render={lessonRow} empty="No weekly lessons yet." first={activeNormal === "" && <NormalEventRow ref={normalEditor} editing onEdit={() => {}} event={newEvent("normal")} onSave={saveNormal} onCancel={() => setActiveNormal(null)} />} />}
+        </div>
       </>}
-      <div hidden={!!editing}><SheetConnection onSync={load} /></div>
     </main>
   </>
 }
 
-function EventEditor({ event, onSave, onDelete, onCancel, onRsvpChange }: { event: EventRecord; onRsvpChange: () => void; onSave: (event: EventRecord) => void; onDelete: () => void; onCancel: () => void }) {
-  const [draft, setDraft] = useState(event)
+// Upcoming events first, then past ones, which stay visible but muted.
+function EventGroups<T extends EventRecord>({ events, render, empty, first }: { events: T[]; render: (event: T) => ReactNode; empty: string; first?: ReactNode }) {
+  const today = todayInNewYork()
+  const upcoming = events.filter(event => !event.date || event.date >= today)
+  const past = events.filter(event => event.date && event.date < today)
+  if (!events.length && !first) return <p className="event-muted manage-notice">{empty}</p>
+  return <>
+    <section className="manage-group" aria-label="Upcoming"><h2>Upcoming</h2><div className="manage-list">{first}{upcoming.map(render)}</div>{!upcoming.length && !first && <p className="event-muted">Nothing scheduled yet.</p>}</section>
+    {past.length > 0 && <section className="manage-group is-past" aria-label="Past"><h2>Past</h2><div className="manage-list">{[...past].reverse().map(render)}</div></section>}
+  </>
+}
+
+function EventEditor({ event, onSave, onDelete, onCancel, onRsvpChange }: { event: ManagedEvent; onRsvpChange: () => void; onSave: (event: EventRecord) => void; onDelete: () => void; onCancel: () => void }) {
+  const [draft, setDraft] = useState<EventRecord>(event)
+  const [tab, setTab] = useState<"details" | "guests">("details")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const [editorError, setEditorError] = useState("")
@@ -110,42 +148,74 @@ function EventEditor({ event, onSave, onDelete, onCancel, onRsvpChange }: { even
     return () => window.removeEventListener("beforeunload", warn)
   }, [dirty])
   const change = (key: keyof EventRecord, value: string) => setDraft(current => ({ ...current, [key]: value }))
-  async function save(e: FormEvent) {
-    e.preventDefault(); if (editorError) return; setBusy(true); setError("")
-    try { const { event: saved } = await api<{ event: EventRecord }>(`/events${event.id ? `/${event.id}` : ""}`, { method: event.id ? "PUT" : "POST", body: JSON.stringify({ ...draft, title: draft.kind === "normal" ? "Monday swing" : draft.title }) }); onSave(saved) }
-    catch (err) { setError(message(err)); setBusy(false) }
+  async function save(published: boolean) {
+    if (editorError) return; setBusy(true); setError("")
+    try { const { event: saved } = await api<{ event: EventRecord }>(`/events${event.id ? `/${event.id}` : ""}`, { method: event.id ? "PUT" : "POST", body: JSON.stringify({ ...draft, published }) }); onSave(saved) }
+    catch (err) { setError(errorMessage(err)); setBusy(false) }
   }
   async function remove() {
     await api(`/events/${event.id}`, { method: "DELETE" })
     await onDelete()
   }
   return <div className="event-editor-shell">
-    <DiscardChangesButton variant="ghost" size="default" className="back-button -ml-2.5" dirty={dirty} onDiscard={onCancel} disabled={busy}>← All events</DiscardChangesButton>
-    <form className="event-form event-editor" aria-label={event.id ? "Edit event" : "New event"} onSubmit={save}>
-      <Input className="event-name-input h-auto" aria-label="Event name" required maxLength={160} value={draft.title} onChange={e => change("title", e.target.value)} placeholder="Event name" />
-      <div className="editor-time-card">
-        <div className="editor-time-fields">
-          <div className="event-field"><span>Date</span><EventDatePicker allowTba value={draft.date} onChange={value => change("date", value)} /></div>
-          <label>Start<EventTimePicker label="Start time" value={draft.startTime} onChange={value => change("startTime", value)} /></label>
-          <label>End<EventTimePicker label="End time" value={draft.endTime} onChange={value => change("endTime", value)} /></label>
+    <DiscardChangesButton variant="ghost" size="sm" className="back-button" dirty={dirty} onDiscard={onCancel} disabled={busy}>← Events</DiscardChangesButton>
+    {event.id && <Tabs label="Event sections" tabs={[{ value: "details", label: "Details" }, { value: "guests", label: <>Guests <span className="tab-count">{event.rsvpCount}</span></> }]} value={tab} onChange={setTab} />}
+    {tab === "guests" ? <div role="tabpanel" className="guest-panel" aria-label="Guests"><GuestList event={event} onChange={onRsvpChange} /></div> :
+    <form role={event.id ? "tabpanel" : undefined} className="event-editor" aria-label={event.id ? "Edit event" : "New event"} onSubmit={e => { e.preventDefault(); if (e.currentTarget.reportValidity()) void save(event.published) }}>
+      <input className="event-name-input" aria-label="Event name" required maxLength={160} value={draft.title} onChange={e => change("title", e.target.value)} placeholder="Event name" />
+      <div className="editor-card">
+        <div className="editor-when">
+          <EventDatePicker allowTba value={draft.date} onChange={value => change("date", value)} />
+          <div className="editor-time"><EventTimePicker label="Start time" value={draft.startTime} onChange={value => change("startTime", value)} /><span aria-hidden="true">–</span><EventTimePicker label="End time" value={draft.endTime} onChange={value => change("endTime", value)} /></div>
         </div>
+        <LocationPicker value={draft.location} url={draft.locationUrl} room={draft.room} onRoomChange={room => change("room", room)} onChange={(location, locationUrl) => setDraft(current => ({ ...current, location, locationUrl }))} disabled={busy} />
       </div>
-      <LocationPicker value={draft.location} url={draft.locationUrl} room={draft.room} onRoomChange={room => change("room", room)} onChange={(location, locationUrl) => setDraft(current => ({ ...current, location, locationUrl }))} disabled={busy} />
       <MarkdownEditor markdown={event.description} label="Description" onChange={value => change("description", value)} onError={setEditorError} />
       {editorError && <p role="alert" className="event-error">{editorError}</p>}
-      {error && <p role="alert" className="event-error">{error}</p>}
-      <div className="editor-actions"><Button size="lg" className="editor-save" disabled={busy || !!editorError}>{busy ? "Saving…" : "Save event"}</Button></div>
-    </form>
-    {event.id && <><GuestList event={event} onChange={onRsvpChange} /><div className="manage-section"><DeleteEventButton onDelete={remove} disabled={busy} onBusyChange={setBusy} includesRsvps /></div></>}
+      <div className="editor-actions">
+        {error ? <p role="alert" className="event-error">{error}</p> : <p className="event-muted" aria-live="polite">{dirty ? "Unsaved changes" : event.published ? "Published" : "Draft"}</p>}
+        <Button type="button" variant="outline" disabled={busy || !!editorError} onClick={e => { if (e.currentTarget.form!.reportValidity()) void save(!event.published) }}>{event.published ? "Unpublish" : "Publish"}</Button>
+        <Button disabled={busy || !!editorError}>{busy ? "Saving…" : "Save"}</Button>
+      </div>
+      {event.id && <div className="editor-delete"><DeleteEventButton onDelete={remove} disabled={busy} onBusyChange={setBusy} includesRsvps /></div>}
+    </form>}
   </div>
 }
+
+// Tab-separated rows paste into Google Sheets as Name and Email columns.
+function CopyGuestsButton({ rsvps }: { rsvps: RSVP[] }) {
+  const [copied, setCopied] = useState(false)
+  async function copy() {
+    await navigator.clipboard.writeText(rsvps.map(rsvp => `${rsvp.name}\t${rsvp.email}`).join("\n"))
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 2000)
+  }
+  return <Button variant="outline" size="sm" onClick={() => void copy()}>{copied ? <Check /> : <Copy />}Copy names and emails<span className="sr-only" aria-live="polite">{copied ? "Copied" : ""}</span></Button>
+}
+
+const rsvpDate = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "America/New_York" })
 
 function GuestList({ event, onChange }: { event: EventRecord; onChange: () => void }) {
   const [rsvps, setRsvps] = useState<RSVP[] | null>(null)
   const [error, setError] = useState("")
-  useEffect(() => { void api<{ rsvps: RSVP[] }>(`/events/${event.id}/rsvps`).then(data => setRsvps(data.rsvps)).catch(err => setError(message(err))) }, [event.id])
-  return <section className="manage-section" aria-labelledby="guest-list-title"><div className="manage-section-heading"><h2 id="guest-list-title">RSVPs</h2>{rsvps && <span className="event-muted">{rsvps.length} guest{rsvps.length === 1 ? "" : "s"}</span>}</div>
-    {error && <p role="alert" className="event-error">{error}</p>}
-    {rsvps === null && !error ? <p role="status">Loading RSVPs…</p> : rsvps && <><div className="guest-list">{rsvps.map(rsvp => <div className="guest-row" key={rsvp.email}><strong>{rsvp.name}</strong><span>{rsvp.email}</span><DeleteEventButton kind="rsvp" onDelete={async () => { await api(`/events/${event.id}/rsvps`, { method: "DELETE", body: JSON.stringify({ email: rsvp.email }) }); setRsvps(current => current!.filter(guest => guest.email !== rsvp.email)); onChange() }} /></div>)}</div>{!rsvps.length && <p>No RSVPs yet.</p>}</>}
-  </section>
+  useEffect(() => { void api<{ rsvps: RSVP[] }>(`/events/${event.id}/rsvps`).then(data => setRsvps(data.rsvps)).catch(err => setError(errorMessage(err))) }, [event.id])
+  async function remove(email: string) {
+    setError("")
+    try {
+      await api(`/events/${event.id}/rsvps`, { method: "DELETE", body: JSON.stringify({ email }) })
+      setRsvps(current => current!.filter(guest => guest.email !== email)); onChange()
+    } catch (err) { setError(errorMessage(err)) }
+  }
+  return <>
+    {error && <p role="alert" className="event-error manage-notice">{error}</p>}
+    {rsvps === null ? !error && <p role="status" className="event-muted manage-notice">Loading guests…</p> : rsvps.length ? <>
+      <div className="guest-summary"><span className="event-muted">{rsvps.length} guest{rsvps.length === 1 ? "" : "s"}</span><CopyGuestsButton rsvps={rsvps} /></div>
+      <ul className="guest-list">
+      {rsvps.map(rsvp => <li className="guest-row" key={rsvp.email}>
+        <Person name={rsvp.name} detail={rsvp.email} />
+        <time dateTime={rsvp.createdAt} title="RSVP date">{rsvpDate.format(new Date(rsvp.createdAt))}</time>
+        <ConfirmButton size="sm" aria-label={`Remove ${rsvp.name}`} confirmLabel="Confirm" busyLabel="Removing…" onConfirm={() => remove(rsvp.email)}>Remove</ConfirmButton>
+      </li>)}
+    </ul></> : <p className="event-muted manage-notice">No RSVPs yet. Guests appear here when they RSVP on the website.</p>}
+  </>
 }

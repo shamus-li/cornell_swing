@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { todayInNewYork, validateEvent, validateRSVP } from './model'
+import { scheduleTitle, todayInNewYork, validateEvent, validateRSVP } from './model'
 
-const event = { kind: 'special', title: 'Swing dance', date: '2026-10-10', startTime: '18:15', endTime: '22:00', location: 'Willard Straight Hall', description: '**Everyone welcome.**' }
+const event = { kind: 'special', title: 'Swing dance', date: '2026-10-10', startTime: '18:15', endTime: '22:00', location: 'Willard Straight Hall', description: '**Everyone welcome.**', published: true }
 
 describe('event validation', () => {
   it('accepts markdown and a date with unknown times', () => {
@@ -21,5 +21,15 @@ describe('RSVP validation', () => {
   })
   it.each([{ name: '', email: 'jane@cornell.edu' }, { name: 'Jane', email: 'not-email' }, { name: 'Jane\nDoe', email: 'jane@cornell.edu' }])('rejects malformed participant details', value => {
     expect(() => validateRSVP(value)).toThrow()
+  })
+})
+
+describe('scheduleTitle', () => {
+  const weeks = [{ kind: 'normal' as const, date: '2026-08-24' }, { kind: 'normal' as const, date: '2026-12-07' }, { kind: 'normal' as const, date: '2027-01-25' }]
+  it('names the semester of the next lesson, then the last one', () => {
+    expect(scheduleTitle(weeks, '2026-10-01')).toBe('Fall 2026 schedule')
+    expect(scheduleTitle(weeks, '2026-12-20')).toBe('Spring 2027 schedule')
+    expect(scheduleTitle(weeks, '2027-06-01')).toBe('Spring 2027 schedule')
+    expect(scheduleTitle([], '2026-10-01')).toBe('Schedule')
   })
 })

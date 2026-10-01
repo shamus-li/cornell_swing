@@ -1,9 +1,10 @@
 import { FormEvent, useEffect, useRef, useState } from "react"
 
-import logoUrl from "../../assets/shoe-logo.png"
 import waiverQrUrl from "../../assets/waiver-qr.png"
 
+import { SiteBrand } from "@shared/site/components/SiteBrand"
 import { Button } from "@/components/ui/button"
+import { largeButtonClass } from "@/lib/sizes"
 import {
   Combobox,
   ComboboxContent,
@@ -12,7 +13,9 @@ import {
   ComboboxItem,
   ComboboxList,
 } from "@/components/ui/combobox"
+import { FloatingField, floatingInputClass } from "@/components/ui/floating-field"
 import { Input } from "@/components/ui/input"
+import { Person } from "@/components/ui/person"
 import {
   Select,
   SelectContent,
@@ -42,21 +45,17 @@ function memberSearchKey(query: string): string {
 
 function MemberResults() {
   return (
-    <ComboboxContent className="rounded-md">
+    <ComboboxContent>
       <ComboboxEmpty className="justify-start px-3 py-2.5 text-left text-base">
         Don&apos;t see your name? Continue below.
       </ComboboxEmpty>
       <ComboboxList>
         {(member: Member) => (
           <ComboboxItem key={member.id} value={member} className="items-start px-3 py-2.5 text-base">
-            <span className="min-w-0">
-              {member.name && <span className="block truncate font-medium">{member.name}</span>}
-              {(member.email || member.affiliation) && (
-                <span className="text-muted-foreground block truncate">
-                  {[member.email, member.affiliation].filter(Boolean).join(" · ")}
-                </span>
-              )}
-            </span>
+            <Person
+              name={member.name}
+              detail={[member.email, member.affiliation].filter(Boolean).join(" · ")}
+            />
           </ComboboxItem>
         )}
       </ComboboxList>
@@ -67,7 +66,7 @@ function MemberResults() {
 function WaiverCallout() {
   return (
     <aside
-      className="flex w-full flex-col items-center gap-5 rounded-lg border bg-muted p-5 text-center sm:flex-row sm:gap-6 sm:p-6 sm:text-left"
+      className="flex w-full flex-col items-center gap-5 rounded-xl bg-muted p-5 text-center sm:flex-row sm:gap-6 sm:p-6 sm:text-left"
       aria-labelledby="waiver-title"
     >
       <div className="min-w-0 flex-1">
@@ -172,10 +171,6 @@ export default function App() {
     }
   }, [query, searchKey, selectedMember])
 
-  function updateName(value: string) {
-    setName(value)
-  }
-
   function clearSelectedMember() {
     setSelectedMember(null)
     setName("")
@@ -265,24 +260,16 @@ export default function App() {
   }
 
   function resetForm() {
-    setName("")
-    setEmail("")
-    setAffiliation("")
-    setMembers([])
-    memberSearchCache.current.clear()
-    setSelectedMember(null)
-    setMemberSearchOpen(false)
-    setNameTouched(false)
-    setMessage("")
+    clearSelectedMember()
     setConfirmation(null)
   }
 
   if (confirmation) {
     return (
       <main className="mx-auto flex min-h-svh w-full max-w-[540px] flex-col items-center justify-center gap-6 px-5 py-12 text-center sm:gap-8">
-        <h1 className="text-[2rem] leading-tight font-bold">{confirmation}</h1>
+        <h1 className="text-[1.75rem] leading-tight font-semibold">{confirmation}</h1>
         <WaiverCallout />
-        <Button size="lg" onClick={resetForm}>
+        <Button className={largeButtonClass} onClick={resetForm}>
           Check in another person
         </Button>
       </main>
@@ -292,22 +279,15 @@ export default function App() {
   return (
     <div className="mx-auto min-h-svh w-full max-w-[620px] px-5 pb-12">
       <header className="flex h-16 items-center">
-        <a
-          className="font-heading inline-flex items-center text-[1.05rem] leading-none font-semibold no-underline"
-          href="../"
-          aria-label="Swing Syndicate at Cornell home"
-        >
-          <img className="mr-[-4px] h-12 w-auto shrink-0" src={logoUrl} alt="" />
-          <span>Swing Syndicate at Cornell</span>
-        </a>
+        <SiteBrand />
       </header>
 
       <main className="pt-12">
-        <h1 className="mb-6 text-[2rem] leading-tight font-bold">Check in</h1>
+        <h1 className="mb-6 text-[1.75rem] leading-tight font-semibold">Check in</h1>
 
         <form className="space-y-4" autoComplete="off" onSubmit={submitCheckin}>
           {selectedMember && (
-            <div className="flex items-center justify-between gap-3 rounded-md bg-muted px-3 py-2 text-sm">
+            <div className="flex items-center justify-between gap-3 rounded-lg bg-muted px-3 py-2 text-sm">
               <span className="min-w-0 truncate">
                 Updating {selectedMember.name || selectedMember.email}
               </span>
@@ -323,48 +303,46 @@ export default function App() {
           )}
 
           <div>
-            <label className="sr-only" htmlFor="name">
-              Full Name
-            </label>
-            <Combobox<Member>
-              items={members}
-              filteredItems={members}
-              value={selectedMember}
-              inputValue={name}
-              open={memberSearchOpen && nameFocused}
-              onOpenChange={(open) =>
-                setMemberSearchOpen(open && !selectedMember && name.trim().length >= 1)
-              }
-              onInputValueChange={(value, details) => {
-                if (details.reason === "input-change") updateName(value)
-              }}
-              onValueChange={chooseMember}
-              itemToStringLabel={(member) => member.name}
-              itemToStringValue={(member) => member.id}
-              isItemEqualToValue={(member, value) => member.id === value.id}
-              autoHighlight
-            >
-              <ComboboxInput
-                id="name"
-                name="name"
-                className="h-13 w-full rounded-md [&_[data-slot=input-group-control]]:text-base"
-                placeholder="Full Name"
-                autoComplete="off"
-                autoCapitalize="words"
-                aria-describedby={showNameCasePrompt ? "name-case-prompt" : undefined}
-                onFocus={() => setNameFocused(true)}
-                onBlur={() => {
-                  setNameFocused(false)
-                  setName(normalizeName(name))
-                  setNameTouched(true)
+            <FloatingField id="name" label="Full name" filled={!!name}>
+              <Combobox<Member>
+                items={members}
+                filteredItems={members}
+                value={selectedMember}
+                inputValue={name}
+                open={memberSearchOpen && nameFocused}
+                onOpenChange={(open) =>
+                  setMemberSearchOpen(open && !selectedMember && !!query)
+                }
+                onInputValueChange={(value, details) => {
+                  if (details.reason === "input-change") setName(value)
                 }}
-                data-1p-ignore
-                required
-                showTrigger={false}
-                autoFocus
-              />
-              <MemberResults />
-            </Combobox>
+                onValueChange={chooseMember}
+                itemToStringLabel={(member) => member.name}
+                itemToStringValue={(member) => member.id}
+                isItemEqualToValue={(member, value) => member.id === value.id}
+                autoHighlight
+              >
+                <ComboboxInput
+                  id="name"
+                  name="name"
+                  className="h-14 w-full [&_[data-slot=input-group-control]]:h-full [&_[data-slot=input-group-control]]:px-3 [&_[data-slot=input-group-control]]:pt-5 [&_[data-slot=input-group-control]]:pb-1 [&_[data-slot=input-group-control]]:text-base"
+                  autoComplete="off"
+                  autoCapitalize="words"
+                  aria-describedby={showNameCasePrompt ? "name-case-prompt" : undefined}
+                  onFocus={() => setNameFocused(true)}
+                  onBlur={() => {
+                    setNameFocused(false)
+                    setName(normalizeName(name))
+                    setNameTouched(true)
+                  }}
+                  data-1p-ignore
+                  required
+                  showTrigger={false}
+                  autoFocus
+                />
+                <MemberResults />
+              </Combobox>
+            </FloatingField>
             {showNameCasePrompt && (
               <p
                 id="name-case-prompt"
@@ -376,48 +354,48 @@ export default function App() {
             )}
           </div>
 
-          <label className="sr-only" htmlFor="email">
-            Email
-          </label>
-          <Input
-            id="email"
-            name="email"
-            className="h-13 rounded-md px-3 text-base md:text-base"
-            type="email"
-            inputMode="email"
-            autoComplete="off"
-            data-1p-ignore
-            placeholder="Email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            required
-          />
+          <FloatingField id="email" label="Email" filled={!!email}>
+            <Input
+              id="email"
+              name="email"
+              className={floatingInputClass}
+              type="email"
+              inputMode="email"
+              autoComplete="off"
+              data-1p-ignore
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+            />
+          </FloatingField>
 
-          <label className="sr-only" htmlFor="affiliation">
-            Affiliation
-          </label>
-          <Select value={affiliation} onValueChange={(value) => setAffiliation(value as Affiliation)}>
-            <SelectTrigger
-              id="affiliation"
-              className="h-13! w-full rounded-md px-3 text-base"
-              aria-invalid={message === "Choose an affiliation."}
+          <FloatingField id="affiliation" label="Affiliation" filled={!!affiliation}>
+            <Select
+              value={affiliation}
+              onValueChange={(value) => setAffiliation(value as Affiliation)}
             >
-              <SelectValue placeholder="Affiliation" />
-            </SelectTrigger>
-            <SelectContent position="popper" align="start">
-              {AFFILIATIONS.map((option) => (
-                <SelectItem key={option} value={option} className="py-2 text-base">
-                  {option}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+              <SelectTrigger
+                id="affiliation"
+                className={`${floatingInputClass} h-14! w-full [&>svg]:-mt-4`}
+                aria-invalid={message === "Choose an affiliation."}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" align="start">
+                {AFFILIATIONS.map((option) => (
+                  <SelectItem key={option} value={option} className="py-2 text-base">
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FloatingField>
 
-          <p className="text-destructive min-h-6 text-base" role="alert" aria-live="assertive">
+          <p className="text-destructive min-h-6 text-base" role="alert">
             {message}
           </p>
 
-          <Button size="lg" className="w-full" type="submit" disabled={isSubmitting}>
+          <Button className={`w-full ${largeButtonClass}`} type="submit" disabled={isSubmitting}>
             {isSubmitting ? "Checking in…" : "Check in"}
           </Button>
         </form>

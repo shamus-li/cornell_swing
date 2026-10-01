@@ -1,0 +1,13 @@
+@import "../manage/manage.css";
+@source "./";
+
+.redirect-row { display: flex; align-items: center; gap: 12px; padding: 12px 8px; }
+.redirect-row-text { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.redirect-row-text > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.redirect-row-text a { color: var(--muted-foreground); font-size: var(--small-font-size); text-decoration: none; }
+.redirect-row-text a:hover { color: var(--foreground); }
+.redirect-row-actions { display: flex; flex: none; align-items: center; gap: 4px; }
+.redirect-edit { display: grid; gap: 12px; margin: 8px 0; padding: 16px; border-radius: 12px; background: var(--muted); }
+.redirect-edit [data-slot="input"], .redirect-edit [data-slot="select-trigger"] { background: var(--background); }
+.redirect-fields { display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) 10rem; }
+@media (max-width: 640px) { .redirect-fields { grid-template-columns: 1fr; } }

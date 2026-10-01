@@ -9,7 +9,7 @@ import type { ManagedEvent } from "../events/model"
 import { todayInNewYork } from "../events/model"
 import { Markdown } from "../events/Markdown"
 
-const base = { date: "2099-10-17", startTime: "18:15", endTime: "22:00", location: "Dance hall", description: "**Live music**", updatedAt: "2026-09-20T12:00:00.000Z", rsvpCount: 0 }
+const base = { date: "2099-10-17", startTime: "18:15", endTime: "22:00", location: "Dance hall", description: "**Live music**", published: true, updatedAt: "2026-09-20T12:00:00.000Z", rsvpCount: 0 }
 const events: ManagedEvent[] = [{ ...base, id: "normal", kind: "normal", title: "Monday swing" }, { ...base, id: "special", kind: "special", title: "Autumn dance", rsvpCount: 1 }]
 let root: Root | undefined
 afterEach(async () => {
@@ -49,6 +49,13 @@ async function enter(element: HTMLInputElement | HTMLTextAreaElement, value: str
   })
 }
 
+// A lesson row, found by its date.
+const lessonRow = (container: HTMLElement, date: string) => container.querySelector<HTMLElement>(`time[datetime="${date}"]`)!.closest<HTMLElement>('[role="button"]')!
+
+async function clickButton(container: HTMLElement, text: string) {
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.startsWith(text))!.click())
+}
+
 async function submit(container: HTMLElement) {
   await act(async () => container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })))
 }
@@ -67,11 +74,9 @@ it("edits rendered Markdown in place, preserves headings and lists on save, and 
   })
   vi.stubGlobal("fetch", fetcher)
   const container = await render()
-  const sections = container.querySelectorAll(".manage-section")
-  expect(sections[0].textContent).not.toContain("Monday swing")
-  expect(sections[0].textContent).not.toContain("Autumn dance")
-  expect(sections[1].querySelector(".guest-count")?.textContent).toBe("1 RSVP")
-  await act(async () => sections[1].querySelector<HTMLButtonElement>(".event-title-button")!.click())
+  expect(container.querySelectorAll(".event-row-button")).toHaveLength(1)
+  expect(container.querySelector(".guest-count")?.textContent).toBe("1 RSVP")
+  await act(async () => container.querySelector<HTMLButtonElement>(".event-row-button")!.click())
   await act(async () => { await import("./MarkdownEditorContent") })
   await enter(inputByLabel(container, "Event name"), "Autumn dance updated")
   await enter(inputByLabel(container, "Start time"), "6:07 PM")
@@ -103,9 +108,10 @@ it("edits rendered Markdown in place, preserves headings and lists on save, and 
   expect(fetcher.mock.calls.filter(([url]) => url === "/manage/api/events")).toHaveLength(1)
 })
 
-it("creates a special event with unconfirmed times and opens its private guest list", async () => {
+it("creates a special event as a draft with unconfirmed times, opens its private guest list, and publishes it", async () => {
   let current = events.map(event => ({ ...event }))
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === "PUT") return Response.json({ event: JSON.parse(init.body as string) })
     if (init?.method === "POST") {
       const created = { ...JSON.parse(init.body as string), id: "new-special", rsvpCount: 0 }
       current = [...current, created]
@@ -116,29 +122,37 @@ it("creates a special event with unconfirmed times and opens its private guest l
   })
   vi.stubGlobal("fetch", fetcher)
   const container = await render()
-  await act(async () => container.querySelectorAll<HTMLButtonElement>(".manage-section-heading button")[1].click())
+  await clickButton(container, "New event")
   expect(inputByLabel(container, "Start time").value).toBe("")
   expect(inputByLabel(container, "End time").value).toBe("")
   await enter(inputByLabel(container, "Event name"), "Winter dance")
   await submit(container)
   const request = fetcher.mock.calls.find(([, init]) => init?.method === "POST")!
   expect(request[0]).toBe("/manage/api/events")
-  expect(JSON.parse(request[1]!.body as string)).toMatchObject({ kind: "special", title: "Winter dance", date: todayInNewYork(), startTime: "", endTime: "" })
+  expect(JSON.parse(request[1]!.body as string)).toMatchObject({ kind: "special", title: "Winter dance", date: todayInNewYork(), startTime: "", endTime: "", published: false })
   expect(container.textContent).toContain("Winter dance")
-  await act(async () => container.querySelector<HTMLButtonElement>(".event-title-button")!.click())
+  expect(container.querySelector(".status-badge")?.textContent).toBe("Draft")
+  await act(async () => container.querySelector<HTMLButtonElement>(".event-row-button")!.click())
+  await clickButton(container, "Guests")
   expect(fetcher).toHaveBeenLastCalledWith("/manage/api/events/new-special/rsvps", expect.anything())
   expect(container.querySelector(".guest-list")?.textContent).toContain("Test Dancer")
   expect(container.querySelector(".guest-list")?.textContent).toContain("dancer@example.com")
+  await clickButton(container, "Details")
+  await clickButton(container, "Publish")
+  const publish = fetcher.mock.calls.find(([, init]) => init?.method === "PUT")!
+  expect(JSON.parse(publish[1]!.body as string)).toMatchObject({ id: "new-special", title: "Winter dance", published: true })
+  expect(container.querySelector(".status-badge")).toBeNull()
 })
 
-it("lists both event sections earliest first", async () => {
+it("lists special events and weekly lessons earliest first", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ events: [
     ...events.map(event => ({ ...event, id: `${event.id}-later`, date: "2099-12-09" })),
     ...events.map(event => ({ ...event, id: `${event.id}-earlier`, date: "2099-09-01" })),
   ] })))
   const container = await render()
-  for (const section of container.querySelectorAll(".manage-section")) {
-    expect([...section.querySelectorAll("time")].map(time => time.dateTime)).toEqual(["2099-09-01", "2099-12-09"])
+  for (const view of ["Special events", "Lessons"]) {
+    await clickButton(container, view)
+    expect([...container.querySelectorAll('[role="tabpanel"] time')].map(time => time.getAttribute("datetime"))).toEqual(["2099-09-01", "2099-12-09"])
   }
 })
 
@@ -158,9 +172,10 @@ it("keeps the active normal draft after a failed switch save and opens only the 
   })
   vi.stubGlobal("fetch", fetcher)
   const container = await render()
-  await act(async () => container.querySelector<HTMLElement>('[aria-label="Edit event on 2099-10-12"]')!.click())
+  await clickButton(container, "Lessons")
+  await act(async () => lessonRow(container, "2099-10-12").click())
   await enter(inputByLabel(container, "Beginner"), "New lesson")
-  const openNext = async () => { await act(async () => container.querySelector<HTMLElement>('[aria-label="Edit event on 2099-10-19"]')!.click()) }
+  const openNext = async () => { await act(async () => lessonRow(container, "2099-10-19").click()) }
   await openNext()
   expect(container.querySelectorAll(".normal-event-edit")).toHaveLength(1)
   expect(container.querySelector('[role="alert"]')?.textContent).toBe("Connection lost")
@@ -168,7 +183,7 @@ it("keeps the active normal draft after a failed switch save and opens only the 
   await openNext()
   expect(container.querySelectorAll(".normal-event-edit")).toHaveLength(1)
   expect(inputByLabel(container, "Beginner").value).toBe("Charleston")
-  expect(container.querySelector('[aria-label="Edit event on 2099-10-12"]')?.textContent).toContain("New lesson")
+  expect(lessonRow(container, "2099-10-12").textContent).toContain("New lesson")
   const requests = fetcher.mock.calls.filter(([, init]) => init?.method === "PUT")
   expect(requests).toHaveLength(2)
   for (const [url, init] of requests) {

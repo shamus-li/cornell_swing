@@ -36,6 +36,10 @@
       {
         "name": "CHECKIN_GUARD",
         "class_name": "CheckinGuard"
+      },
+      {
+        "name": "ATTENDANCE_SYNC",
+        "class_name": "AttendanceSync"
       }
     ]
   },
@@ -45,6 +49,10 @@
       "new_sqlite_classes": [
         "CheckinGuard"
       ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["AttendanceSync"]
     }
   ],
   "ratelimits": [
@@ -68,23 +76,29 @@
   "vars": {
     "NOTION_MEMBERS_DATA_SOURCE_ID": "6963065b-1352-4663-bf1a-fb3ed656e018",
     "NOTION_EVENTS_DATA_SOURCE_ID": "687e0df9-8bc6-4383-99b0-9a7ffcbaf5a5",
+    // Notion allows an average of 3 requests per second on non-Business plans.
+    "NOTION_REQUESTS_PER_SECOND": "3",
     "GOOGLE_SPREADSHEET_ID": "1LolWpgKRUjYE45S3UrxWLPqtek0FfEmlcbKNr4Mm2AQ",
     "GOOGLE_SHEET_NAME": "Check-ins",
     "TIME_ZONE": "America/New_York",
     "ACCESS_TEAM_DOMAIN": "swing-syndicate-cornell.cloudflareaccess.com",
-    "ACCESS_AUD": "edff3a8c97b455c985deb5d34b4cfd6f81fc603b92aa4c3f0fe694434f556229"
+    "ACCESS_AUD": "edff3a8c97b455c985deb5d34b4cfd6f81fc603b92aa4c3f0fe694434f556229",
+    "CLOUDFLARE_ACCOUNT_ID": "826a8805e6c445803da24e740d6912e3",
+    "REDIRECT_HOSTNAME": "swingsyndicate.club",
+    "REDIRECT_LIST_ID": "1d0b827660564acc937c13b954fc263e"
   },
   "secrets": {
     "required": [
       "NOTION_TOKEN",
       "GOOGLE_SERVICE_ACCOUNT_EMAIL",
       "GOOGLE_PRIVATE_KEY",
-      "GOOGLE_PLACES_API_KEY"
+      "GOOGLE_PLACES_API_KEY",
+      "REDIRECT_API_TOKEN"
     ]
   },
   "triggers": {
     "crons": [
-      "0 9 * * *"
+      "0 9-12 * * *"
     ]
   },
   "observability": {

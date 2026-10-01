@@ -10,7 +10,7 @@ export function EventDatePicker({ value, onChange, disabled, allowTba = false }:
   const [open, setOpen] = useState(false)
   const date = value ? parseISO(value) : undefined
   return <Popover open={open} onOpenChange={setOpen}>
-    <PopoverTrigger asChild><Button type="button" variant="ghost" size="sm" disabled={disabled} aria-label={`Date: ${date ? format(date, "PPP") : "TBA"}`} className="w-full h-8 rounded-lg border-input bg-transparent text-foreground justify-start text-left font-normal"><CalendarIcon />{date ? format(date, "MMM d, yyyy") : "TBA"}</Button></PopoverTrigger>
+    <PopoverTrigger asChild><Button type="button" variant="outline" disabled={disabled} className="w-full justify-start border-input px-3 text-left text-[length:var(--input-font-size)] font-normal text-foreground"><CalendarIcon className="text-muted-foreground" /><span className="sr-only">Date: </span>{date ? format(date, "EEE, MMM d, yyyy") : "TBA"}</Button></PopoverTrigger>
     <PopoverContent className="w-auto p-0" align="start">
       {allowTba && <Button type="button" variant="ghost" size="sm" className="w-full" onClick={() => { onChange(""); setOpen(false) }}>TBA</Button>}
       <Calendar mode="single" selected={date} defaultMonth={date} onSelect={selected => { if (selected) { onChange(format(selected, "yyyy-MM-dd")); setOpen(false) } }} autoFocus />

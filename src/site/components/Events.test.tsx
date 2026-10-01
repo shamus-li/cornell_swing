@@ -6,7 +6,7 @@ import { afterEach, expect, it, vi } from "vitest"
 import { EventSections, useEvents, type EventSnapshot } from "./Events"
 import { Markdown } from "../../events/Markdown"
 
-const base = { title: "Swing", date: "2099-10-17", startTime: "18:15", endTime: "22:00", location: "Dance hall", description: "**Live music**", updatedAt: "2026-09-20T12:00:00.000Z" }
+const base = { title: "Swing", date: "2099-10-17", startTime: "18:15", endTime: "22:00", location: "Dance hall", description: "**Live music**", published: true, updatedAt: "2026-09-20T12:00:00.000Z" }
 const snapshot: EventSnapshot = { today: "2026-09-20", events: [{ ...base, id: "normal", kind: "normal" }, { ...base, id: "special", kind: "special" }] }
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); document.body.innerHTML = "" })
 
@@ -14,12 +14,12 @@ it("offers RSVP and calendar only for special events and hides past RSVP", () =>
   const container = document.createElement("div")
   container.innerHTML = renderToString(<EventSections {...snapshot} />)
   expect(container.querySelector("#schedule button")).toBeNull()
-  expect(container.querySelector('#schedule [aria-haspopup="menu"]')).toBeNull()
+  expect(container.querySelector("#schedule [popovertarget]")).toBeNull()
   expect(container.querySelector("#special-events button")?.textContent).toBe("RSVP")
   expect(container.querySelector("strong")?.textContent).toBe("Live music")
   container.innerHTML = renderToString(<EventSections {...snapshot} today="2100-01-01" />)
   expect([...container.querySelectorAll("button")].some(button => button.textContent === "RSVP")).toBe(false)
-  expect(container.querySelector('[aria-haspopup="menu"]')?.textContent).toContain("Add to calendar")
+  expect(container.querySelector("[popovertarget]")?.textContent).toBe("Add to calendar")
 })
 
 it("removes raw HTML and unsafe Markdown links", () => {
@@ -30,7 +30,7 @@ it("removes raw HTML and unsafe Markdown links", () => {
   expect(html).toContain("<strong>Good</strong>")
 })
 
-it("hydrates separately rendered live event markup without mismatched menu IDs or refetching the server snapshot", async () => {
+it("hydrates separately rendered live event markup or refetching the server snapshot", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true)
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ events: snapshot.events })))
   function Page() { const { snapshot: data } = useEvents(snapshot); return <main><h1>Swing Syndicate</h1><div id="event-sections"><EventSections {...data} /></div></main> }
@@ -60,8 +60,12 @@ async function openRsvp() {
   await act(async () => root.render(<EventSections {...snapshot} />))
   await act(async () => container.querySelector<HTMLButtonElement>("#special-events button")!.click())
   expect(container.querySelector("dialog")?.open).toBe(true)
-  const name = container.querySelector<HTMLInputElement>('input[name="name"]')!; name.value = "Test Dancer"
-  const email = container.querySelector<HTMLInputElement>('input[name="email"]')!; email.value = "dancer@example.com"
+  const type = async (input: HTMLInputElement, value: string) => act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value)
+    input.dispatchEvent(new Event("input", { bubbles: true }))
+  })
+  const name = container.querySelector<HTMLInputElement>('input[name="name"]')!; await type(name, "Test Dancer")
+  const email = container.querySelector<HTMLInputElement>('input[name="email"]')!; await type(email, "dancer@example.com")
   return { container, root, name, email }
 }
 
@@ -71,9 +75,8 @@ it("opens an accessible popup, saves RSVP, and shows confirmation", async () => 
   await act(async () => container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })))
   expect(fetch).toHaveBeenCalledWith("/api/events/special/rsvp", expect.objectContaining({ method: "POST", body: JSON.stringify({ name: "Test Dancer", email: "dancer@example.com" }) }))
   expect(container.textContent).toContain("See you on the dance floor!")
-  await act(async () => container.querySelector<HTMLButtonElement>('dialog [aria-haspopup="menu"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })))
-  expect(container.querySelector('dialog [role="menu"]')).not.toBeNull()
-  expect(container.querySelector('dialog [role="menu"] a')?.getAttribute("href")).toBe("/api/events/special/calendar")
+  const menu = container.querySelector(`dialog #${container.querySelector("dialog [popovertarget]")!.getAttribute("popovertarget")}`)
+  expect(menu?.querySelector("a")?.getAttribute("href")).toBe("/api/events/special/calendar")
   const ids = [...container.querySelectorAll("[id]")].map(element => element.id)
   expect(new Set(ids).size).toBe(ids.length)
   await act(async () => root.unmount())

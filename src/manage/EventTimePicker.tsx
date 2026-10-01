@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from "react"
+import { formatTime } from "../events/model"
+import { XIcon } from "lucide-react"
+import { InputGroupAddon, InputGroupButton } from "../../check-in/src/components/ui/input-group"
 import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList } from "../../check-in/src/components/ui/combobox"
 
 const timeSlots = ["tba", ...Array.from({ length: 96 }, (_, index) => `${String(Math.floor(index / 4)).padStart(2, "0")}:${String(index % 4 * 15).padStart(2, "0")}`)]
 
-function timeLabel(value: string) {
-  if (!value || value === "tba") return "TBA"
-  const [hour, minute] = value.split(":")
-  return `${Number(hour) % 12 || 12}:${minute} ${Number(hour) < 12 ? "AM" : "PM"}`
-}
+const timeLabel = (value: string) => !value || value === "tba" ? "TBA" : formatTime(value)
 
 function parseTime(text: string): string | null {
   if (!text.trim() || /^tba$/i.test(text.trim())) return ""
@@ -47,15 +46,17 @@ export function EventTimePicker({ value, onChange, label, disabled }: {
   const suggestions = !query || text === timeLabel(value) ? timeSlots : timeSlots.filter(time => timeLabel(time).toLowerCase().includes(query) || time.includes(query))
   return <Combobox<string> items={timeSlots} filteredItems={suggestions} value={value || "tba"} inputValue={text} disabled={disabled}
     itemToStringLabel={timeLabel}
-    onInputValueChange={(next, details) => { if (details.reason === "input-change" || details.reason === "clear-press") edit(next) }}
+    onInputValueChange={(next, details) => { if (details.reason === "input-change") edit(next) }}
     onValueChange={next => { if (next !== null) edit(next === "tba" ? "" : timeLabel(next)) }}>
-    <ComboboxInput ref={input} aria-label={label} placeholder="TBA" className="w-full" showClear
+    <ComboboxInput ref={input} aria-label={label} placeholder="TBA" className="w-full" showTrigger={false}
       onFocus={() => { focused.current = true }}
       onBlur={() => {
         focused.current = false
         const parsed = parseTime(text)
         if (parsed !== null) { onChange(parsed); setText(parsed ? timeLabel(parsed) : "") }
-      }} />
+      }}>
+      {text && <InputGroupAddon align="inline-end"><InputGroupButton size="icon-xs" aria-label={`Clear ${label.toLowerCase()}`} onClick={() => edit("")} disabled={disabled}><XIcon /></InputGroupButton></InputGroupAddon>}
+    </ComboboxInput>
     <ComboboxContent><ComboboxEmpty>Type a custom time.</ComboboxEmpty><ComboboxList>
       {(time: string) => <ComboboxItem key={time} value={time}>{timeLabel(time)}</ComboboxItem>}
     </ComboboxList></ComboboxContent>

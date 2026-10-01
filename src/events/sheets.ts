@@ -8,6 +8,8 @@ const endpoint = (id: string) => `https://sheets.googleapis.com/v4/spreadsheets/
 const titleKey = (title: string) => title.trim().toLocaleLowerCase('en-US')
 const participantKey = (eventId: string, email: string) => JSON.stringify([eventId, email])
 export class SheetError extends Error {}
+// A request that conflicts with the event's current state; it says nothing about the sheet.
+export class EventConflict extends Error {}
 
 let googleToken: { email: string; key: string; token: string; expiresAt: number } | undefined
 async function sheetAccessToken(env: Env, signal: AbortSignal): Promise<string> {
@@ -27,9 +29,18 @@ async function request(url: string, token: string, signal: AbortSignal, method =
   if (!response.ok) throw new SheetError(failure, { cause: new Error(`Google Sheets ${method} failed with HTTP ${response.status}`) })
   return response
 }
-const range = (connection: Connection) => `'${connection.tabTitle.replaceAll("'", "''")}'!A:D`
-const registryTitle = (connection: Connection) => `_Swing events ${connection.sheetId}`
 const quoted = (title: string) => `'${title.replaceAll("'", "''")}'`
+const range = (connection: Connection) => `${quoted(connection.tabTitle)}!A:D`
+const registryTitle = (connection: Connection) => `_Swing events ${connection.sheetId}`
+
+async function titleTaken(env: Env, title: string, exceptId = ''): Promise<boolean> {
+  return !!await env.EVENTS_DB.prepare("SELECT 1 FROM events WHERE kind = 'special' AND id != ? AND lower(trim(title)) = lower(trim(?)) LIMIT 1").bind(exceptId, title).first()
+}
+
+async function deleteRows(connection: Connection, token: string, signal: AbortSignal, rows: Participant[]): Promise<void> {
+  if (!rows.length) return
+  await request(`${endpoint(connection.spreadsheetId)}:batchUpdate`, token, signal, 'POST', { requests: [...rows].sort((a, b) => b.row - a.row).map(row => ({ deleteDimension: { range: { sheetId: connection.sheetId, dimension: 'ROWS', startIndex: row.row - 1, endIndex: row.row } } })) })
+}
 
 async function ensureRegistry(connection: Connection, token: string, signal: AbortSignal): Promise<string[][]> {
   const response = await request(`${endpoint(connection.spreadsheetId)}?fields=sheets(properties(sheetId,title,hidden,gridProperties(columnCount,rowCount)),basicFilter,data(startColumn,columnMetadata.hiddenByUser))`, token, signal)
@@ -121,16 +132,20 @@ async function withSheet<T>(env: Env, action: (connection: Connection, token: st
   const lockToken = crypto.randomUUID()
   const lock = await env.EVENTS_DB.prepare('UPDATE rsvp_sheet_connection SET lockToken = ?, lockUntil = ? WHERE id = 1 AND lockUntil < ? AND spreadsheetId = ? AND sheetId = ?').bind(lockToken, Date.now() + 30000, Date.now(), connection.spreadsheetId, connection.sheetId).run()
   if (!lock.meta.changes) throw new SheetError('Another RSVP update is in progress. Please try again.')
-  let errorMessage: string | null = null
+  // The sheet's stored error reflects only the sheet; a conflict with the event leaves it unchanged.
+  let sheetStatus: { error: string | null } | null = null
   try {
     const signal = AbortSignal.timeout(15000)
     const token = await sheetAccessToken(env, signal)
-    return await action(connection, token, signal)
+    const result = await action(connection, token, signal)
+    sheetStatus = { error: null }
+    return result
   } catch (error) {
-    errorMessage = error instanceof SheetError ? error.message : failure
-    throw error instanceof SheetError ? error : new SheetError(errorMessage, { cause: error })
+    if (error instanceof EventConflict) throw error
+    sheetStatus = { error: error instanceof SheetError ? error.message : failure }
+    throw error instanceof SheetError ? error : new SheetError(sheetStatus.error!, { cause: error })
   } finally {
-    await env.EVENTS_DB.prepare('UPDATE rsvp_sheet_connection SET error = ?, lockToken = NULL, lockUntil = 0 WHERE id = 1 AND lockToken = ?').bind(errorMessage, lockToken).run()
+    await env.EVENTS_DB.prepare('UPDATE rsvp_sheet_connection SET error = CASE WHEN ? THEN ? ELSE error END, lockToken = NULL, lockUntil = 0 WHERE id = 1 AND lockToken = ?').bind(sheetStatus ? 1 : 0, sheetStatus?.error ?? null, lockToken).run()
   }
 }
 
@@ -174,7 +189,7 @@ export async function saveRSVP(env: Env, event: EventRecord, attendee: { name: s
   }
   const connected = await withSheet(env, async (connection, token, signal) => {
     const current = await env.EVENTS_DB.prepare('SELECT * FROM events WHERE id = ?').bind(event.id).first<EventRecord>()
-    if (!current || current.kind !== 'special' || (current.date && current.date < todayInNewYork())) throw new SheetError('RSVPs are closed for this event.')
+    if (!current || current.kind !== 'special' || (current.date && current.date < todayInNewYork())) throw new EventConflict('RSVPs are closed for this event.')
     event = current
     const rows = await readParticipants(env, connection, token, signal)
     const existing = rows.find(row => row.eventId === event.id && row.email === attendee.email)
@@ -188,8 +203,7 @@ export async function saveRSVP(env: Env, event: EventRecord, attendee: { name: s
 export async function removeRSVP(env: Env, eventId: string, email: string): Promise<void> {
   const remove = () => env.EVENTS_DB.prepare('DELETE FROM rsvps WHERE eventId = ? AND email = ?').bind(eventId, email).run()
   const connected = await withSheet(env, async (connection, token, signal) => {
-    const rows = (await readParticipants(env, connection, token, signal)).filter(row => row.eventId === eventId && row.email === email).sort((a, b) => b.row - a.row)
-    if (rows.length) await request(`${endpoint(connection.spreadsheetId)}:batchUpdate`, token, signal, 'POST', { requests: rows.map(row => ({ deleteDimension: { range: { sheetId: connection.sheetId, dimension: 'ROWS', startIndex: row.row - 1, endIndex: row.row } } })) })
+    await deleteRows(connection, token, signal, (await readParticipants(env, connection, token, signal)).filter(row => row.eventId === eventId && row.email === email))
     await remove()
     return true
   })
@@ -215,46 +229,42 @@ export async function importSheet(env: Env): Promise<void> {
 }
 
 export async function changeEventWithSheet(env: Env, event: EventRecord, newTitle: string | null, change: () => Promise<void>, newKind?: string): Promise<void> {
+  const renamed = newTitle !== null && newTitle !== event.title && newKind !== 'normal'
   const connected = await withSheet(env, async (connection, token, signal) => {
     const current = await env.EVENTS_DB.prepare('SELECT * FROM events WHERE id = ?').bind(event.id).first<EventRecord>()
-    if (!current || current.updatedAt !== event.updatedAt) throw new SheetError('The event changed. Refresh before saving.')
-    if (newKind === 'normal' && await env.EVENTS_DB.prepare('SELECT 1 FROM rsvps WHERE eventId = ? LIMIT 1').bind(event.id).first()) throw new SheetError('An event with RSVPs cannot become a normal event.')
-    if (newTitle !== null && newTitle !== event.title && newKind !== 'normal') {
-      const duplicate = await env.EVENTS_DB.prepare("SELECT 1 FROM events WHERE kind = 'special' AND id != ? AND lower(trim(title)) = lower(trim(?)) LIMIT 1").bind(event.id, newTitle).first()
-      if (duplicate) throw new SheetError('Special events must have unique titles.')
-    }
+    if (!current || current.updatedAt !== event.updatedAt) throw new EventConflict('The event changed. Refresh before saving.')
+    if (newKind === 'normal' && await env.EVENTS_DB.prepare('SELECT 1 FROM rsvps WHERE eventId = ? LIMIT 1').bind(event.id).first()) throw new EventConflict('An event with RSVPs cannot become a normal event.')
+    if (renamed && await titleTaken(env, newTitle, event.id)) throw new EventConflict('Special events must have unique titles.')
     const rows = (await readParticipants(env, connection, token, signal)).filter(row => row.eventId === event.id)
-    if (rows.length && newKind === 'normal') throw new SheetError('An event with sheet RSVPs cannot become a normal event.')
-    if (rows.length && newTitle !== null && newTitle !== event.title) {
-      await request(`${endpoint(connection.spreadsheetId)}/values:batchUpdate`, token, signal, 'POST', { valueInputOption: 'RAW', data: rows.map(row => ({ range: `'${connection.tabTitle.replaceAll("'", "''")}'!A${row.row}`, values: [[newTitle]] })) })
-    } else if (rows.length && newTitle === null) {
-      await request(`${endpoint(connection.spreadsheetId)}:batchUpdate`, token, signal, 'POST', { requests: rows.sort((a, b) => b.row - a.row).map(row => ({ deleteDimension: { range: { sheetId: connection.sheetId, dimension: 'ROWS', startIndex: row.row - 1, endIndex: row.row } } })) })
-    }
+    if (rows.length && newKind === 'normal') throw new EventConflict('An event with sheet RSVPs cannot become a normal event.')
+    const setTitles = (title: string, signal: AbortSignal) => request(`${endpoint(connection.spreadsheetId)}/values:batchUpdate`, token, signal, 'POST', { valueInputOption: 'RAW', data: rows.map(row => ({ range: `${quoted(connection.tabTitle)}!A${row.row}`, values: [[title]] })) })
+    if (rows.length && renamed) await setTitles(newTitle, signal)
     try {
       await change()
-    }
-    catch (error) {
-      if (rows.length && newTitle !== null && newTitle !== event.title) {
+    } catch (error) {
+      if (rows.length && renamed) {
         try {
-          await request(`${endpoint(connection.spreadsheetId)}/values:batchUpdate`, token, AbortSignal.timeout(8000), 'POST', { valueInputOption: 'RAW', data: rows.map(row => ({ range: `'${connection.tabTitle.replaceAll("'", "''")}'!A${row.row}`, values: [[event.title]] })) })
+          await setTitles(event.title, AbortSignal.timeout(8000))
         } catch {
           throw new SheetError(`The event could not be saved or restored. Change the spreadsheet event title from “${newTitle}” back to “${event.title}”, then refresh.`)
         }
       }
       throw error
     }
+    // Rows are removed only after the event is gone, so a failed delete never loses RSVPs.
+    if (newTitle === null) await deleteRows(connection, token, signal, rows)
     await refreshRegistry(env, connection, token, signal)
     return true
   })
   if (!connected) {
-    if (newTitle !== null && newTitle !== event.title && newKind !== 'normal' && await env.EVENTS_DB.prepare("SELECT 1 FROM events WHERE kind = 'special' AND id != ? AND lower(trim(title)) = lower(trim(?)) LIMIT 1").bind(event.id, newTitle).first()) throw new SheetError('Special events must have unique titles.')
+    if (renamed && await titleTaken(env, newTitle, event.id)) throw new EventConflict('Special events must have unique titles.')
     await change()
   }
 }
 
 export async function createEventWithSheet(env: Env, title: string, create: () => Promise<void>): Promise<void> {
   const checkAndCreate = async () => {
-    if (await env.EVENTS_DB.prepare("SELECT 1 FROM events WHERE kind = 'special' AND lower(trim(title)) = lower(trim(?)) LIMIT 1").bind(title).first()) throw new SheetError('Special events must have unique titles.')
+    if (await titleTaken(env, title)) throw new EventConflict('Special events must have unique titles.')
     await create()
     return true
   }

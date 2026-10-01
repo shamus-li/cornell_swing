@@ -9,6 +9,7 @@ import {
 import { siteContent } from "../content"
 
 const AUTOPLAY_DELAY = 6000
+const slideCount = siteContent.hero.slides.length
 const imageSizes =
   "(max-width: 632px) calc(100vw - 32px), (max-width: 760px) 600px, (max-width: 960px) calc(100vw - 40px), 920px"
 
@@ -19,7 +20,6 @@ export function HeroCarousel() {
   )
   const [api, setApi] = useState<CarouselApi>()
   const [current, setCurrent] = useState(0)
-  const [count, setCount] = useState<number>(siteContent.hero.slides.length)
   const [restart, setRestart] = useState(0)
   const [reduceMotion, setReduceMotion] = useState(false)
 
@@ -50,26 +50,16 @@ export function HeroCarousel() {
   useEffect(() => {
     if (!api) return
 
-    const updateSelection = () => {
-      const slideCount = api.scrollSnapList().length
+    // Show the selected photo and start loading the one after it.
+    const select = () => {
       const selected = api.selectedScrollSnap()
-      setCount(slideCount)
       setCurrent(selected)
-    }
-    const updateSelectionAndLoadNext = () => {
-      updateSelection()
-      const slideCount = api.scrollSnapList().length
-      requestImages(api.selectedScrollSnap(), (api.selectedScrollSnap() + 1) % slideCount)
+      requestImages(selected, (selected + 1) % slideCount)
     }
 
-    updateSelection()
-    api.on("select", updateSelectionAndLoadNext)
-    api.on("reInit", updateSelection)
-
-    return () => {
-      api.off("select", updateSelectionAndLoadNext)
-      api.off("reInit", updateSelection)
-    }
+    setCurrent(api.selectedScrollSnap())
+    api.on("select", select)
+    return () => { api.off("select", select) }
   }, [api, requestImages])
 
   useEffect(() => {
@@ -82,7 +72,7 @@ export function HeroCarousel() {
   }, [])
 
   useEffect(() => {
-    if (!api || count < 2 || reduceMotion) return
+    if (!api || reduceMotion) return
 
     let timer: number | undefined
     const onVisibilityChange = () => {
@@ -101,7 +91,7 @@ export function HeroCarousel() {
       window.clearTimeout(timer)
       document.removeEventListener("visibilitychange", onVisibilityChange)
     }
-  }, [api, count, current, reduceMotion, restart])
+  }, [api, current, reduceMotion, restart])
 
   const selectSlide = (index: number) => {
     setRestart((value) => value + 1)
@@ -144,7 +134,7 @@ export function HeroCarousel() {
           role="group"
           aria-label="Choose a photo"
         >
-          {Array.from({ length: count }).map((_, index) => {
+          {siteContent.hero.slides.map((_, index) => {
             const active = index === current
 
             return (

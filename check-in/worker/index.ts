@@ -1,3 +1,5 @@
+import { DurableObject } from "cloudflare:workers"
+
 import {
   isAffiliation,
   isValidName,
@@ -13,17 +15,21 @@ import {
   getGoogleAccessToken,
   readCheckins,
   sortCheckins,
-  updateCheckinMember,
+  updateCheckinRow,
 } from "./google"
 import { MEMBER_ID_PATTERN } from "./member-id"
 import {
   type AttendanceEvent,
+  findEventForDate,
   findOrCreateEventForDate,
   loadMemberRoster,
+  rosterMembers,
+  RowProblem,
   syncEventAttendance,
   syncMemberAttendance,
 } from "./notion"
 import { ATTENDANCE_SYNC_STATE_KEY, ATTENDANCE_SYNC_STATE_VERSION } from "./sync-state"
+import { isRecord } from "./util"
 
 export { CheckinGuard } from "./checkin-guard"
 
@@ -39,29 +45,16 @@ type Attendee = {
 
 type AccessTokenProvider = (env: Env) => Promise<string>
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
 function checkinFingerprint(row: CheckinRow): string {
   return JSON.stringify([row.timestamp, row.name, row.email, row.affiliation, row.memberId])
 }
 
+// Missing, outdated, or unreadable state means every night is synced again, which is safe because
+// syncing a night is idempotent.
 async function readAttendanceSyncState(env: Env): Promise<Set<string> | null> {
   const value: unknown = await env.MEMBER_CACHE.get(ATTENDANCE_SYNC_STATE_KEY, "json")
-  if (value === null) return null
-  if (
-    !isRecord(value) ||
-    !Array.isArray(value.fingerprints) ||
-    !value.fingerprints.every((fingerprint) => typeof fingerprint === "string")
-  ) {
-    throw new Error("Attendance sync state is invalid")
-  }
-  if (value.version === 1) return null
-  if (value.version !== ATTENDANCE_SYNC_STATE_VERSION) {
-    throw new Error("Attendance sync state is invalid")
-  }
-  return new Set(value.fingerprints)
+  if (!isRecord(value) || value.version !== ATTENDANCE_SYNC_STATE_VERSION || !Array.isArray(value.fingerprints)) return null
+  return new Set(value.fingerprints.filter((fingerprint) => typeof fingerprint === "string"))
 }
 
 function sameFingerprints(left: Set<string>, right: Set<string>): boolean {
@@ -182,7 +175,51 @@ export async function handleCheckin(
     : json({ message: "Checked in" }, 201)
 }
 
-async function syncAttendance(env: Env, accessToken: string): Promise<{
+// The date in a stored fingerprint, so a deleted row still marks its night as changed.
+function fingerprintDate(fingerprint: string): string | null {
+  try {
+    const [timestamp] = JSON.parse(fingerprint) as unknown[]
+    return dateKeyForSheetTimestamp(typeof timestamp === "number" ? timestamp : null)
+  } catch {
+    return null
+  }
+}
+
+function rowAttendee(row: CheckinRow): Attendee {
+  if (typeof row.timestamp !== "number" || !Number.isFinite(row.timestamp)) {
+    throw new RowProblem("Check-in timestamp is not a Google Sheets date")
+  }
+  const attendee = validateAttendee({
+    memberId: row.memberId || null,
+    name: row.name,
+    email: row.email,
+    affiliation: row.affiliation,
+  })
+  if (!attendee) throw new RowProblem("Check-in row has invalid member data")
+  return attendee
+}
+
+// The Sheet is the source of truth, so a member's Notion details come from their newest check-in,
+// even when an older night is the one being synced.
+function newestDetails(rows: CheckinRow[]): (attendee: Attendee) => Attendee {
+  const byId = new Map<string, Attendee>()
+  const byEmail = new Map<string, Attendee>()
+  const order = new Map<Attendee, number>()
+  for (const [index, row] of rows.entries()) {
+    let attendee: Attendee
+    try { attendee = rowAttendee(row) } catch { continue }
+    order.set(attendee, index)
+    if (attendee.memberId) byId.set(attendee.memberId, attendee)
+    byEmail.set(attendee.email, attendee)
+  }
+  return (attendee) => {
+    const candidates = [attendee.memberId ? byId.get(attendee.memberId) : undefined, byEmail.get(attendee.email)]
+      .filter((candidate): candidate is Attendee => candidate !== undefined)
+    return candidates.sort((left, right) => order.get(right)! - order.get(left)!)[0] ?? attendee
+  }
+}
+
+async function syncAttendance(env: Env, accessToken: string, storage: DurableObjectStorage): Promise<{
   synced: number
   failed: number
   attempted: number
@@ -190,78 +227,59 @@ async function syncAttendance(env: Env, accessToken: string): Promise<{
   nextFingerprints: Set<string>
   members: Member[]
 }> {
-  const rows = await readCheckins(env, accessToken)
+  const rows = (await readCheckins(env, accessToken))
+    .filter((row) => row.timestamp !== null && row.email)
+    .sort((left, right) => Number(left.timestamp) - Number(right.timestamp))
   const previousFingerprints = await readAttendanceSyncState(env)
-  const processedFingerprints = previousFingerprints ?? new Set<string>()
-  const nextFingerprints = new Set<string>()
-  const roster = await loadMemberRoster(env)
+  const roster = await loadMemberRoster(env, { assignMissingIds: true })
+  const details = newestDetails(rows)
+
+  // A night needs syncing when any of its rows was added, edited, or deleted since the last run.
+  const currentFingerprints = new Set(rows.map(checkinFingerprint))
+  const changedDates = new Set<string>()
+  for (const row of rows) {
+    if (previousFingerprints?.has(checkinFingerprint(row))) continue
+    const date = dateKeyForSheetTimestamp(row.timestamp)
+    if (date) changedDates.add(date)
+  }
+  for (const fingerprint of previousFingerprints ?? []) {
+    const date = currentFingerprints.has(fingerprint) ? null : fingerprintDate(fingerprint)
+    if (date) changedDates.add(date)
+  }
+
   const events = new Map<string, AttendanceEvent>()
-  const eventAttendees = new Map<string, Set<string>>()
-  const pendingDates = new Set(
-    rows.flatMap((row) => {
-      if (row.timestamp === null || !row.email || processedFingerprints.has(checkinFingerprint(row))) {
-        return []
-      }
-      const date = dateKeyForSheetTimestamp(row.timestamp)
-      return date ? [date] : []
-    }),
-  )
-  let synced = 0
+  const attendees = new Map<string, Set<string>>()
+  const datesWithRows = new Set<string>()
+  const syncedRows: CheckinRow[] = []
+  // Nights with a temporary failure keep their previous state and sync again on the next run.
+  const retryDates = new Set<string>()
   let failed = 0
   let attempted = 0
 
-  const rowsOldestFirst = [...rows].sort((left, right) =>
-    Number(left.timestamp ?? 0) - Number(right.timestamp ?? 0),
-  )
-  for (const row of rowsOldestFirst) {
-    if (row.timestamp === null || !row.email) continue
-    const fingerprint = checkinFingerprint(row)
-    const isPending = !processedFingerprints.has(fingerprint)
+  for (const row of rows) {
     const date = dateKeyForSheetTimestamp(row.timestamp)
-    if (!isPending && (!date || !pendingDates.has(date))) {
-      nextFingerprints.add(fingerprint)
-      continue
-    }
-    if (isPending) attempted += 1
-
+    if (!date || !changedDates.has(date)) continue
+    datesWithRows.add(date)
+    if (!previousFingerprints?.has(checkinFingerprint(row))) attempted += 1
     try {
-      if (typeof row.timestamp !== "number" || !Number.isFinite(row.timestamp)) {
-        throw new Error("Check-in timestamp is not a Google Sheets date")
-      }
-      const attendee = validateAttendee({
-        memberId: row.memberId || null,
-        name: row.name,
-        email: row.email,
-        affiliation: row.affiliation,
-      })
-      if (!date) throw new Error("Check-in timestamp is not a Google Sheets date")
-      if (!attendee) throw new Error("Check-in row has invalid member data")
-
+      const attendee = rowAttendee(row)
       let event = events.get(date)
       if (!event) {
-        event = await findOrCreateEventForDate(env, date)
+        event = await findOrCreateEventForDate(env, date, storage)
         events.set(date, event)
       }
-      const member = await syncMemberAttendance(env, roster, attendee, date, event.id)
-      const attendeePageIds = eventAttendees.get(date) ?? new Set<string>()
-      attendeePageIds.add(member.pageId)
-      eventAttendees.set(date, attendeePageIds)
-      if (
-        member.name !== row.name ||
-        member.email !== row.email ||
-        member.affiliation !== row.affiliation ||
-        member.id !== row.memberId
-      ) {
-        await updateCheckinMember(env, accessToken, row.rowNumber, member)
-        row.name = member.name
-        row.email = member.email
-        row.affiliation = member.affiliation
-        row.memberId = member.id
+      const member = await syncMemberAttendance(env, roster, attendee, details(attendee), date, event.id, storage)
+      attendees.set(date, (attendees.get(date) ?? new Set()).add(member.pageId))
+      // Write back only this row's own cleaned-up values and its Member ID.
+      const values = { name: attendee.name, email: attendee.email, affiliation: attendee.affiliation, memberId: member.id }
+      if (values.name !== row.name || values.email !== row.email || values.affiliation !== row.affiliation || values.memberId !== row.memberId) {
+        await updateCheckinRow(env, accessToken, row, values)
+        Object.assign(row, values)
       }
-      nextFingerprints.add(checkinFingerprint(row))
-      if (isPending) synced += 1
+      syncedRows.push(row)
     } catch (error) {
       failed += 1
+      if (!(error instanceof RowProblem)) retryDates.add(date)
       console.error(
         JSON.stringify({
           message: "attendance row sync failed",
@@ -272,14 +290,38 @@ async function syncAttendance(env: Env, accessToken: string): Promise<{
     }
   }
 
-  for (const [date, event] of events) {
-    await syncEventAttendance(env, event, eventAttendees.get(date) ?? [])
+  // Each changed night's attendees become exactly its synced rows. A night whose rows were all
+  // deleted is looked up so its attendees can be cleared.
+  for (const date of changedDates) {
+    if (retryDates.has(date)) continue
+    try {
+      const event = events.get(date) ?? (datesWithRows.has(date) ? null : await findEventForDate(env, date))
+      if (event) await syncEventAttendance(env, event, attendees.get(date) ?? [])
+    } catch (error) {
+      failed += 1
+      retryDates.add(date)
+      console.error(JSON.stringify({ message: "event attendance sync failed", date, error: errorMessage(error) }))
+    }
   }
 
-  const members = roster.records
-    .filter((record) => record.name || record.email)
-    .map(({ id, name, email, affiliation }) => ({ id, name, email, affiliation }))
-  return { synced, failed, attempted, previousFingerprints, nextFingerprints, members }
+  const nextFingerprints = new Set<string>()
+  for (const row of rows) {
+    const date = dateKeyForSheetTimestamp(row.timestamp)
+    if (date && !changedDates.has(date)) nextFingerprints.add(checkinFingerprint(row))
+  }
+  let synced = 0
+  for (const row of syncedRows) {
+    const date = dateKeyForSheetTimestamp(row.timestamp)!
+    if (retryDates.has(date)) continue
+    if (!previousFingerprints?.has(checkinFingerprint(row))) synced += 1
+    nextFingerprints.add(checkinFingerprint(row))
+  }
+  for (const fingerprint of previousFingerprints ?? []) {
+    const date = fingerprintDate(fingerprint)
+    if (date && retryDates.has(date)) nextFingerprints.add(fingerprint)
+  }
+
+  return { synced, failed, attempted, previousFingerprints, nextFingerprints, members: rosterMembers(roster) }
 }
 
 export async function runNightlySync(
@@ -287,13 +329,32 @@ export async function runNightlySync(
   getAccessToken: AccessTokenProvider = getGoogleAccessToken,
 ): Promise<{ synced: number; failed: number }> {
   const accessToken = await getAccessToken(env)
+  return env.ATTENDANCE_SYNC.getByName("nightly").run(accessToken)
+}
+
+export class AttendanceSync extends DurableObject<Env> {
+  private running: Promise<{ synced: number; failed: number }> | null = null
+
+  async run(accessToken: string): Promise<{ synced: number; failed: number }> {
+    this.running ??= performNightlySync(this.env, accessToken, this.ctx.storage).finally(() => {
+      this.running = null
+    })
+    return this.running
+  }
+}
+
+async function performNightlySync(
+  env: Env,
+  accessToken: string,
+  storage: DurableObjectStorage,
+): Promise<{ synced: number; failed: number }> {
   const {
     attempted,
     members,
     previousFingerprints,
     nextFingerprints,
     ...result
-  } = await syncAttendance(env, accessToken)
+  } = await syncAttendance(env, accessToken, storage)
   await storeMemberCache(env, members)
   if (attempted > 0) {
     await sortCheckins(env, accessToken)

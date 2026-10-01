@@ -1,17 +1,21 @@
-.markdown-editor { margin-top: 0; min-width: 0; }
-.editor-label { font-size: var(--body-font-size); font-weight: 500; margin: 0 0 8px; }
-.inline-editor { border: 1px solid var(--line); border-radius: 10px; font-family: var(--sans); --accentBase: #fcf8fa; --accentBg: #f7edf1; --accentBgHover: #f0dce4; --accentBorder: #c888a0; --accentSolid: var(--accent); --accentText: var(--accent); --baseBase: #fff; }
-.inline-editor:focus-within { border-color: #c6b9be; box-shadow: 0 0 0 2px #a13a5e08; }
-.inline-editor [role="toolbar"] { background: #fff; border-radius: 10px 10px 0 0; border-bottom: 1px solid var(--line); flex-wrap: nowrap; gap: 2px; padding: 6px 8px; }
-.inline-editor [role="toolbar"] button { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; padding: 4px; border-radius: 5px; cursor: pointer; font-size: var(--body-font-size); }
-.inline-editor [role="toolbar"] button[role="combobox"] { min-width: 94px; justify-content: space-between; padding: 4px 6px; background: transparent; }
-.inline-editor [role="toolbar"] svg { width: 17px; height: 17px; color: #706c69; }
-.inline-editor [role="toolbar"] button[data-state="on"] svg { color: var(--accent); }
-.inline-editor [role="toolbar"] button:disabled { opacity: .35; }
-.inline-editor [role="toolbar"] [role="separator"] { margin: 0 5px; height: 14px; border-right: 0; border-left-color: var(--line); }
-.inline-editor .inline-editor-content { min-height: 160px; padding: 12px; font-size: var(--body-font-size); font-weight: 400; outline: none; }
-.inline-editor .inline-editor-content h1, .inline-editor .inline-editor-content h2 { font-size: 1.2rem; }
+.markdown-editor { min-width: 0; }
+.inline-editor { border: 1px solid var(--input); border-radius: 12px; background: var(--background); font-family: var(--sans); --accentBase: #fcf8fa; --accentBg: #f7edf1; --accentBgHover: #f0dce4; --accentBorder: #c888a0; --accentSolid: var(--primary); --accentText: var(--primary); --baseBase: #fff; }
+.inline-editor:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent); }
+.inline-editor-loading { min-height: 240px; background: var(--muted); border-color: transparent; }
+/* The toolbar stays in view while a long description scrolls. */
+.inline-editor .editor-toolbar { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 2px; padding: 4px 6px; border-bottom: 1px solid var(--border); border-radius: 12px 12px 0 0; background: var(--background); overflow-x: auto; }
+.editor-tool { display: inline-grid; place-items: center; width: 36px; height: 36px; flex: none; border: 0; border-radius: 8px; background: none; color: var(--muted-foreground); cursor: pointer; }
+.editor-tool svg { width: 18px; height: 18px; }
+.editor-tool:hover { background: var(--muted); color: var(--foreground); }
+.editor-tool[aria-pressed="true"] { background: var(--accentBg); color: var(--primary); }
+.editor-tool:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.editor-tool-separator { width: 1px; height: 20px; margin: 0 4px; background: var(--border); }
+.inline-editor .inline-editor-content { min-height: 200px; padding: 12px 16px 16px; font-size: var(--input-font-size); font-weight: 400; line-height: 1.5; outline: none; }
+.inline-editor .inline-editor-content h2 { font-size: 1.125rem; }
 .inline-editor .inline-editor-content h3 { font-size: 1rem; }
-@media (max-width: 620px) {
-  .inline-editor .inline-editor-content { padding: 12px; }
-}
+.inline-editor [class*="placeholder"] { padding: 12px 16px; color: var(--placeholder); font-size: var(--input-font-size); }
+.link-bar { display: flex; align-items: center; gap: 4px; min-width: 0; padding-left: 8px; }
+.link-bar > svg { flex: none; width: 16px; height: 16px; color: var(--muted-foreground); }
+.link-input { flex: 1; min-width: 0; height: 36px; padding: 0 4px; border: 0; outline: 0; background: transparent; color: var(--foreground); font: 400 var(--input-font-size) var(--sans); }
+.link-url { flex: 1; min-width: 0; padding: 0 4px; overflow: hidden; color: var(--foreground); font-size: var(--small-font-size); text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }
+.link-url:hover { text-decoration: underline; }

@@ -1,9 +1,9 @@
 import { isAffiliation, type Affiliation, type Member } from "../src/lib/checkin"
 import { createMemberId } from "./member-id"
+import { isRecord, RETRYABLE_STATUSES, wait } from "./util"
 
 const NOTION_API = "https://api.notion.com/v1"
 const NOTION_VERSION = "2026-03-11"
-const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504])
 const MAX_RELATION_ITEMS = 100
 
 type NotionPage = {
@@ -16,13 +16,29 @@ type QueryResult = {
   nextCursor: string | null
 }
 
-export type MemberRecord = Member & { pageId: string }
+const unresolvedCreation = (identity: string) =>
+  new Error(`Notion creation for ${identity} is unresolved; refusing to create another page`)
 
-export type MemberRoster = {
+// A problem with a row's data or the matching Notion pages that needs an officer to fix it. It fails
+// only that row; the rest of the night's attendance still syncs.
+export class RowProblem extends Error {}
+
+class NotionRequestError extends Error {
+  constructor(readonly status: number) {
+    super(`Notion request failed with ${status}`)
+  }
+}
+
+type MemberRecord = Member & { pageId: string }
+
+type MemberRoster = {
   records: MemberRecord[]
   byId: Map<string, MemberRecord>
   byEmail: Map<string, MemberRecord[]>
+  duplicateIds: Set<string>
 }
+
+type MemberDetails = { name: string; email: string; affiliation: Affiliation }
 
 export type AttendanceEvent = {
   id: string
@@ -34,10 +50,6 @@ type AttendanceDetails = {
   name: string
   email: string
   affiliation: Affiliation
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function asPage(value: unknown): NotionPage | null {
@@ -60,7 +72,6 @@ function plainText(value: unknown): string {
 
 function pageToMemberRecord(page: NotionPage): MemberRecord {
   const memberId = plainText(property(page, "Member ID")?.rich_text)
-  if (!memberId) throw new Error("Notion member is missing Member ID")
   const emailProperty = property(page, "Email")
   const affiliationProperty = property(page, "Affiliation")
   const select = affiliationProperty && isRecord(affiliationProperty.select) ? affiliationProperty.select : null
@@ -75,41 +86,57 @@ function pageToMemberRecord(page: NotionPage): MemberRecord {
   }
 }
 
-function memberFromRecord(record: MemberRecord): Member {
-  return {
-    id: record.id,
-    name: record.name,
-    email: record.email,
-    affiliation: record.affiliation,
-  }
-}
 
-async function wait(milliseconds: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, milliseconds))
+// Notion limits each integration to an average request rate (NOTION_REQUESTS_PER_SECOND). Requests
+// spend from a small burst allowance that refills at that rate, so a long sync never outpaces it.
+const REQUEST_BURST = 10
+let requestAllowance = REQUEST_BURST
+let allowanceUpdatedAt = 0
+
+async function waitForRequestSlot(env: Env): Promise<void> {
+  const rate = Number(env.NOTION_REQUESTS_PER_SECOND)
+  const now = Date.now()
+  requestAllowance = Math.min(REQUEST_BURST, requestAllowance + ((now - allowanceUpdatedAt) / 1000) * rate)
+  allowanceUpdatedAt = now
+  if (requestAllowance < 1) {
+    await wait(((1 - requestAllowance) / rate) * 1000)
+    requestAllowance = 1
+    allowanceUpdatedAt = Date.now()
+  }
+  requestAllowance -= 1
 }
 
 async function notionRequest(env: Env, path: string, init: RequestInit): Promise<unknown> {
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const response = await fetch(`${NOTION_API}${path}`, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${env.NOTION_TOKEN}`,
-        "Notion-Version": NOTION_VERSION,
-        "Content-Type": "application/json",
-        ...init.headers,
-      },
-    })
-
-    if (response.ok) return response.json()
-    if (!RETRYABLE_STATUSES.has(response.status) || attempt === 3) {
-      throw new Error(`Notion request failed with ${response.status}`)
+  // A create that fails may still have committed, so it is retried only after a rate limit,
+  // which Notion rejects without processing.
+  const isCreate = path === "/pages" && init.method === "POST"
+  for (let attempt = 0; ; attempt += 1) {
+    await waitForRequestSlot(env)
+    let response: Response
+    try {
+      response = await fetch(`${NOTION_API}${path}`, {
+        ...init,
+        headers: {
+          Authorization: `Bearer ${env.NOTION_TOKEN}`,
+          "Notion-Version": NOTION_VERSION,
+          "Content-Type": "application/json",
+          ...init.headers,
+        },
+      })
+    } catch (error) {
+      if (isCreate || attempt === 4) throw error
+      await wait(500 * 2 ** attempt)
+      continue
     }
 
+    if (response.ok) return response.json()
+    const retryable = RETRYABLE_STATUSES.has(response.status) && (response.status === 429 || !isCreate)
+    if (!retryable || attempt === 4) throw new NotionRequestError(response.status)
+
+    // Wait as long as Notion asks before sending anything else.
     const retryAfter = Number.parseFloat(response.headers.get("Retry-After") ?? "")
-    const delay = Number.isFinite(retryAfter) ? retryAfter * 1000 : 300 * 2 ** attempt
-    await wait(Math.min(delay, 10_000))
+    await wait(Number.isFinite(retryAfter) ? Math.min(retryAfter * 1000, 60_000) : 500 * 2 ** attempt)
   }
-  throw new Error("Notion request failed")
 }
 
 async function queryPages(
@@ -139,6 +166,76 @@ async function queryPages(
   }
 }
 
+// Notion creates have no idempotency key, so each created page is recorded in Durable Object storage:
+// the time a create started while its outcome is unknown, then the created page's ID.
+const CREATION_SETTLE_MS = 60 * 60 * 1000
+
+async function retrievePage(env: Env, pageId: string): Promise<NotionPage | null> {
+  try {
+    const page = await notionRequest(env, `/pages/${pageId}`, { method: "GET" })
+    return isRecord(page) && !page.in_trash && !page.archived ? asPage(page) : null
+  } catch (error) {
+    if (error instanceof NotionRequestError && error.status === 404) return null
+    throw error
+  }
+}
+
+async function createPageOnce(
+  env: Env,
+  storage: DurableObjectStorage,
+  identity: string,
+  lookup: () => Promise<NotionPage | null>,
+  body: Record<string, unknown>,
+): Promise<{ id: string; recovered: NotionPage | null }> {
+  const key = `notion-creation:${identity}`
+  const reconcile = async () => {
+    let page: NotionPage | null
+    try {
+      page = await lookup()
+    } catch {
+      throw unresolvedCreation(identity)
+    }
+    if (!page) return null
+    await storage.put(key, page.id)
+    return { id: page.id, recovered: page }
+  }
+
+  const marker = await storage.get<string | number>(key)
+  if (typeof marker === "string") {
+    // Read the page directly; database queries can briefly miss a new page.
+    const page = await retrievePage(env, marker)
+    if (page) return { id: page.id, recovered: page }
+    // Someone deleted the page in Notion, so create it again.
+  } else if (typeof marker === "number") {
+    const found = await reconcile()
+    if (found) return found
+    // Queries catch up within minutes; a page still missing after that was never created.
+    if (Date.now() - marker < CREATION_SETTLE_MS) throw unresolvedCreation(identity)
+  }
+
+  // Persist before sending so a restart cannot repeat an uncertain creation.
+  await storage.put(key, Date.now())
+  let created: unknown
+  try {
+    created = await notionRequest(env, "/pages", { method: "POST", body: JSON.stringify(body) })
+  } catch (error) {
+    if (error instanceof NotionRequestError && error.status >= 400 && error.status < 500 && error.status !== 408) {
+      await storage.delete(key)
+      throw error
+    }
+    const found = await reconcile()
+    if (found) return found
+    throw unresolvedCreation(identity)
+  }
+  if (!isRecord(created) || typeof created.id !== "string" || !created.id) {
+    const found = await reconcile()
+    if (found) return found
+    throw unresolvedCreation(identity)
+  }
+  await storage.put(key, created.id)
+  return { id: created.id, recovered: null }
+}
+
 function addEmailIndex(roster: MemberRoster, record: MemberRecord): void {
   if (!record.email) return
   const matches = roster.byEmail.get(record.email) ?? []
@@ -154,15 +251,23 @@ function removeEmailIndex(roster: MemberRoster, record: MemberRecord, email: str
 }
 
 function addRosterRecord(roster: MemberRoster, record: MemberRecord): void {
-  if (roster.byId.has(record.id)) {
-    throw new Error(`More than one Notion member has Member ID ${record.id}`)
-  }
   roster.records.push(record)
-  roster.byId.set(record.id, record)
+  if (roster.byId.has(record.id)) roster.duplicateIds.add(record.id)
+  else roster.byId.set(record.id, record)
   addEmailIndex(roster, record)
 }
 
-export async function loadMemberRoster(env: Env): Promise<MemberRoster> {
+// Members added by hand in Notion have no Member ID; give them one so check-ins can match them.
+async function assignMemberId(env: Env, record: MemberRecord): Promise<MemberRecord> {
+  const id = createMemberId()
+  await notionRequest(env, `/pages/${encodeURIComponent(record.pageId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ properties: { "Member ID": { rich_text: [{ type: "text", text: { content: id } }] } } }),
+  })
+  return { ...record, id }
+}
+
+export async function loadMemberRoster(env: Env, { assignMissingIds = false } = {}): Promise<MemberRoster> {
   const pages: NotionPage[] = []
   let startCursor: string | null = null
 
@@ -180,16 +285,24 @@ export async function loadMemberRoster(env: Env): Promise<MemberRoster> {
     startCursor = result.nextCursor
   } while (startCursor)
 
-  const roster: MemberRoster = { records: [], byId: new Map(), byEmail: new Map() }
-  for (const page of pages) addRosterRecord(roster, pageToMemberRecord(page))
+  const roster: MemberRoster = { records: [], byId: new Map(), byEmail: new Map(), duplicateIds: new Set() }
+  for (const page of pages) {
+    const record = pageToMemberRecord(page)
+    if (record.id) addRosterRecord(roster, record)
+    else if (assignMissingIds) addRosterRecord(roster, await assignMemberId(env, record))
+  }
   return roster
 }
 
-export async function listMembers(env: Env): Promise<Member[]> {
-  const roster = await loadMemberRoster(env)
+// The members the kiosk can search: anyone with a name or email.
+export function rosterMembers(roster: MemberRoster): Member[] {
   return roster.records
     .filter((record) => record.name || record.email)
-    .map(memberFromRecord)
+    .map(({ id, name, email, affiliation }) => ({ id, name, email, affiliation }))
+}
+
+export async function listMembers(env: Env): Promise<Member[]> {
+  return rosterMembers(await loadMemberRoster(env))
 }
 
 function inlineRelation(
@@ -236,44 +349,55 @@ async function retrieveRelationIds(env: Env, pageId: string, propertyId: string)
   return relationIds
 }
 
-export async function findOrCreateEventForDate(env: Env, date: string): Promise<AttendanceEvent> {
-  const result = await queryPages(
-    env,
-    env.NOTION_EVENTS_DATA_SOURCE_ID,
-    {
-      page_size: 2,
-      filter: { property: "Date", date: { equals: date } },
-    },
-    ["Name", "Date", "Attendees"],
-  )
-  if (result.pages.length > 1) {
-    throw new Error(`Expected at most one Notion event for ${date}, found ${result.pages.length}`)
-  }
-  if (result.pages.length === 1) {
-    const page = result.pages[0]
-    const relation = inlineRelation(page, "Attendees")
-    return {
-      id: page.id,
-      attendeePageIds: relation.hasMore
-        ? await retrieveRelationIds(env, page.id, relation.propertyId)
-        : relation.relationIds,
-    }
-  }
-
-  const created = await notionRequest(env, "/pages", {
-    method: "POST",
-    body: JSON.stringify({
-      parent: { type: "data_source_id", data_source_id: env.NOTION_EVENTS_DATA_SOURCE_ID },
-      properties: {
-        Name: { title: [{ type: "text", text: { content: date } }] },
-        Date: { date: { start: date } },
+function eventLookup(env: Env, date: string): () => Promise<NotionPage | null> {
+  return async () => {
+    const result = await queryPages(
+      env,
+      env.NOTION_EVENTS_DATA_SOURCE_ID,
+      {
+        page_size: 2,
+        filter: { property: "Date", date: { equals: date } },
       },
-    }),
-  })
-  if (!isRecord(created) || typeof created.id !== "string") {
-    throw new Error("Notion returned an invalid created event")
+      ["Name", "Date", "Attendees"],
+    )
+    if (result.pages.length > 1) {
+      throw new RowProblem(`Expected at most one Notion event for ${date}, found ${result.pages.length}`)
+    }
+    return result.pages[0] ?? null
   }
-  return { id: created.id, attendeePageIds: [] }
+}
+
+async function attendanceEvent(env: Env, page: NotionPage): Promise<AttendanceEvent> {
+  const relation = inlineRelation(page, "Attendees")
+  return {
+    id: page.id,
+    attendeePageIds: relation.hasMore
+      ? await retrieveRelationIds(env, page.id, relation.propertyId)
+      : relation.relationIds,
+  }
+}
+
+export async function findEventForDate(env: Env, date: string): Promise<AttendanceEvent | null> {
+  const page = await eventLookup(env, date)()
+  return page ? attendanceEvent(env, page) : null
+}
+
+export async function findOrCreateEventForDate(
+  env: Env,
+  date: string,
+  storage: DurableObjectStorage,
+): Promise<AttendanceEvent> {
+  const lookup = eventLookup(env, date)
+  const existing = await lookup()
+  if (existing) return attendanceEvent(env, existing)
+  const created = await createPageOnce(env, storage, `event:${date}`, lookup, {
+    parent: { type: "data_source_id", data_source_id: env.NOTION_EVENTS_DATA_SOURCE_ID },
+    properties: {
+      Name: { title: [{ type: "text", text: { content: date } }] },
+      Date: { date: { start: date } },
+    },
+  })
+  return created.recovered ? attendanceEvent(env, created.recovered) : { id: created.id, attendeePageIds: [] }
 }
 
 async function createMember(
@@ -281,28 +405,32 @@ async function createMember(
   attendee: { memberId: string; name: string; email: string; affiliation: Affiliation },
   date: string,
   eventId: string,
+  storage: DurableObjectStorage,
 ): Promise<MemberRecord> {
-  const created = await notionRequest(env, "/pages", {
-    method: "POST",
-    body: JSON.stringify({
-      parent: { type: "data_source_id", data_source_id: env.NOTION_MEMBERS_DATA_SOURCE_ID },
-      properties: {
-        Name: attendee.name
-          ? { title: [{ type: "text", text: { content: attendee.name } }] }
-          : { title: [] },
-        Email: { email: attendee.email },
-        "Member ID": {
-          rich_text: [{ type: "text", text: { content: attendee.memberId } }],
-        },
-        Affiliation: { select: { name: attendee.affiliation } },
-        "Member Since": { date: { start: date } },
-        "Events Attended": { relation: [{ id: eventId }] },
-      },
-    }),
-  })
-  if (!isRecord(created) || typeof created.id !== "string") {
-    throw new Error("Notion returned an invalid created member")
+  const lookup = async (): Promise<NotionPage | null> => {
+    const result = await queryPages(env, env.NOTION_MEMBERS_DATA_SOURCE_ID, {
+      page_size: 2,
+      filter: { property: "Member ID", rich_text: { equals: attendee.memberId } },
+    }, ["Name", "Email", "Affiliation", "Member ID"])
+    if (result.pages.length > 1) throw new Error(`More than one Notion member has Member ID ${attendee.memberId}`)
+    return result.pages[0] ?? null
   }
+  const created = await createPageOnce(env, storage, `member:${attendee.memberId}`, lookup, {
+    parent: { type: "data_source_id", data_source_id: env.NOTION_MEMBERS_DATA_SOURCE_ID },
+    properties: {
+      Name: attendee.name
+        ? { title: [{ type: "text", text: { content: attendee.name } }] }
+        : { title: [] },
+      Email: { email: attendee.email },
+      "Member ID": {
+        rich_text: [{ type: "text", text: { content: attendee.memberId } }],
+      },
+      Affiliation: { select: { name: attendee.affiliation } },
+      "Member Since": { date: { start: date } },
+      "Events Attended": { relation: [{ id: eventId }] },
+    },
+  })
+  if (created.recovered) return pageToMemberRecord(created.recovered)
   return {
     pageId: created.id,
     id: attendee.memberId,
@@ -331,55 +459,67 @@ async function updateMemberDetails(
   })
 }
 
-function conflictingEmailRecords(
-  roster: MemberRoster,
-  email: string,
-  expected: MemberRecord | null,
-): MemberRecord[] {
-  return (roster.byEmail.get(email) ?? []).filter((record) => record !== expected)
-}
-
 export async function syncMemberAttendance(
   env: Env,
   roster: MemberRoster,
   attendee: AttendanceDetails,
+  details: MemberDetails,
   date: string,
   eventId: string,
+  storage: DurableObjectStorage,
 ): Promise<MemberRecord> {
-  let member: MemberRecord | null = null
-
-  if (attendee.memberId) {
-    member = roster.byId.get(attendee.memberId) ?? null
-    if (conflictingEmailRecords(roster, attendee.email, member).length > 0) {
-      throw new Error("Check-in member ID and email refer to different Notion members")
+  const emailMatches = roster.byEmail.get(attendee.email) ?? []
+  let member = attendee.memberId ? roster.byId.get(attendee.memberId) ?? null : null
+  if (member) {
+    if (emailMatches.some((record) => record !== member)) {
+      throw new RowProblem("Check-in member ID and email refer to different Notion members")
     }
   } else {
-    const matches = roster.byEmail.get(attendee.email) ?? []
-    if (matches.length > 1) throw new Error("More than one Notion member has this email")
-    member = matches[0] ?? null
+    // A new check-in gets a fresh Member ID before the person reaches Notion; email identifies them,
+    // as it does at the kiosk.
+    if (emailMatches.length > 1) throw new RowProblem("More than one Notion member has this email")
+    member = emailMatches[0] ?? null
+  }
+  const memberId = member?.id ?? attendee.memberId
+  if (memberId && roster.duplicateIds.has(memberId)) {
+    throw new RowProblem(`More than one Notion member has Member ID ${memberId}`)
   }
 
   if (!member) {
-    const memberId = attendee.memberId ?? createMemberId()
-    const created = await createMember(env, { ...attendee, memberId }, date, eventId)
-    addRosterRecord(roster, created)
-    return created
+    // Keep the generated identity stable when a create response is lost.
+    const generatedIdKey = `notion-member-id:${attendee.email}`
+    const newId = attendee.memberId ?? await storage.get<string>(generatedIdKey) ?? createMemberId()
+    if (!attendee.memberId) await storage.put(generatedIdKey, newId)
+    member = await createMember(env, { ...details, memberId: newId }, date, eventId, storage)
+    addRosterRecord(roster, member)
   }
 
-  const detailsDiffer =
-    member.name !== attendee.name ||
-    member.email !== attendee.email ||
-    member.affiliation !== attendee.affiliation
-  if (detailsDiffer) {
-    await updateMemberDetails(env, member.pageId, attendee)
-    const previousEmail = member.email
-    removeEmailIndex(roster, member, previousEmail)
-    member.name = attendee.name
-    member.email = attendee.email
-    member.affiliation = attendee.affiliation
+  if (member.name !== details.name || member.email !== details.email || member.affiliation !== details.affiliation) {
+    await updateMemberDetails(env, member.pageId, details)
+    removeEmailIndex(roster, member, member.email)
+    member.name = details.name
+    member.email = details.email
+    member.affiliation = details.affiliation
     addEmailIndex(roster, member)
   }
   return member
+}
+
+// Notion sets at most 100 related pages per request, and each write replaces the whole list. A larger
+// event sets its first 100 attendees, then adds the rest through each member's two-way relation.
+async function addEventToMember(env: Env, memberPageId: string, eventId: string): Promise<void> {
+  const page = await retrievePage(env, memberPageId)
+  if (!page) throw new Error(`Notion member page ${memberPageId} is missing`)
+  const relation = inlineRelation(page, "Events Attended")
+  const eventIds = relation.hasMore ? await retrieveRelationIds(env, page.id, relation.propertyId) : relation.relationIds
+  if (eventIds.includes(eventId)) return
+  if (eventIds.length >= MAX_RELATION_ITEMS) {
+    throw new RowProblem(`A member has attended ${eventIds.length} events, more than Notion can update in one request`)
+  }
+  await notionRequest(env, `/pages/${encodeURIComponent(memberPageId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ properties: { "Events Attended": { relation: [...eventIds, eventId].map((id) => ({ id })) } } }),
+  })
 }
 
 export async function syncEventAttendance(
@@ -390,17 +530,14 @@ export async function syncEventAttendance(
   const relationIds = [...new Set(attendeePageIds)]
   const existingIds = new Set(event.attendeePageIds)
   if (relationIds.length === existingIds.size && relationIds.every((id) => existingIds.has(id))) return
-  if (relationIds.length > MAX_RELATION_ITEMS) {
-    throw new Error(`Notion event attendance exceeds the ${MAX_RELATION_ITEMS}-member relation limit`)
-  }
-
   await notionRequest(env, `/pages/${encodeURIComponent(event.id)}`, {
     method: "PATCH",
     body: JSON.stringify({
       properties: {
-        Attendees: { relation: relationIds.map((id) => ({ id })) },
+        Attendees: { relation: relationIds.slice(0, MAX_RELATION_ITEMS).map((id) => ({ id })) },
       },
     }),
   })
+  for (const memberPageId of relationIds.slice(MAX_RELATION_ITEMS)) await addEventToMember(env, memberPageId, event.id)
   event.attendeePageIds = relationIds
 }

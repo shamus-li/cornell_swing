@@ -5,7 +5,7 @@ import { afterEach, expect, it, vi } from "vitest"
 import type { EventRecord } from "../events/model"
 import { NormalEventRow, parsePrograms, serializePrograms } from "./NormalEventRow"
 
-const event: EventRecord = { id: "normal-2099-10-12", kind: "normal", title: "Monday swing", date: "2099-10-12", startTime: "20:00", endTime: "22:00", location: "Dance hall", description: "**Beginner:** Basics\n\n**Advanced:** Swingouts\n\nThe social dance is 8-10pm!\n\n[Details](https://example.com)", updatedAt: "2026-09-20T12:00:00.000Z" }
+const event: EventRecord = { id: "normal-2099-10-12", kind: "normal", title: "Monday swing", date: "2099-10-12", startTime: "20:00", endTime: "22:00", location: "Dance hall", description: "**Beginner:** Basics\n\n**Advanced:** Swingouts\n\nThe social dance is 8-10pm!\n\n[Details](https://example.com)", published: true, updatedAt: "2026-09-20T12:00:00.000Z" }
 let root: Root | undefined
 afterEach(async () => {
   if (root) await act(async () => root!.unmount())

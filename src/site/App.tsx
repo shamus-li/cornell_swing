@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button"
+import { largeButtonClass } from "@/lib/sizes"
 
 import { HeroCarousel } from "./components/HeroCarousel"
 import { EventSections, useEvents, type EventSnapshot } from "./components/Events"
@@ -23,9 +24,8 @@ export default function App({ initialSchedule }: { initialSchedule?: EventSnapsh
               <Button
                 key={action.label}
                 asChild
-                size="lg"
                 variant={action.variant}
-                className="no-underline"
+                className={`no-underline ${largeButtonClass}`}
               >
                 <a href={action.href}>{action.label}</a>
               </Button>

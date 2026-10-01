@@ -1,14 +1,11 @@
 import { isAffiliation, type Member } from "../src/lib/checkin"
 import { listMembers } from "./notion"
+import { isRecord } from "./util"
 
 const MEMBER_CACHE_KEY = "members:v2"
 
 type MemberSnapshot = {
   members: Member[]
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function isMember(value: unknown): value is Member {

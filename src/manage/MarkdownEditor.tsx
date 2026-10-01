@@ -8,5 +8,5 @@ export function MarkdownEditor(props: {
   onChange: (markdown: string) => void
   onError: (message: string) => void
 }) {
-  return <Suspense fallback={<p role="status">Loading editor…</p>}><Editor {...props} /></Suspense>
+  return <Suspense fallback={<div className="inline-editor inline-editor-loading" role="status" aria-label="Loading editor" />}><Editor {...props} /></Suspense>
 }

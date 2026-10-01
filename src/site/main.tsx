@@ -3,11 +3,6 @@ import { createRoot, hydrateRoot } from "react-dom/client"
 
 import App from "./App"
 import type { EventSnapshot } from "./components/Events"
-import "../events/events.css"
-import { siteContent } from "./content"
-
-document.querySelector<HTMLLinkElement>('link[rel="icon"]')!.href =
-  siteContent.brand.faviconUrl
 
 const root = document.getElementById("root")!
 const initialSchedule: EventSnapshot | undefined = import.meta.env.PROD

@@ -1,0 +1,118 @@
+/* Shared by the homepage, event manager, and check-in. */
+
+/* The pages have no dark theme, so the components' dark styles stay off in dark mode. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Radix marks open and closed parts with data-state; the components' animations key off these. */
+@custom-variant data-open {
+  &:where([data-state="open"]),
+  &:where([data-open]:not([data-open="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-closed {
+  &:where([data-state="closed"]),
+  &:where([data-closed]:not([data-closed="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-disabled {
+  &:where([data-disabled="true"]),
+  &:where([data-disabled]:not([data-disabled="false"])) {
+    @slot;
+  }
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@font-face {
+  font-family: Inter;
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("../assets/fonts/inter-latin.woff2") format("woff2");
+}
+
+:root {
+  --background: #fff;
+  --foreground: #232019;
+  --muted: #f4f3f1;
+  --muted-foreground: #5f5c55;
+  --border: #e6e4e0;
+  --input: #cfcdc7;
+  /* Hint text in borderless fields, lighter than secondary text. */
+  --placeholder: #a8a49c;
+  --primary: #a13a5e;
+  --primary-hover: #aa4e6e;
+  --primary-foreground: #fff;
+  --destructive: #a22031;
+  --radius: .5rem;
+  /* Type scale for reading pages; the manager sets a denser one. */
+  --body-font-size: 1rem;
+  --control-font-size: .9375rem;
+  --input-font-size: 1rem;
+  --small-font-size: .875rem;
+  --caption-font-size: .8125rem;
+  --sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Only the homepage uses Fraunces; the manager and check-in stay in Inter. */
+  --serif: var(--sans);
+}
+
+@theme inline {
+  --font-sans: var(--sans);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--muted);
+  --color-accent-foreground: var(--foreground);
+  --color-popover: var(--background);
+  --color-popover-foreground: var(--foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--primary);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-destructive: var(--destructive);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* Pages keep the same width whether or not they scroll. */
+html { scrollbar-gutter: stable; }
+
+/* Even line breaks: no lone words at the end of headings or paragraphs. */
+:is(h1, h2, h3) { text-wrap: balance; }
+p { text-wrap: pretty; }
+
+.site-name {
+  display: inline-flex;
+  align-items: center;
+  color: var(--foreground);
+  font-family: var(--serif);
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.45;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.site-name img {
+  width: auto;
+  height: 48px;
+  margin-right: -4px;
+  position: relative;
+  top: -1px;
+  z-index: 1;
+  flex: none;
+}

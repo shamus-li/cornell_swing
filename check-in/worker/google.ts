@@ -1,11 +1,11 @@
 import { importPKCS8, SignJWT } from "jose"
+import { isRecord, RETRYABLE_STATUSES, wait } from "./util"
 
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
 const ACCESS_TOKEN_CACHE_MS = 50 * 60 * 1000
-const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504])
 
-export type SheetValue = string | number | boolean | null
+type SheetValue = string | number | boolean | null
 
 export type CheckinRow = {
   rowNumber: number
@@ -14,10 +14,6 @@ export type CheckinRow = {
   email: string
   affiliation: string
   memberId: string
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function stringValue(value: unknown): string {
@@ -99,10 +95,6 @@ function spreadsheetUrl(env: Env): URL {
   return new URL(
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(env.GOOGLE_SPREADSHEET_ID)}`,
   )
-}
-
-async function wait(milliseconds: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
 
 async function sheetsRequest(url: URL, init?: RequestInit): Promise<Response> {
@@ -338,13 +330,25 @@ export async function appendCheckin(
   ])
 }
 
-export async function updateCheckinMember(
+// The Sheet can be sorted or edited while the sync runs, so confirm the row still holds the same
+// check-in before writing to it by number.
+export async function updateCheckinRow(
   env: Env,
   accessToken: string,
-  rowNumber: number,
-  member: { id: string; name: string; email: string; affiliation: string },
+  row: CheckinRow,
+  values: { name: string; email: string; affiliation: string; memberId: string },
 ): Promise<void> {
-  await updateValues(env, accessToken, `B${rowNumber}:E${rowNumber}`, [
-    [member.name, member.email, member.affiliation, member.id],
+  const url = valuesUrl(env, sheetRange(env, `A${row.rowNumber}:E${row.rowNumber}`))
+  url.searchParams.set("valueRenderOption", "UNFORMATTED_VALUE")
+  url.searchParams.set("dateTimeRenderOption", "SERIAL_NUMBER")
+  const response = await sheetsRequest(url, { headers: { Authorization: `Bearer ${accessToken}` } })
+  const payload: unknown = await response.json()
+  if (!response.ok || !isRecord(payload)) throw new Error(`Google Sheets read failed with ${response.status}`)
+  const cells = Array.isArray(payload.values) && Array.isArray(payload.values[0]) ? payload.values[0] : []
+  if (sheetValue(cells[0]) !== row.timestamp || stringValue(cells[2]).trim().toLowerCase() !== row.email) {
+    throw new Error(`Check-in row ${row.rowNumber} changed while syncing`)
+  }
+  await updateValues(env, accessToken, `B${row.rowNumber}:E${row.rowNumber}`, [
+    [values.name, values.email, values.affiliation, values.memberId],
   ])
 }

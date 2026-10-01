@@ -1,4 +1,4 @@
-export type EventKind = 'normal' | 'special'
+type EventKind = 'normal' | 'special'
 
 export interface EventRecord {
   id: string
@@ -11,16 +11,35 @@ export interface EventRecord {
   locationUrl?: string
   room?: string
   description: string
+  published: boolean
   updatedAt: string
 }
 
-export type EventInput = Omit<EventRecord, 'id' | 'updatedAt'>
+type EventInput = Omit<EventRecord, 'id' | 'updatedAt'>
 export type ManagedEvent = EventRecord & { rsvpCount: number }
 export interface RSVP { name: string; email: string; createdAt: string }
 
 const dateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' })
 export const todayInNewYork = (now = new Date()) => dateFormatter.format(now)
+// Formats 24-hour HH:MM as "8:00 PM".
+export function formatTime(time: string): string {
+  const [hour, minute] = time.split(':')
+  return `${Number(hour) % 12 || 12}:${minute} ${Number(hour) < 12 ? 'AM' : 'PM'}`
+}
+export const formatEventTime = (event: Pick<EventRecord, 'startTime' | 'endTime'>) => event.startTime ? `${formatTime(event.startTime)}${event.endTime ? `–${formatTime(event.endTime)}` : ''}` : 'TBA'
 export const formatEventDate = (date: string) => date ? `${Number(date.slice(5, 7))}.${Number(date.slice(8, 10))}` : 'TBA'
+
+// RSVPs open once people know when and where to show up.
+export const hasEventDetails = (event: Pick<EventRecord, 'startTime' | 'location' | 'room'>) => Boolean(event.startTime && (event.location || event.room))
+
+// Names the semester of the next weekly lesson, or of the last one once the semester ends.
+export function scheduleTitle(events: Pick<EventRecord, 'kind' | 'date'>[], today: string): string {
+  const dates = events.filter(event => event.kind === 'normal' && event.date).map(event => event.date).sort()
+  const date = dates.find(value => value >= today) ?? dates.at(-1)
+  if (!date) return 'Schedule'
+  const month = Number(date.slice(5, 7))
+  return `${month <= 5 ? 'Spring' : month <= 7 ? 'Summer' : 'Fall'} ${date.slice(0, 4)} schedule`
+}
 
 export function formatEventLocation(event: Pick<EventRecord, 'location' | 'room'>): string {
   return [event.room, event.location].filter(Boolean).join(', ') || 'TBA'
@@ -37,6 +56,7 @@ export function validateEvent(value: unknown): EventInput {
   }
   if (!fields.title) throw new Error('Enter an event title.')
   if (input.kind !== 'normal' && input.kind !== 'special') throw new Error('Choose a normal or special event.')
+  if (typeof input.published !== 'boolean') throw new Error('Choose whether the event is published.')
   if ((fields.date || input.kind === 'normal') && (!/^\d{4}-\d{2}-\d{2}$/.test(fields.date) || !Number.isFinite(Date.parse(fields.date)) || new Date(fields.date).toISOString().slice(0, 10) !== fields.date)) throw new Error('Enter a valid event date.')
   for (const time of [fields.startTime, fields.endTime]) {
     if (time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new Error('Enter a valid event time.')
@@ -51,7 +71,7 @@ export function validateEvent(value: unknown): EventInput {
     try { url = new URL(locationUrl) } catch { throw new Error('Enter a valid Google Maps link.') }
     if (locationUrl.length > 2000 || url.protocol !== 'https:' || url.hostname !== 'www.google.com' || url.pathname !== '/maps/search/' || url.username || url.password || url.port) throw new Error('Enter a valid Google Maps link.')
   }
-  return { room, locationUrl, kind: input.kind, title: fields.title, date: fields.date, startTime: fields.startTime, endTime: fields.endTime, location: fields.location, description: fields.description }
+  return { room, locationUrl, kind: input.kind, published: input.published, title: fields.title, date: fields.date, startTime: fields.startTime, endTime: fields.endTime, location: fields.location, description: fields.description }
 }
 
 export function validateRSVP(value: unknown): { name: string; email: string } {

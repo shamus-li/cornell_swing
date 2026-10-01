@@ -7,6 +7,7 @@ import migration from '../../migrations/events/0001_events.sql?raw'
 import sheetMigration from '../../migrations/events/0002_rsvp_sheets.sql?raw'
 import sourceMigration from '../../migrations/events/0003_sheet_source.sql?raw'
 import roomMigration from '../../migrations/events/0004_event_room.sql?raw'
+import publishedMigration from '../../migrations/events/0005_event_published.sql?raw'
 import worker from './worker'
 import siteWorker from '../worker'
 import { changeEventWithSheet } from './sheets'
@@ -20,7 +21,7 @@ let wrongAudienceToken = ''
 
 const env = runtimeEnv as typeof runtimeEnv
 const origin = 'https://events.example.com'
-const event = { kind: 'special', title: 'Swing, dance', date: '2099-10-10', startTime: '18:15', endTime: '22:00', location: 'Ithaca', description: 'Welcome\n**Everyone**' }
+const event = { kind: 'special', title: 'Swing, dance', date: '2099-10-10', startTime: '18:15', endTime: '22:00', location: 'Ithaca', description: 'Welcome\n**Everyone**', published: true }
 function request(path: string, method = 'GET', body?: unknown, manager = false): Request {
   const headers: Record<string, string> = { origin, 'content-type': 'application/json', 'cf-connecting-ip': crypto.randomUUID() }
   if (manager) headers['Cf-Access-Jwt-Assertion'] = managerToken
@@ -47,6 +48,7 @@ beforeAll(async () => {
   await env.EVENTS_DB.exec(sheetMigration.replaceAll('\n', ' '))
   await env.EVENTS_DB.exec(sourceMigration.replaceAll('\n', ' '))
   await env.EVENTS_DB.exec(roomMigration.replaceAll('\n', ' '))
+  await env.EVENTS_DB.exec(publishedMigration.replaceAll('\n', ' '))
 })
 afterAll(() => network.disable())
 beforeEach(async () => { await env.EVENTS_DB.exec('DELETE FROM rsvp_sheet_connection; DELETE FROM rsvps; DELETE FROM events;') })
@@ -120,6 +122,18 @@ describe('event storage and RSVPs', () => {
     expect((await call(`/api/events/${normal.id}/calendar`)).status).toBe(404)
     const past = await create({ date: '2000-01-01' })
     expect((await call(`/api/events/${past.id}/rsvp`, 'POST', { name: 'Jane', email: 'jane@example.com' })).status).toBe(400)
+    const tba = await create({ title: 'To be announced', startTime: '', endTime: '', location: '' })
+    expect((await call(`/api/events/${tba.id}/rsvp`, 'POST', { name: 'Jane', email: 'jane@example.com' })).status).toBe(400)
+  })
+  it('keeps unpublished events off the public site until they are published', async () => {
+    const draft = await create({ published: false })
+    expect(JSON.stringify(await (await call('/api/events')).json())).not.toContain(draft.id)
+    expect((await call(`/api/events/${draft.id}/rsvp`, 'POST', { name: 'Jane', email: 'jane@example.com' })).status).toBe(404)
+    expect((await call(`/api/events/${draft.id}/calendar`)).status).toBe(404)
+    const managed = await (await call('/manage/api/events', 'GET', undefined, true)).json() as { events: { id: string; published: boolean }[] }
+    expect(managed.events.find(event => event.id === draft.id)?.published).toBe(false)
+    expect((await call(`/manage/api/events/${draft.id}`, 'PUT', { ...draft, published: true }, true)).status).toBe(200)
+    expect(JSON.stringify(await (await call('/api/events')).json())).toContain(draft.id)
   })
   it('produces escaped timezone-aware calendar downloads', async () => {
     const created = await create({ room: 'Garden Room', location: 'Willard Straight Hall' })
@@ -149,6 +163,8 @@ describe('event storage and RSVPs', () => {
     const manager = await siteWorker.fetch(request('/manage'), env)
     expect(manager.status).toBe(401)
     expect(manager.headers.get('x-robots-tag')).toBe('noindex, nofollow')
+    expect((await siteWorker.fetch(request('/redirects'), env)).status).toBe(401)
+    expect((await siteWorker.fetch(request('/redirects/api'), env)).status).toBe(401)
     expect((await call('/api/events')).headers.has('x-robots-tag')).toBe(false)
   })
 })
@@ -347,11 +363,71 @@ describe('Sheets source of truth', () => {
     expect(await env.EVENTS_DB.prepare('SELECT COUNT(*) AS count FROM rsvps').first('count')).toBe(0)
     expect(await env.EVENTS_DB.prepare('SELECT COUNT(*) AS count FROM events').first('count')).toBe(1)
   })
+  it('reports a duplicate title as a conflict without marking the sheet as failing', async () => {
+    const first = await create({ title: 'Fall formal' })
+    const second = await create({ title: 'Winter formal' })
+    await connect([['Event','Name','Email']])
+    const response = await call(`/manage/api/events/${second.id}`, 'PUT', { ...second, title: first.title }, true)
+    expect(response.status).toBe(409)
+    expect(await env.EVENTS_DB.prepare('SELECT error FROM rsvp_sheet_connection').first('error')).toBeNull()
+  })
+  it('deletes a weekly lesson without the sheet even when the sheet is failing', async () => {
+    const lesson = await create({ kind: 'normal' })
+    await connect([['Event','Name','Email']], true)
+    expect((await call(`/manage/api/events/${lesson.id}`, 'DELETE', undefined, true)).status).toBe(200)
+    expect(await env.EVENTS_DB.prepare('SELECT COUNT(*) AS count FROM events').first('count')).toBe(0)
+  })
   it('rejects ambiguous event titles without importing any participants', async () => {
     const created = await create()
     await env.EVENTS_DB.prepare("INSERT INTO events (id,kind,title,date,updatedAt) VALUES ('duplicate','special',?,?,?)").bind(created.title,created.date,created.updatedAt).run()
     await connect([['Event','Name','Email'],[created.title,'Jane','jane@example.com']])
     expect((await call('/manage/api/rsvp-sheet/sync','POST',undefined,true)).status).toBe(502)
     expect(await env.EVENTS_DB.prepare('SELECT COUNT(*) AS count FROM rsvps').first('count')).toBe(0)
+  })
+})
+
+describe('redirect manager', () => {
+  const lists = `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/rules/lists`
+  // A fake Bulk Redirect List: POST replaces items with the same source URL, as Cloudflare does.
+  function fakeList(initial: { source_url: string; target_url: string; status_code?: number }[]) {
+    let items = initial.map((redirect, index) => ({ id: `item-${index}`, redirect }))
+    const operations: string[] = []
+    network.use(
+      http.get(`${lists}/${env.REDIRECT_LIST_ID}/items`, () => HttpResponse.json({ success: true, result: items, result_info: { cursors: {} } })),
+      http.post(`${lists}/${env.REDIRECT_LIST_ID}/items`, async ({ request }) => {
+        const added = await request.json() as typeof items
+        for (const { redirect } of added) items = [...items.filter(item => item.redirect.source_url !== redirect.source_url), { id: crypto.randomUUID(), redirect }]
+        operations.push(`add ${added.map(item => item.redirect.source_url).join(' ')}`)
+        return HttpResponse.json({ success: true, result: { operation_id: 'op' } })
+      }),
+      http.delete(`${lists}/${env.REDIRECT_LIST_ID}/items`, async ({ request }) => {
+        const ids = (await request.json() as { items: { id: string }[] }).items.map(item => item.id)
+        operations.push(`delete ${items.filter(item => ids.includes(item.id)).map(item => item.redirect.source_url).join(' ')}`)
+        items = items.filter(item => !ids.includes(item.id))
+        return HttpResponse.json({ success: true, result: { operation_id: 'op' } })
+      }),
+      http.get(`${lists}/bulk_operations/op`, () => HttpResponse.json({ success: true, result: { status: 'completed' } })),
+    )
+    return operations
+  }
+  const redirect = { source: '/join/', destination: 'https://forms.example.com/join', code: 302 }
+
+  it('stores both slash variants for swingsyndicate.club and lists only this site', async () => {
+    const operations = fakeList([{ source_url: 'shamus.li/cv', target_url: 'https://example.com/cv' }])
+    expect((await call('/redirects/api', 'POST', redirect, true)).status).toBe(200)
+    expect(operations).toEqual(['add swingsyndicate.club/join swingsyndicate.club/join/'])
+    expect(await (await call('/redirects/api', 'GET', undefined, true)).json()).toEqual([{ ...redirect, source: '/join' }])
+  })
+
+  it('adds a renamed redirect before deleting the old source', async () => {
+    const operations = fakeList([{ source_url: 'swingsyndicate.club/join', target_url: redirect.destination, status_code: 302 }, { source_url: 'swingsyndicate.club/join/', target_url: redirect.destination, status_code: 302 }])
+    expect((await call('/redirects/api', 'PUT', { source: '/join', redirect: { ...redirect, source: '/signup' } }, true)).status).toBe(200)
+    expect(operations).toEqual(['add swingsyndicate.club/signup swingsyndicate.club/signup/', 'delete swingsyndicate.club/join swingsyndicate.club/join/'])
+  })
+
+  it.each(['/', '/manage', '/redirects/api', '/assets/logo.png'])('refuses to redirect %s, which the website uses', async (source) => {
+    const operations = fakeList([])
+    expect((await call('/redirects/api', 'POST', { ...redirect, source }, true)).status).toBe(400)
+    expect(operations).toEqual([])
   })
 })

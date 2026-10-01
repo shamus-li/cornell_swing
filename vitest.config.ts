@@ -26,6 +26,7 @@ export default defineConfig({
             miniflare: {
               bindings: {
                 NOTION_TOKEN: "test-token",
+                NOTION_REQUESTS_PER_SECOND: "1000",
                 GOOGLE_SERVICE_ACCOUNT_EMAIL: "test@example.iam.gserviceaccount.com",
                 GOOGLE_PRIVATE_KEY: "test-key",
               },
