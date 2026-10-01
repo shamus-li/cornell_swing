@@ -14,29 +14,23 @@ const sourcePath = path.resolve(sourceValue)
 const assetDirectory = path.resolve("assets")
 const widths = slot === 1 ? [480, 720, 960, 1800] : [480, 720, 960, 1600]
 
-const resized = (width) =>
-  sharp(sourcePath)
-    .rotate()
-    .resize({
-      width,
-      height: Math.round((width * 2) / 3),
-      fit: "cover",
-      position: "attention",
-    })
-
 await Promise.all(
   widths.map(async (width) => {
     const filename =
-      slot === 1 ? `hero-${width}.avif` : `hero-${slot}-${width}.avif`
-    await resized(width)
-      .avif({ quality: 55 })
-      .toFile(path.join(assetDirectory, filename))
+      slot === 1 ? `hero-${width}.webp` : `hero-${slot}-${width}.webp`
+    const outputPath = path.join(assetDirectory, filename)
+
+    await sharp(sourcePath)
+      .rotate()
+      .resize({
+        width,
+        height: Math.round((width * 2) / 3),
+        fit: "cover",
+        position: "attention",
+      })
+      .webp({ quality: 82 })
+      .toFile(outputPath)
   }),
 )
-
-// Link previews use WebP because some social platforms cannot read AVIF.
-if (slot === 1) {
-  await resized(960).webp({ quality: 82 }).toFile(path.join(assetDirectory, "hero-960.webp"))
-}
 
 console.log(`Updated hero image ${slot} from ${sourcePath}`)

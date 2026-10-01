@@ -101,7 +101,7 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
   </Button>
 
   return <>
-    <header className="site-header manage-header"><SiteBrand /><Button asChild variant="ghost" size="sm"><a href="/" target="_blank" rel="noreferrer">View site ↗</a></Button></header>
+    <header className="site-header manage-header"><SiteBrand /></header>
     <main className="manage-main">
       {editing ? <EventEditor key={editing.id || "new"} event={editing} onCancel={closeSpecial} onRsvpChange={() => removeRsvpCount(editing.id)} onSave={event => { acceptSavedEvent(event); closeSpecial() }} onDelete={() => acceptDeletedEvent(editing.id)} /> : <>
         <div className="manage-title">

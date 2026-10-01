@@ -8,7 +8,7 @@ import { siteContent } from "./content"
 export async function render() {
   const initialSchedule = { events: [], today: todayInNewYork() }
   const photo = siteContent.hero.slides[0]
-  const imageUrl = new URL(siteContent.hero.socialImage, "https://swingsyndicate.club/").href
+  const imageUrl = new URL(photo.src, "https://swingsyndicate.club/").href
 
   return {
     html: renderToString(<StrictMode><App initialSchedule={initialSchedule} /></StrictMode>),

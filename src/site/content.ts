@@ -1,20 +1,19 @@
-import hero1800 from "../../assets/hero-1800.avif"
-import hero2_1600 from "../../assets/hero-2-1600.avif"
-import hero2_480 from "../../assets/hero-2-480.avif"
-import hero2_720 from "../../assets/hero-2-720.avif"
-import hero2_960 from "../../assets/hero-2-960.avif"
-import hero3_1600 from "../../assets/hero-3-1600.avif"
-import hero3_480 from "../../assets/hero-3-480.avif"
-import hero3_720 from "../../assets/hero-3-720.avif"
-import hero3_960 from "../../assets/hero-3-960.avif"
-import hero4_1600 from "../../assets/hero-4-1600.avif"
-import hero4_480 from "../../assets/hero-4-480.avif"
-import hero4_720 from "../../assets/hero-4-720.avif"
-import hero4_960 from "../../assets/hero-4-960.avif"
-import hero480 from "../../assets/hero-480.avif"
-import hero720 from "../../assets/hero-720.avif"
-import hero960 from "../../assets/hero-960.avif"
-import socialImage from "../../assets/hero-960.webp"
+import hero1800 from "../../assets/hero-1800.webp"
+import hero2_1600 from "../../assets/hero-2-1600.webp"
+import hero2_480 from "../../assets/hero-2-480.webp"
+import hero2_720 from "../../assets/hero-2-720.webp"
+import hero2_960 from "../../assets/hero-2-960.webp"
+import hero3_1600 from "../../assets/hero-3-1600.webp"
+import hero3_480 from "../../assets/hero-3-480.webp"
+import hero3_720 from "../../assets/hero-3-720.webp"
+import hero3_960 from "../../assets/hero-3-960.webp"
+import hero4_1600 from "../../assets/hero-4-1600.webp"
+import hero4_480 from "../../assets/hero-4-480.webp"
+import hero4_720 from "../../assets/hero-4-720.webp"
+import hero4_960 from "../../assets/hero-4-960.webp"
+import hero480 from "../../assets/hero-480.webp"
+import hero720 from "../../assets/hero-720.webp"
+import hero960 from "../../assets/hero-960.webp"
 
 const mailingListUrl =
   "https://lists.cornell.edu/GRAD-SWING-DANCE-L/subscribe"
@@ -22,7 +21,6 @@ const campusGroupsUrl = "https://cornell.campusgroups.com/gcss/club_signup"
 
 export const siteContent = {
   hero: {
-    socialImage,
     title: "Criminally Good Dancing.",
     description:
       "Free Lindy Hop every Monday night. No experience or partner required!",

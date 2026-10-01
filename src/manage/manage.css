@@ -11,7 +11,8 @@
 /* Page */
 html:has(.manage-page) { scroll-behavior: auto; }
 /* App density: 14px text like Vercel and GitHub; touch screens get 16px inputs so iOS does not zoom. */
-.manage-page { --page: min(720px, calc(100% - 32px)); --serif: var(--sans); --body-font-size: .875rem; --control-font-size: .875rem; --input-font-size: .875rem; --small-font-size: .8125rem; --caption-font-size: .75rem; }
+/* The homepage uses system fonts on phones; the manager stays in Inter like check-in. */
+.manage-page { --page: min(720px, calc(100% - 32px)); --sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; --serif: var(--sans); --body-font-size: .875rem; --control-font-size: .875rem; --input-font-size: .875rem; --small-font-size: .8125rem; --caption-font-size: .75rem; }
 @media (pointer: coarse) { .manage-page { --input-font-size: 1rem; } }
 .manage-header { justify-content: space-between; gap: 16px; }
 .manage-main { padding: 24px 0 64px; }

@@ -34,6 +34,14 @@
 }
 
 @font-face {
+  font-family: Fraunces;
+  font-style: normal;
+  font-weight: 600 700;
+  font-display: swap;
+  src: url("../assets/fonts/fraunces-latin.woff2") format("woff2");
+}
+
+@font-face {
   font-family: Inter;
   font-style: normal;
   font-weight: 400 700;
@@ -62,7 +70,8 @@
   --small-font-size: .875rem;
   --caption-font-size: .8125rem;
   --sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  /* Only the homepage uses Fraunces; the manager and check-in stay in Inter. */
+  /* The site title is always Fraunces; only the homepage also sets its headings in it. */
+  --brand-font: Fraunces, Georgia, "Times New Roman", serif;
   --serif: var(--sans);
 }
 
@@ -99,7 +108,7 @@ p { text-wrap: pretty; }
   display: inline-flex;
   align-items: center;
   color: var(--foreground);
-  font-family: var(--serif);
+  font-family: var(--brand-font);
   font-size: 1.1rem;
   font-weight: 600;
   line-height: 1.45;

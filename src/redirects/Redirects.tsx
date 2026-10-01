@@ -53,7 +53,7 @@ export default function Redirects() {
   const editRow = editing && <EditRow key={editing.original ?? "new"} draft={editing.draft} saving={saving} onChange={draft => setEditing({ ...editing, draft })} onSave={() => void save()} onCancel={() => { setEditing(null); setError("") }} />
 
   return <>
-    <header className="site-header manage-header"><SiteBrand /><Button asChild variant="ghost" size="sm"><a href="/" target="_blank" rel="noreferrer">View site ↗</a></Button></header>
+    <header className="site-header manage-header"><SiteBrand /></header>
     <main className="manage-main">
       <div className="manage-title">
         <h1>Redirects</h1>
