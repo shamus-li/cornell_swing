@@ -57,7 +57,7 @@ export default function Redirects() {
     <main className="manage-main">
       <div className="manage-title">
         <h1>Redirects</h1>
-        <Button disabled={!redirects || editing !== null || saving} onClick={() => setEditing({ original: null, draft: { source: "", destination: "", code: "302" } })}>New redirect</Button>
+        <Button disabled={!redirects || editing !== null || saving} onClick={() => setEditing({ original: null, draft: { source: "", destination: "", code: "301" } })}>New redirect</Button>
       </div>
       {error && <p role="alert" className="event-error manage-notice">{error}</p>}
       {loadError ? <p role="alert" className="event-error manage-notice">{loadError} <Button variant="link" size="sm" onClick={() => window.location.reload()}>Reload</Button></p>
@@ -89,8 +89,8 @@ function EditRow({ draft, saving, onChange, onSave, onCancel }: { draft: Draft; 
       <Select disabled={saving} value={draft.code} onValueChange={code => onChange({ ...draft, code })}>
         <SelectTrigger aria-label="Code" className="w-full"><SelectValue /></SelectTrigger>
         <SelectContent>
-          <SelectItem value="302">302 Temporary</SelectItem>
           <SelectItem value="301">301 Permanent</SelectItem>
+          <SelectItem value="302">302 Temporary</SelectItem>
         </SelectContent>
       </Select>
     </div>
