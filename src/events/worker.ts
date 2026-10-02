@@ -4,7 +4,7 @@ import { getSheetStatus, linkSheet, disconnectSheet, importSheet, saveRSVP, remo
 import { createRemoteJWKSet, jwtVerify } from 'jose'
 import { createElement } from 'react'
 import { renderToString } from 'react-dom/server'
-import { EventSections } from '../site/components/Events'
+import { EventSections, NextEvent } from '../site/components/Events'
 import { createRedirect, deleteRedirect, listRedirects, RedirectError, updateRedirect } from '../redirects/cloudflare'
 import { isRecord, parseRedirect } from '../redirects/redirect'
 import { formatEventLocation, hasEventDetails, todayInNewYork, validateEvent, validateRSVP, type EventRecord, type ManagedEvent, type RSVP } from './model'
@@ -240,7 +240,8 @@ async function route(request: Request, env: Env): Promise<Response> {
   const today = todayInNewYork()
   const snapshot = JSON.stringify({ events, today }).replaceAll('<', '\\u003c')
   const html = renderToString(createElement(EventSections, { events, today }))
-  return new HTMLRewriter().on('#event-sections', { element: element => { element.setInnerContent(html, { html: true }) } }).on('#schedule-data', { element: element => { element.setInnerContent(snapshot, { html: true }) } }).transform(response)
+  const nextEvent = renderToString(createElement(NextEvent, { events, today }))
+  return new HTMLRewriter().on('#next-event', { element: element => { element.setInnerContent(nextEvent, { html: true }) } }).on('#event-sections', { element: element => { element.setInnerContent(html, { html: true }) } }).on('#schedule-data', { element: element => { element.setInnerContent(snapshot, { html: true }) } }).transform(response)
 }
 
 export default {

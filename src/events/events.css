@@ -1,15 +1,18 @@
 .event-list { margin-top: 32px; }
-.event-row { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 24px; padding: 16px 12px; border-bottom: 1px solid var(--border); }
-.event-date { padding-top: 1px; }
+.event-row, .schedule-row { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 20px; padding: 16px 12px; border-bottom: 1px solid var(--border); }
 .event-content { min-width: 0; }
-.event-content h3 { font: 600 1.125rem/1.4 var(--sans); }
-.event-row:last-child { border-bottom: 0; }
+.event-content h3 { font: 600 1.375rem/1.3 var(--sans); }
+.event-row:last-child, .schedule-list > .schedule-row:last-child { border-bottom: 0; }
 .event-meta, .event-muted, .event-eyebrow { color: var(--muted-foreground); }
-.event-meta { margin: 8px 0; }
+.event-meta { display: grid; gap: 2px; margin: 8px 0 12px; }
+.event-meta p { margin: 0; }
+/* A small grey icon before a detail, like Luma's event listings. */
+.icon-line { display: flex; gap: 8px; }
+.icon-line > svg { flex: none; width: 16px; height: 16px; margin-top: .25em; color: var(--muted-foreground); }
 .event-markdown { overflow-wrap: anywhere; line-height: 1.5; }
 .event-markdown > :first-child { margin-top: 0; }
 .event-markdown > :last-child { margin-bottom: 0; }
-.event-markdown p { margin: 2px 0; }
+.event-markdown p { margin: 8px 0; }
 .event-markdown li > p { margin: 0; }
 .event-markdown h1, .event-markdown h2, .event-markdown h3 { font-size: 1.125rem; margin: 20px 0 8px; }
 .event-markdown img { max-width: 100%; height: auto; border-radius: 4px; }
@@ -29,34 +32,50 @@
 .event-dialog::backdrop { background: color-mix(in srgb, var(--foreground) 40%, transparent); }
 .event-dialog [data-slot="input"] { background: var(--background); }
 time { font-variant-numeric: tabular-nums; }
+.date-tile { display: flex; color: var(--foreground); background: var(--background); flex-direction: column; align-self: start; width: 44px; overflow: hidden; border: 1px solid var(--border); border-radius: 8px; text-align: center; line-height: 1; }
+.date-tile-month { padding: 4px 0 3px; color: var(--foreground); background: var(--muted); font-size: .625rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.date-tile-day { padding: 6px 0 7px; font-size: 1.125rem; font-weight: 500; }
+.is-past .date-tile { color: var(--muted-foreground); }
+.is-next .date-tile { border-color: var(--primary); }
+.is-next .date-tile-month { color: var(--primary-foreground); background: var(--primary); }
+.next-event-row p { margin: 0; }
+.next-event-label { margin: 0 0 12px; color: var(--muted-foreground); font-size: var(--small-font-size); font-weight: 500; }
+.next-event-name { margin: 0 0 16px; font-size: 1.375rem; font-weight: 600; line-height: 1.3; }
+/* Date and place side by side; the place takes the leftover width and wraps if long. */
+.next-event-program { margin-top: 16px; }
+.next-event-program .event-markdown p { margin: 0; }
+.next-event-details { display: flex; align-items: center; gap: 12px 32px; }
+.next-event-row:first-child { flex: none; }
+.next-event-row + .next-event-row { min-width: 0; }
+@media (max-width: 419px) { .next-event-details { display: grid; } }
+.next-event-row { display: flex; align-items: center; gap: 16px; }
+.next-event-title { font-weight: 500; }
+.next-event-icon { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted-foreground); }
+.next-event-icon svg { width: 20px; height: 20px; }
 .event-dialog h2 { font-size: 1.75rem; padding-right: 12px; }
 .dialog-close { position: absolute; top: 10px; right: 12px; color: var(--muted-foreground); }
 .event-eyebrow { margin: 0 0 12px; }
 .event-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .event-error { color: var(--destructive); }
 @media (max-width: 620px) {
-  .event-row { grid-template-columns: 60px minmax(0, 1fr); gap: 16px; }
+  .event-row, .schedule-row { gap: 16px; }
   .event-dialog-body { padding: 30px 24px; }
 }
 
-/* Keep weekly lesson programs in the original compact schedule layout. */
-.schedule-header, .schedule-row { display: grid; gap: 24px; grid-template-columns: 80px 220px minmax(0, 1fr); }
-.schedule-header { padding: 0 12px 8px; color: var(--muted-foreground); font-size: var(--small-font-size); border-bottom: 1px solid var(--border); }
-.schedule-row { padding: 16px 12px; border-bottom: 1px solid var(--border); }
-.schedule-row:last-child { border-bottom: 0; }
+.schedule-location { margin: 0 0 4px; font-weight: 500; }
 .schedule-program .event-markdown { line-height: inherit; }
 .schedule-program > p, .schedule-program .event-markdown p { margin: 0; }
+.schedule-program > p { color: var(--muted-foreground); }
 .schedule-program .event-markdown p + p { margin-top: 4px; }
 .schedule-program .event-markdown p:not(:has(strong)) { color: var(--muted-foreground); }
-.schedule-row.is-past { color: #000; opacity: .55; }
-.schedule-row.is-past .event-markdown p, .schedule-row.is-past .schedule-location::before { color: inherit; }
-@media (max-width: 760px) {
-  .schedule-header { display: none; }
-  .schedule-row { display: block; }
-  .schedule-location { display: inline; margin-left: .35em; }
-  .schedule-location::before { content: "· "; color: var(--muted-foreground); }
-  .schedule-program { margin-top: 4px; }
-}
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.segmented { display: inline-flex; flex: none; padding: 2px; border-radius: 8px; background: var(--muted); }
+.segmented button { padding: 4px 12px; border: 0; border-radius: 6px; background: none; color: var(--muted-foreground); font: 500 var(--small-font-size)/1.5 var(--sans); cursor: pointer; }
+.segmented button:hover { color: var(--foreground); }
+/* Touch screens get a 44px-tall switch so it is easy to tap. */
+@media (pointer: coarse) { .segmented button { min-height: 40px; padding: 0 16px; } }
+.segmented button[aria-pressed="true"] { color: var(--foreground); background: var(--background); box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 12%, transparent); }
+.segmented button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 
 .event-table-scroll { max-width: 100%; overflow-x: auto; }
 .event-markdown table { width: 100%; border-collapse: collapse; border: 0; }

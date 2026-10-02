@@ -10,16 +10,26 @@ const base = { title: "Swing", date: "2099-10-17", startTime: "18:15", endTime: 
 const snapshot: EventSnapshot = { today: "2026-09-20", events: [{ ...base, id: "normal", kind: "normal" }, { ...base, id: "special", kind: "special" }] }
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); document.body.innerHTML = "" })
 
-it("offers RSVP and calendar only for special events and hides past RSVP", () => {
+it("offers RSVP and calendar only for special events", () => {
   const container = document.createElement("div")
   container.innerHTML = renderToString(<EventSections {...snapshot} />)
   expect(container.querySelector("#schedule button")).toBeNull()
   expect(container.querySelector("#schedule [popovertarget]")).toBeNull()
   expect(container.querySelector("#special-events button")?.textContent).toBe("RSVP")
   expect(container.querySelector("strong")?.textContent).toBe("Live music")
-  container.innerHTML = renderToString(<EventSections {...snapshot} today="2100-01-01" />)
+})
+
+it("moves past events behind the Past switch, where they offer no RSVP", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true)
+  const container = document.createElement("div"); document.body.appendChild(container)
+  const root = createRoot(container)
+  await act(async () => root.render(<EventSections {...snapshot} today="2100-01-01" />))
+  expect(container.querySelector("#special-events article")).toBeNull()
+  const past = [...container.querySelectorAll<HTMLButtonElement>("#special-events .segmented button")].find(button => button.textContent === "Past")!
+  await act(async () => past.click())
   expect([...container.querySelectorAll("button")].some(button => button.textContent === "RSVP")).toBe(false)
-  expect(container.querySelector("[popovertarget]")?.textContent).toBe("Add to calendar")
+  expect(container.querySelector("#special-events [popovertarget]")?.textContent).toBe("Add to calendar")
+  await act(async () => root.unmount())
 })
 
 it("removes raw HTML and unsafe Markdown links", () => {

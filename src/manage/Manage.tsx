@@ -13,7 +13,8 @@ import { SheetConnection } from "./SheetConnection"
 import { api, errorMessage } from "./api"
 import { MarkdownEditor } from "./MarkdownEditor"
 import { SiteBrand } from "../site/components/SiteBrand"
-import { DateBlock, DraftBadge, eventSummary } from "./EventDate"
+import { DraftBadge, eventSummary } from "./EventDate"
+import { DateTile } from "../events/DateTile"
 import { Tabs } from "./Tabs"
 import { Person } from "../../check-in/src/components/ui/person"
 
@@ -95,7 +96,7 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
   }
   const lessonRow = (event: EventRecord) => <NormalEventRow key={`${event.id}-${event.updatedAt}-${activeNormal === event.id}`} ref={activeNormal === event.id ? normalEditor : undefined} editing={activeNormal === event.id} onEdit={() => { void openEvent(() => setActiveNormal(event.id)) }} event={event} onSave={saveNormal} onCancel={() => setActiveNormal(null)} onDelete={async () => { await api(`/events/${event.id}`, { method: "DELETE" }); acceptDeletedEvent(event.id) }} />
   const specialRow = (event: ManagedEvent) => <Button key={event.id} variant="ghost" className="event-row-button" onClick={() => { void openEvent(() => openSpecial(event)) }}>
-    <DateBlock date={event.date} />
+    <DateTile date={event.date} />
     <span className="event-row-text"><span className="event-row-title"><strong>{event.title}</strong>{!event.published && <DraftBadge />}</span><span className="event-muted">{eventSummary(event)}</span></span>
     <span className="guest-count event-muted">{event.rsvpCount} RSVP{event.rsvpCount === 1 ? "" : "s"}</span>
   </Button>

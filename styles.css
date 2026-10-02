@@ -65,7 +65,35 @@ main,
 }
 
 .hero {
-  padding: 48px 0 0;
+  padding: 40px 0 0;
+  display: grid;
+  gap: 32px;
+}
+
+#next-event:empty {
+  display: none;
+}
+
+/* Desktop: the next event sits right of the headline, its label level with the headline's top. */
+@media (min-width: 761px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr) 360px;
+    column-gap: 48px;
+    align-items: start;
+  }
+
+  /* With nothing scheduled, the headline takes the full width. */
+  .hero:has(#next-event:empty) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hero-carousel-root {
+    grid-column: 1 / -1;
+  }
+
+  .hero .next-event-details {
+    display: grid;
+  }
 }
 
 h1:not([data-slot]),
@@ -88,31 +116,26 @@ h2:not([data-slot]) {
 }
 
 h3:not([data-slot]) {
+  font-family: var(--sans);
   font-size: 1.125rem;
+  line-height: 1.4;
 }
 
-.hero > p {
-  max-width: 640px;
+.hero-intro > p {
   margin: 16px 0 0;
   font-size: 1.125rem;
 }
 
-.hero-links {
+.hero-intro > [data-slot="button"] {
   margin-top: 24px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.hero-carousel-root {
-  margin-top: 32px;
 }
 
 .hero-carousel [data-slot="carousel-item"] img {
   width: 100%;
   height: auto;
+  aspect-ratio: 16 / 9;
   display: block;
+  object-fit: cover;
   border-radius: var(--radius);
 }
 
@@ -274,6 +297,27 @@ h3:not([data-slot]) {
   margin: 0 0 24px;
 }
 
+/* Desktop: section title on the left, content on the right. */
+@media (min-width: 761px) {
+  :is(.faq, .etiquette, .about) {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    column-gap: 48px;
+    align-items: start;
+  }
+
+  :is(.faq, .etiquette, .about) > h2 {
+    grid-row: 1 / span 20;
+    position: sticky;
+    top: 24px;
+    margin-bottom: 0;
+  }
+
+  :is(.faq, .etiquette, .about) > :not(h2) {
+    grid-column: 2;
+  }
+}
+
 .about-links {
   display: flex;
   gap: 24px;
@@ -302,11 +346,12 @@ h3:not([data-slot]) {
   }
 
   .hero {
-    padding: 40px 0 0;
+    padding: 32px 0 0;
+    gap: 24px;
   }
 
-  .hero-carousel-root {
-    margin-top: 24px;
+  .hero-carousel [data-slot="carousel-item"] img {
+    aspect-ratio: auto;
   }
 
   .section {
@@ -323,7 +368,6 @@ h3:not([data-slot]) {
     scroll-behavior: auto;
   }
 
-  .hero-links [data-slot="button"],
   .hero-carousel-dot,
   .hero-carousel-dot-track {
     transition: none;

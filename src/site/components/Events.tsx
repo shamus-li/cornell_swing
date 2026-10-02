@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react"
-import { XIcon } from "lucide-react"
+import { ClockIcon, MapPinIcon, XIcon } from "lucide-react"
 import { Input } from "../../../check-in/src/components/ui/input"
 import { FloatingField, floatingInputClass } from "../../../check-in/src/components/ui/floating-field"
 import { Button } from "../../../check-in/src/components/ui/button"
@@ -7,6 +7,7 @@ import { largeButtonClass } from "../../../check-in/src/lib/sizes"
 import { formatEventLocation, formatEventDate, formatEventTime, hasEventDetails, scheduleTitle, todayInNewYork, type EventRecord } from "../../events/model"
 import { EventLocation } from "../../events/EventLocation"
 import { Markdown } from "../../events/Markdown"
+import { DateTile } from "../../events/DateTile"
 
 export type EventSnapshot = { events: EventRecord[]; today: string }
 
@@ -66,7 +67,7 @@ function RsvpDialog({ event, onClose }: { event: EventRecord; onClose: () => voi
     {/* The padding lives on this wrapper so only clicks on the backdrop reach the dialog itself. */}
     <div className="event-dialog-body">
     <Button type="button" variant="ghost" size="icon" className="dialog-close" aria-label="Close RSVP" onClick={onClose}><XIcon /></Button>
-    <p className="event-eyebrow">{formatEventDate(event.date)} · {formatEventTime(event)}</p>
+    <p className="event-eyebrow">{formatEventDate(event.date, { weekday: "long", month: "long", day: "numeric" })} · {formatEventTime(event)}</p>
     <h2 id="rsvp-title">{state === "done" ? "See you on the dance floor!" : event.title}</h2>
     {state === "done" ? <div className="event-actions"><CalendarLinks event={event} scope="rsvp" /><Button type="button" onClick={onClose}>Done</Button></div> : <>
       <p className="event-muted"><EventLocation event={event} /></p>
@@ -81,30 +82,85 @@ function RsvpDialog({ event, onClose }: { event: EventRecord; onClose: () => voi
   </dialog>
 }
 
-export function EventSections({ events, today }: EventSnapshot) {
+const nextLesson = ({ events, today }: EventSnapshot) => events.find(event => event.kind === "normal" && event.date >= today)
+
+// The Worker renders this into the hero on each request, like EventSections below it.
+export function NextEvent({ events, today }: EventSnapshot) {
+  // Special events join once their time and place are announced.
+  const event = events.find(event => event.date >= today && (event.kind === "normal" || hasEventDetails(event)))
+  if (!event) return null
+  return <div className="next-event">
+    <p className="next-event-label">Next event</p>
+    {event.kind === "special" && <p className="next-event-name">{event.title}</p>}
+    <div className="next-event-details is-next">
+      <div className="next-event-row">
+        <DateTile date={event.date} />
+        <div><p className="next-event-title">{formatEventDate(event.date, { weekday: "long", month: "long", day: "numeric" })}</p><p className="event-muted">{formatEventTime(event)}</p></div>
+      </div>
+      <div className="next-event-row">
+        <span className="next-event-icon"><MapPinIcon aria-hidden="true" /></span>
+        <p className="next-event-title"><EventLocation event={event} /></p>
+      </div>
+    </div>
+    {event.kind === "normal" && event.description && <div className="next-event-program"><Markdown>{event.description}</Markdown></div>}
+  </div>
+}
+
+// Luma-style switch between upcoming and past events, shown once any event has passed.
+function PastToggle({ showPast, onChange, label }: { showPast: boolean; onChange: (showPast: boolean) => void; label: string }) {
+  return <div className="segmented" role="group" aria-label={label}>
+    <button type="button" aria-pressed={!showPast} onClick={() => onChange(false)}>Upcoming</button>
+    <button type="button" aria-pressed={showPast} onClick={() => onChange(true)}>Past</button>
+  </div>
+}
+
+export function EventSections(snapshot: EventSnapshot) {
+  const { events, today } = snapshot
   const [selected, setSelected] = useState<EventRecord | null>(null)
+  const [showPast, setShowPast] = useState(false)
+  const [showPastSpecial, setShowPastSpecial] = useState(false)
+  const next = nextLesson(snapshot)
+  const special = events.filter(event => event.kind === "special")
+  // Undated special events count as upcoming; they are listed last.
+  const pastSpecial = special.filter(event => event.date && event.date < today)
+  const upcomingSpecial = special.filter(event => !event.date || event.date >= today)
+  const nextSpecial = upcomingSpecial.find(event => event.date)
+  const lessons = events.filter(event => event.kind === "normal")
+  const earlier = lessons.filter(event => event.date < today)
+  const upcoming = lessons.filter(event => event.date >= today)
+  const lesson = (event: EventRecord) => <article key={event.id} id={`event-${event.id}`} className={`schedule-row${event === next ? " is-next" : ""}`}>
+    <DateTile date={event.date} />
+    <div className="schedule-content">
+      <p className="schedule-location icon-line"><MapPinIcon aria-hidden="true" /><span><EventLocation event={event} /></span></p>
+      <div className="schedule-program">{event.description ? <Markdown>{event.description}</Markdown> : <p>Lesson TBA</p>}</div>
+    </div>
+  </article>
   return <>
-    {(["normal", "special"] as const).map(kind => <section id={kind === "normal" ? "schedule" : "special-events"} className="section" key={kind} aria-labelledby={`${kind}-events-title`}>
-      <h2 id={`${kind}-events-title`}>{kind === "normal" ? scheduleTitle(events, today) : "Special events"}</h2>
-      {kind === "normal" && <>
-        <p className="schedule-times"><span>Lesson 8:00–9:00 PM</span> · <span>Social dance 9:00–10:00 PM</span></p>
-        {events.some(event => event.kind === "normal") && <div className="schedule-header" aria-hidden="true"><span>Date</span><span>Location</span><span>Lesson program</span></div>}
-      </>}
-      <div className={kind === "normal" ? "schedule-list" : "event-list"}>{events.filter(event => event.kind === kind).map(event => kind === "normal" ? <article key={event.id} id={`event-${event.id}`} className={`schedule-row${event.date && event.date < today ? " is-past" : ""}`}>
-        <time dateTime={event.date} className="schedule-date">{formatEventDate(event.date)}</time>
-        <div className="schedule-location"><EventLocation event={event} /></div>
-        <div className="schedule-program">{event.description ? <Markdown>{event.description}</Markdown> : <p>TBA</p>}</div>
-      </article> : <article key={event.id} id={`event-${event.id}`} className={`event-row${event.date && event.date < today ? " is-past" : ""}`}>
-        <time dateTime={event.date} className="event-date">{formatEventDate(event.date)}</time>
+    <section id="special-events" className="section" aria-labelledby="special-events-title">
+      <div className="section-heading">
+        <h2 id="special-events-title">Special events</h2>
+        {pastSpecial.length > 0 && <PastToggle showPast={showPastSpecial} onChange={setShowPastSpecial} label="Special events to show" />}
+      </div>
+      <div className="event-list">{(showPastSpecial ? [...pastSpecial].reverse() : upcomingSpecial).map(event => <article key={event.id} id={`event-${event.id}`} className={`event-row${event === nextSpecial ? " is-next" : ""}`}>
+        <DateTile date={event.date} />
         <div className="event-content">
           <h3>{event.title}</h3>
-          <p className="event-meta">{!event.location && !event.room && !event.startTime ? "TBA" : <><EventLocation event={event} /><br />{formatEventTime(event)}</>}</p>
+          {(event.location || event.room || event.startTime) && <div className="event-meta"><p className="icon-line"><ClockIcon aria-hidden="true" /><span>{formatEventTime(event)}</span></p><p className="icon-line"><MapPinIcon aria-hidden="true" /><span><EventLocation event={event} /></span></p></div>}
           <Markdown>{event.description}</Markdown>
           <div className="event-actions">{(!event.date || event.date >= today) && hasEventDetails(event) && <Button onClick={() => setSelected(event)}>RSVP</Button>}<CalendarLinks event={event} /></div>
         </div>
       </article>)}</div>
-      {!events.some(event => event.kind === kind) && <p className="event-muted">Events will be announced here.</p>}
-    </section>)}
+      {!showPastSpecial && upcomingSpecial.length === 0 && <p className="event-muted">Events will be announced here.</p>}
+    </section>
+    <section id="schedule" className="section" aria-labelledby="normal-events-title">
+      <div className="section-heading">
+        <h2 id="normal-events-title">{scheduleTitle(events, today)}</h2>
+        {earlier.length > 0 && <PastToggle showPast={showPast} onChange={setShowPast} label="Weeks to show" />}
+      </div>
+      <p className="schedule-times"><span>Lesson 8:00–9:00 PM</span> · <span>Social dance 9:00–10:00 PM</span></p>
+      <div className="schedule-list">{(showPast ? [...earlier].reverse() : upcoming).map(lesson)}</div>
+      {!showPast && upcoming.length === 0 && <p className="event-muted">Events will be announced here.</p>}
+    </section>
     {selected && <RsvpDialog event={selected} onClose={() => setSelected(null)} />}
   </>
 }

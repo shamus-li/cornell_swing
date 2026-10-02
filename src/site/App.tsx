@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button"
 import { largeButtonClass } from "@/lib/sizes"
 
 import { HeroCarousel } from "./components/HeroCarousel"
-import { EventSections, useEvents, type EventSnapshot } from "./components/Events"
+import { EventSections, NextEvent, useEvents, type EventSnapshot } from "./components/Events"
 import { siteContent } from "./content"
 import { SiteBrand } from "./components/SiteBrand"
 
@@ -17,25 +17,29 @@ export default function App({ initialSchedule }: { initialSchedule?: EventSnapsh
 
       <main id="main">
         <section className="hero" aria-labelledby="hero-title">
-          <h1 id="hero-title">{siteContent.hero.title}</h1>
-          <p>{siteContent.hero.description}</p>
-          <div className="hero-links">
-            {siteContent.hero.actions.map((action) => (
-              <Button
-                key={action.label}
-                asChild
-                variant={action.variant}
-                className={`no-underline ${largeButtonClass}`}
-              >
-                <a href={action.href}>{action.label}</a>
-              </Button>
-            ))}
+          <div className="hero-intro">
+            <h1 id="hero-title">{siteContent.hero.title}</h1>
+            <p>{siteContent.hero.description}</p>
+            <Button asChild className={`no-underline ${largeButtonClass}`}>
+              <a href={siteContent.hero.action.href}>{siteContent.hero.action.label}</a>
+            </Button>
           </div>
+          <div id="next-event"><NextEvent {...snapshot} /></div>
           <HeroCarousel />
         </section>
 
         {error && <p className="event-error" role="alert">{error}</p>}
         <div id="event-sections"><EventSections {...snapshot} /></div>
+
+        <section id="faq" className="section faq" aria-labelledby="faq-title">
+          <h2 id="faq-title">{siteContent.faq.title}</h2>
+          {siteContent.faq.items.map((item) => (
+            <div className="faq-item" key={item.question}>
+              <h3>{item.question}</h3>
+              <p>{item.answer}</p>
+            </div>
+          ))}
+        </section>
 
         <section
           id="etiquette"
@@ -65,16 +69,6 @@ export default function App({ initialSchedule }: { initialSchedule?: EventSnapsh
             </a>
             .
           </p>
-        </section>
-
-        <section id="faq" className="section faq" aria-labelledby="faq-title">
-          <h2 id="faq-title">{siteContent.faq.title}</h2>
-          {siteContent.faq.items.map((item) => (
-            <div className="faq-item" key={item.question}>
-              <h3>{item.question}</h3>
-              <p>{item.answer}</p>
-            </div>
-          ))}
         </section>
 
         <section

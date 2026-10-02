@@ -391,13 +391,13 @@ export default function App() {
             </Select>
           </FloatingField>
 
-          <p className="text-destructive min-h-6 text-base" role="alert">
-            {message}
-          </p>
-
           <Button className={`w-full ${largeButtonClass}`} type="submit" disabled={isSubmitting}>
             {isSubmitting ? "Checking in…" : "Check in"}
           </Button>
+
+          <p className="text-destructive text-base" role="alert">
+            {message}
+          </p>
         </form>
       </main>
     </div>

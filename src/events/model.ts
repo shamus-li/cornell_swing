@@ -26,8 +26,16 @@ export function formatTime(time: string): string {
   const [hour, minute] = time.split(':')
   return `${Number(hour) % 12 || 12}:${minute} ${Number(hour) < 12 ? 'AM' : 'PM'}`
 }
-export const formatEventTime = (event: Pick<EventRecord, 'startTime' | 'endTime'>) => event.startTime ? `${formatTime(event.startTime)}${event.endTime ? `–${formatTime(event.endTime)}` : ''}` : 'TBA'
-export const formatEventDate = (date: string) => date ? `${Number(date.slice(5, 7))}.${Number(date.slice(8, 10))}` : 'TBA'
+// "8:00–10:00 PM", naming AM or PM once unless the range crosses noon.
+export function formatEventTime({ startTime, endTime }: Pick<EventRecord, 'startTime' | 'endTime'>): string {
+  if (!startTime) return 'TBA'
+  if (!endTime) return formatTime(startTime)
+  const start = formatTime(startTime)
+  const end = formatTime(endTime)
+  return start.slice(-2) === end.slice(-2) ? `${start.slice(0, -3)}–${end}` : `${start}–${end}`
+}
+// Formats a YYYY-MM-DD date, e.g. { month: 'short' } gives "Oct". Dates have no time zone, so UTC keeps the day fixed.
+export const formatEventDate = (date: string, options: Intl.DateTimeFormatOptions) => date ? new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', ...options }).format(new Date(`${date}T00:00:00Z`)) : 'TBA'
 
 // RSVPs open once people know when and where to show up.
 export const hasEventDetails = (event: Pick<EventRecord, 'startTime' | 'location' | 'room'>) => Boolean(event.startTime && (event.location || event.room))

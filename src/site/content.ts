@@ -24,16 +24,15 @@ export const siteContent = {
     title: "Criminally Good Dancing.",
     description:
       "Free Lindy Hop every Monday night. No experience or partner required!",
-    actions: [
-      { label: "Get emails", href: mailingListUrl, variant: "default" },
-      { label: "Join", href: campusGroupsUrl, variant: "outline" },
-    ],
+    action: { label: "Join the mailing list", href: mailingListUrl },
+    // objectPosition places each photo's wide desktop crop so faces stay in frame.
     slides: [
       {
         src: hero960,
         srcSet: `${hero480} 480w, ${hero720} 720w, ${hero960} 960w, ${hero1800} 1800w`,
         width: 1800,
         height: 1200,
+        objectPosition: "50% 20%",
         alt: "Swing dancers high-five while other couples dance around them",
       },
       {
@@ -41,6 +40,7 @@ export const siteContent = {
         srcSet: `${hero2_480} 480w, ${hero2_720} 720w, ${hero2_960} 960w, ${hero2_1600} 1600w`,
         width: 1600,
         height: 1067,
+        objectPosition: "50% 15%",
         alt: "Two swing dancers step together while other couples fill the floor",
       },
       {
@@ -48,6 +48,7 @@ export const siteContent = {
         srcSet: `${hero3_480} 480w, ${hero3_720} 720w, ${hero3_960} 960w, ${hero3_1600} 1600w`,
         width: 1600,
         height: 1067,
+        objectPosition: "50% 60%",
         alt: "Couples swing dance across a crowded wooden floor",
       },
       {
@@ -55,6 +56,7 @@ export const siteContent = {
         srcSet: `${hero4_480} 480w, ${hero4_720} 720w, ${hero4_960} 960w, ${hero4_1600} 1600w`,
         width: 1600,
         height: 1067,
+        objectPosition: "50% 45%",
         alt: "Several couples practice swing dancing together in a warmly lit hall",
       },
     ],
@@ -136,7 +138,7 @@ export const siteContent = {
   about: {
     title: "About",
     description:
-      "We teach and promote swing dance to Cornell University students and community members. Our organization focuses on dances called swing dance—dances danced to swing jazz music—such as Lindy Hop, Charleston, Shag, Blues, and Balboa swing dances.",
+      "We teach swing dancing to Cornell students and the Ithaca community. Our lessons cover dances made for swing jazz, including Lindy Hop, Charleston, Shag, Balboa, and blues.",
     links: [
       { label: "CampusGroups", href: campusGroupsUrl },
       { label: "Instagram", href: "https://www.instagram.com/cornell_swing/" },

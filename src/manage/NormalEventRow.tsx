@@ -7,7 +7,8 @@ import { LocationPicker } from "./LocationPicker"
 import { DeleteEventButton } from "./DeleteEventButton"
 import { Markdown } from "../events/Markdown"
 import { formatEventLocation, type EventRecord } from "../events/model"
-import { DateBlock, DraftBadge } from "./EventDate"
+import { DraftBadge } from "./EventDate"
+import { DateTile } from "../events/DateTile"
 import { errorMessage } from "./api"
 
 type Programs = { beginner: string; advanced: string; notes: string }
@@ -93,7 +94,7 @@ export function NormalEventRow({ event, editing, onEdit, onSave, onDelete, onCan
       {error && <p role="alert" className="event-error">{error}</p>}
       <div className="normal-event-actions"><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</Button><Button type="button" variant="outline" onClick={() => void save(!event.published)} disabled={busy}>{event.published ? "Unpublish" : "Publish"}</Button><Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>{event.id && onDelete && <span className="ml-auto"><DeleteEventButton onDelete={onDelete} disabled={busy} onBusyChange={value => { saving.current = value; setBusy(value) }} /></span>}</div>
     </form> : <Button asChild variant="ghost" className="normal-event-summary"><div role="button" tabIndex={0} onClick={e => { e.preventDefault(); onEdit() }} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onEdit() } }}>
-      <DateBlock date={event.date} />
+      <DateTile date={event.date} />
       <div className="event-row-text">
         <span className="event-row-title"><strong>{formatEventLocation(event)}</strong>{!event.published && <DraftBadge />}</span>
         <div className="normal-event-program event-muted">{event.description ? <Markdown>{event.description}</Markdown> : <p>Lesson to be announced</p>}</div>

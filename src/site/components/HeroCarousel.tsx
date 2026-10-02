@@ -119,6 +119,7 @@ export function HeroCarousel() {
                 srcSet={loadImages[index] ? slide.srcSet : undefined}
                 sizes={imageSizes}
                 alt={slide.alt}
+                style={{ objectPosition: slide.objectPosition }}
                 width={slide.width}
                 height={slide.height}
                 loading={index === 0 ? "eager" : "lazy"}
