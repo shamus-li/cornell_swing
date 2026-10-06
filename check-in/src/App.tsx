@@ -8,7 +8,6 @@ import { largeButtonClass } from "@/lib/sizes"
 import {
   Combobox,
   ComboboxContent,
-  ComboboxEmpty,
   ComboboxInput,
   ComboboxItem,
   ComboboxList,
@@ -24,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
+  AFFILIATION_LABELS,
   AFFILIATIONS,
   hasUnusualNameCapitalization,
   isValidName,
@@ -38,6 +38,7 @@ type MembersResponse = {
 
 const MEMBER_SEARCH_DELAY_MS = 75
 const MEMBER_SEARCH_CACHE_LIMIT = 12
+const NO_RESULTS = { key: "", members: [] }
 
 function memberSearchKey(query: string): string {
   return query.toLocaleLowerCase()
@@ -46,15 +47,14 @@ function memberSearchKey(query: string): string {
 function MemberResults() {
   return (
     <ComboboxContent>
-      <ComboboxEmpty className="justify-start px-3 py-2.5 text-left text-base">
-        Don&apos;t see your name? Continue below.
-      </ComboboxEmpty>
       <ComboboxList>
         {(member: Member) => (
           <ComboboxItem key={member.id} value={member} className="items-start px-3 py-2.5 text-base">
             <Person
               name={member.name}
-              detail={[member.email, member.affiliation].filter(Boolean).join(" · ")}
+              detail={[member.email, member.affiliation && AFFILIATION_LABELS[member.affiliation]]
+                .filter(Boolean)
+                .join(" · ")}
             />
           </ComboboxItem>
         )}
@@ -95,7 +95,8 @@ export default function App() {
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [affiliation, setAffiliation] = useState<Affiliation | "">("")
-  const [members, setMembers] = useState<Member[]>([])
+  // Tagged with the search they answer so "Don't see your name?" waits for the current results.
+  const [results, setResults] = useState<{ key: string; members: Member[] }>(NO_RESULTS)
   const [selectedMember, setSelectedMember] = useState<Member | null>(null)
   const [memberSearchOpen, setMemberSearchOpen] = useState(false)
   const [nameFocused, setNameFocused] = useState(false)
@@ -111,23 +112,19 @@ export default function App() {
 
   const query = name.trim()
   const searchKey = memberSearchKey(query)
+  const showNoMatches = !selectedMember && !!query && results.key === searchKey && results.members.length === 0
   const showNameCasePrompt =
     nameTouched && !nameFocused && hasUnusualNameCapitalization(name)
   useEffect(() => {
-    if (selectedMember) {
-      setMembers([])
-      setMemberSearchOpen(false)
-      return
-    }
-    if (!query) {
-      setMembers([])
+    if (selectedMember || !query) {
+      setResults(NO_RESULTS)
       setMemberSearchOpen(false)
       return
     }
 
     const cached = memberSearchCache.current.get(searchKey)
     if (cached) {
-      setMembers(cached)
+      setResults({ key: searchKey, members: cached })
       setMemberSearchOpen(true)
       return
     }
@@ -153,13 +150,13 @@ export default function App() {
           const oldestKey = memberSearchCache.current.keys().next().value
           if (oldestKey) memberSearchCache.current.delete(oldestKey)
         }
-        setMembers(matches)
+        setResults({ key: searchKey, members: matches })
         setMemberSearchOpen(true)
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return
         if (!active) return
         console.error(error)
-        setMembers([])
+        setResults(NO_RESULTS)
         setMemberSearchOpen(false)
       }
     }, MEMBER_SEARCH_DELAY_MS)
@@ -176,7 +173,7 @@ export default function App() {
     setName("")
     setEmail("")
     setAffiliation("")
-    setMembers([])
+    setResults(NO_RESULTS)
     memberSearchCache.current.clear()
     setMemberSearchOpen(false)
     setNameTouched(false)
@@ -209,7 +206,7 @@ export default function App() {
     }
 
     if (!event.currentTarget.checkValidity()) {
-      event.currentTarget.reportValidity()
+      setMessage("Enter a valid email.")
       return
     }
     if (!affiliation) {
@@ -285,7 +282,7 @@ export default function App() {
       <main className="pt-12">
         <h1 className="mb-6 text-[1.75rem] leading-tight font-semibold">Check in</h1>
 
-        <form className="space-y-4" autoComplete="off" onSubmit={submitCheckin}>
+        <form className="space-y-4" autoComplete="off" noValidate onSubmit={submitCheckin}>
           {selectedMember && (
             <div className="flex items-center justify-between gap-3 rounded-lg bg-muted px-3 py-2 text-sm">
               <span className="min-w-0 truncate">
@@ -305,11 +302,11 @@ export default function App() {
           <div>
             <FloatingField id="name" label="Full name" filled={!!name}>
               <Combobox<Member>
-                items={members}
-                filteredItems={members}
+                items={results.members}
+                filteredItems={results.members}
                 value={selectedMember}
                 inputValue={name}
-                open={memberSearchOpen && nameFocused}
+                open={memberSearchOpen && nameFocused && results.members.length > 0}
                 onOpenChange={(open) =>
                   setMemberSearchOpen(open && !selectedMember && !!query)
                 }
@@ -343,6 +340,11 @@ export default function App() {
                 <MemberResults />
               </Combobox>
             </FloatingField>
+            {showNoMatches && (
+              <p className="mt-2 px-3 text-sm leading-5 text-muted-foreground" role="status">
+                Don&apos;t see your name? Continue below.
+              </p>
+            )}
             {showNameCasePrompt && (
               <p
                 id="name-case-prompt"
@@ -365,6 +367,7 @@ export default function App() {
               data-1p-ignore
               value={email}
               onChange={(event) => setEmail(event.target.value)}
+              aria-invalid={message === "Enter a valid email."}
               required
             />
           </FloatingField>
@@ -384,7 +387,7 @@ export default function App() {
               <SelectContent position="popper" align="start">
                 {AFFILIATIONS.map((option) => (
                   <SelectItem key={option} value={option} className="py-2 text-base">
-                    {option}
+                    {AFFILIATION_LABELS[option]}
                   </SelectItem>
                 ))}
               </SelectContent>

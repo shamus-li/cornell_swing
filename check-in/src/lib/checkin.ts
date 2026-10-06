@@ -12,6 +12,18 @@ export const AFFILIATIONS = [
 // Sheet rows keep syncing and existing Notion members keep resolving.
 export type Affiliation = (typeof AFFILIATIONS)[number] | "Student"
 
+// Form wording; Notion and the Sheet keep the shorter stored values.
+export const AFFILIATION_LABELS: Record<Affiliation, string> = {
+  "Graduate/Professional Student": "Cornell Graduate/Professional Student",
+  "Undergraduate Student": "Cornell Undergraduate Student",
+  Postdoc: "Cornell Postdoc",
+  Faculty: "Cornell Faculty",
+  Staff: "Cornell Staff",
+  Alumni: "Cornell Alumni",
+  "Community Member": "Community Member",
+  Student: "Cornell Student",
+}
+
 export type Member = {
   id: string
   name: string

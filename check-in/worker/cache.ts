@@ -1,3 +1,5 @@
+import Fuse from "fuse.js"
+
 import { isAffiliation, type Member } from "../src/lib/checkin"
 import { listMembers } from "./notion"
 import { isRecord } from "./util"
@@ -41,33 +43,19 @@ async function currentMemberSnapshot(env: Env): Promise<MemberSnapshot> {
   return isMemberSnapshot(cached) ? cached : refreshMemberCache(env)
 }
 
+// Typo-tolerant name search; people type their name first, so emails aren't searched.
 export async function searchCachedMembers(
   env: Env,
   query: string,
 ): Promise<Member[]> {
-  const normalizedQuery = normalizeSearchValue(query)
   const snapshot = await currentMemberSnapshot(env)
-  return snapshot.members
-    .map((member) => ({ member, score: memberSearchScore(member, normalizedQuery) }))
-    .filter((result): result is { member: Member; score: number } => result.score !== null)
-    .sort((left, right) => left.score - right.score || left.member.name.localeCompare(right.member.name))
-    .slice(0, 8)
-    .map(({ member }) => member)
+  return new Fuse(snapshot.members, { keys: ["name"], threshold: 0.3, ignoreDiacritics: true })
+    .search(query, { limit: 8 })
+    .map(({ item }) => item)
 }
 
-function normalizeSearchValue(value: string): string {
-  return value.normalize("NFKD").replace(/\p{M}/gu, "").toLocaleLowerCase()
-}
-
-function memberSearchScore(member: Member, query: string): number | null {
-  const name = normalizeSearchValue(member.name)
-  const email = normalizeSearchValue(member.email)
-  if (name === query || email === query) return 0
-  if (email.startsWith(query)) return 1
-  if (name.startsWith(query)) return 2
-  if (name.split(/\s+/).some((part) => part.startsWith(query))) return 3
-  if (name.includes(query) || email.includes(query)) return 4
-  return null
+export async function cachedMembers(env: Env): Promise<Member[]> {
+  return (await currentMemberSnapshot(env)).members
 }
 
 export async function findCachedMemberById(

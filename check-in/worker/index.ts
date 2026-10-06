@@ -7,7 +7,7 @@ import {
   type Affiliation,
   type Member,
 } from "../src/lib/checkin"
-import { findCachedMemberById, searchCachedMembers, storeMemberCache } from "./cache"
+import { cachedMembers, findCachedMemberById, searchCachedMembers, storeMemberCache } from "./cache"
 import {
   type CheckinRow,
   dateKeyForSheetTimestamp,
@@ -152,17 +152,24 @@ export async function handleCheckin(
       )
     }
   } else {
-    const emailMatches = (await searchCachedMembers(env, attendee.email)).filter(
-      (member) => member.email === attendee.email,
-    )
-    const nameMatches = emailMatches.filter(
-      (member) => member.name.toLocaleLowerCase() === attendee.name.toLocaleLowerCase(),
-    )
+    const members = await cachedMembers(env)
+    const sameName = (member: Member) => member.name.toLocaleLowerCase() === attendee.name.toLocaleLowerCase()
+    const emailMatches = members.filter((member) => member.email === attendee.email)
+    const nameMatches = emailMatches.filter(sameName)
+    // Members added to Notion without an email are found by name in the dropdown, so typing the same
+    // name and affiliation links to them too.
+    const emaillessMatches = emailMatches.length
+      ? []
+      : members.filter(
+          (member) => !member.email && sameName(member) && member.affiliation === attendee.affiliation,
+        )
     const member = emailMatches.length === 1
       ? emailMatches[0]
       : nameMatches.length === 1
         ? nameMatches[0]
-        : null
+        : emaillessMatches.length === 1
+          ? emaillessMatches[0]
+          : null
     if (member) attendee.memberId = member.id
   }
 

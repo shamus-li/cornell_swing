@@ -188,49 +188,20 @@ describe("member search", () => {
     expect(notion.queries).toBeGreaterThan(0)
   })
 
-  it("ranks exact and prefix matches before substring matches", async () => {
+  it("matches names despite small typos and does not search emails", async () => {
     await cacheMembers(
-      {
-        id: "Exact_000001",
-        name: "Ada",
-        email: "exact@example.com",
-        affiliation: "Community Member",
-      },
-      {
-        id: "Email_000001",
-        name: "Email Prefix",
-        email: "ada@example.com",
-        affiliation: "Community Member",
-      },
-      {
-        id: "Name__000001",
-        name: "Ada Lovelace",
-        email: "name@example.com",
-        affiliation: "Community Member",
-      },
-      {
-        id: "Token_000001",
-        name: "Grace Ada",
-        email: "token@example.com",
-        affiliation: "Community Member",
-      },
-      {
-        id: "Inside000001",
-        name: "Madam Hopper",
-        email: "inside@example.com",
-        affiliation: "Community Member",
-      },
+      { id: "Bishop000001", name: "Jeff Bishop", email: "jpb6@example.com", affiliation: "Staff" },
+      { id: "Taylor000001", name: "Jeff Taylor", email: "jt@example.com", affiliation: "Staff" },
+      { id: "Accent000001", name: "Zoë Müller", email: "zoe@example.com", affiliation: "Staff" },
+      { id: "Email_000001", name: "Grace Hopper", email: "jeffbishop@example.com", affiliation: "Staff" },
     )
+    const search = async (query: string) => (await searchCachedMembers(env, query)).map((member) => member.id)
 
-    const results = await searchCachedMembers(env, "ADA")
-
-    expect(results.map((member) => member.id)).toEqual([
-      "Exact_000001",
-      "Email_000001",
-      "Name__000001",
-      "Token_000001",
-      "Inside000001",
-    ])
+    expect(await search("jefff")).toEqual(["Bishop000001", "Taylor000001"])
+    expect(await search("jfef bishop")).toEqual(["Bishop000001"])
+    expect(await search("zoe muller")).toEqual(["Accent000001"])
+    expect(await search("hopper")).toEqual(["Email_000001"])
+    expect(await search("jpb6")).toEqual([])
   })
 
   it("keys the rate limit by Access identity and returns 429 when it trips", async () => {
@@ -382,6 +353,29 @@ describe("check-in", () => {
 
     expect(response.status).toBe(201)
     expect(sheets.rows[0][4]).toBe(SHAMUS_MEMBER_ID)
+  })
+
+  it("links a typed check-in to a same-name, same-affiliation member who has no email", async () => {
+    const { sheets } = useFakes()
+    await cacheMembers({ id: ADA_MEMBER_ID, name: "Ada Lovelace", email: "", affiliation: "Community Member" })
+
+    const typed = await handleCheckin(
+      checkinRequest({ memberId: null, name: "ada lovelace", email: "ada@example.com", affiliation: "Community Member" }),
+      env,
+      token,
+      TEST_TIMESTAMP,
+    )
+    const otherAffiliation = await handleCheckin(
+      checkinRequest({ memberId: null, name: "Ada Lovelace", email: "ada2@example.com", affiliation: "Staff" }),
+      env,
+      token,
+      TEST_TIMESTAMP,
+    )
+
+    expect(typed.status).toBe(201)
+    expect(otherAffiliation.status).toBe(201)
+    expect(sheets.rows[0][4]).toBe(ADA_MEMBER_ID)
+    expect(sheets.rows[1][4]).not.toBe(ADA_MEMBER_ID)
   })
 
   it("lets two members who share an email check in separately", async () => {
