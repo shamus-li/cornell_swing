@@ -36,6 +36,11 @@ export function CampusGroupsUpload() {
 
   return <section className="sheet-connection" aria-labelledby="campusgroups-title">
     <h2 id="campusgroups-title">CampusGroups members</h2>
+    <ol className="event-note campusgroups-steps">
+      <li>Open <a href="https://cornell.campusgroups.com/members_list" target="_blank" rel="noreferrer">Members</a> in CampusGroups.</li>
+      <li>Filter to all members and select all.</li>
+      <li>Click Get Report and upload the CSV here.</li>
+    </ol>
     {error && <p role="alert" className="event-error">{error}</p>}
     {!summary && !error && <p role="status" className="event-muted">Loading member list…</p>}
     {busy && <p role="status" className="event-muted">Uploading…</p>}

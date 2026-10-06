@@ -85,6 +85,8 @@ html:has(.manage-page) { scroll-behavior: auto; }
 
 /* Settings */
 .sheet-connection { display: grid; gap: 12px; padding: 16px; border-radius: 12px; background: var(--muted); }
+.campusgroups-steps { list-style: decimal; padding-left: 1.25rem; }
+.campusgroups-steps a { color: var(--foreground); text-decoration: underline; }
 .sheet-connection h2 { font: 600 1rem/1.4 var(--sans); }
 .sheet-connection p { margin: 0; }
 .sheet-connection-actions, .sheet-connection-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
