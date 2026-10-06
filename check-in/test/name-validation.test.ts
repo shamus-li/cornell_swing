@@ -4,6 +4,7 @@ import {
   hasUnusualNameCapitalization,
   isValidName,
   normalizeName,
+  signatureMatchesName,
 } from "../src/lib/checkin"
 
 describe("name validation", () => {
@@ -25,5 +26,12 @@ describe("name validation", () => {
     expect(hasUnusualNameCapitalization("SHAMUS LI")).toBe(true)
     expect(hasUnusualNameCapitalization("Shamus Li")).toBe(false)
     expect(hasUnusualNameCapitalization("张伟")).toBe(false)
+  })
+
+  it("accepts a signature that differs from the name only in capitalization, spacing, or accents", () => {
+    expect(signatureMatchesName("  josé   o’neill ", "José O’Neill")).toBe(true)
+    expect(signatureMatchesName("Jose O’Neill", "José O’Neill")).toBe(true)
+    expect(signatureMatchesName("José", "José O’Neill")).toBe(false)
+    expect(signatureMatchesName(" ", "")).toBe(false)
   })
 })

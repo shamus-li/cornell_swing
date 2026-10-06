@@ -32,10 +32,15 @@ export type Member = {
   affiliation: Affiliation | ""
 }
 
-// What an attendee still needs to do after checking in.
-export type NextSteps =
-  | { waiver: "non-cornell" }
-  | { waiver: "cornell" | null; joinCampusGroups: boolean }
+// Alumni no longer have Cornell accounts, so they sign the non-Cornell participant waiver like
+// community members, before their check-in is recorded.
+export const PARTICIPANT_WAIVER_AFFILIATIONS: Affiliation[] = ["Community Member", "Alumni"]
+
+// A paragraph or bullet of the CampusGroups waiver, with its bold and italic text.
+export type WaiverBlock = { list: boolean; runs: { text: string; bold: boolean; italic: boolean }[] }
+
+// What a Cornell affiliate still needs to do after checking in.
+export type NextSteps = { waiver: "cornell" | null; joinCampusGroups: boolean }
 
 // Formats US numbers as (607) 555-1234 and others as +<digits>; returns "" when it isn't a phone number.
 export function normalizePhone(value: string): string {
@@ -52,6 +57,13 @@ export function normalizeName(value: string): string {
 export function isValidName(value: string): boolean {
   const name = normalizeName(value)
   return name.length <= 160 && /\p{L}/u.test(name) && !/[\p{Cc}\p{Cs}]/u.test(name)
+}
+
+// A waiver signature must be the attendee's name, ignoring capitalization, spacing, and accents.
+export function signatureMatchesName(signature: string, name: string): boolean {
+  const simplify = (value: string) =>
+    normalizeName(value).normalize("NFKD").replace(/\p{M}/gu, "").toLocaleLowerCase()
+  return simplify(signature) !== "" && simplify(signature) === simplify(name)
 }
 
 export function hasUnusualNameCapitalization(value: string): boolean {

@@ -285,7 +285,7 @@ describe("check-in", () => {
     expect(sheets.rows[0][5]).toBe("(607) 555-0100")
   })
 
-  it("sends non-Cornell attendees to the participant waiver and Cornell affiliates to what they still need", async () => {
+  it("tells Cornell affiliates what they still need and asks nothing more of non-Cornell attendees", async () => {
     useFakes()
     await env.MEMBER_CACHE.put("campusgroups:v1", JSON.stringify({
       uploadedAt: "2026-10-01T00:00:00.000Z",
@@ -299,8 +299,8 @@ describe("check-in", () => {
       return ((await response.json()) as { next: unknown }).next
     }
 
-    expect(await nextFor("guest@example.com", "Community Member")).toEqual({ waiver: "non-cornell" })
-    expect(await nextFor("alum@example.com", "Alumni")).toEqual({ waiver: "non-cornell" })
+    expect(await nextFor("guest@example.com", "Community Member")).toEqual({ waiver: null, joinCampusGroups: false })
+    expect(await nextFor("alum@example.com", "Alumni")).toEqual({ waiver: null, joinCampusGroups: false })
     expect(await nextFor("signed@cornell.edu", "Staff")).toEqual({ waiver: null, joinCampusGroups: false })
     expect(await nextFor("contact@cornell.edu", "Faculty")).toEqual({ waiver: null, joinCampusGroups: true })
     expect(await nextFor("unknown@cornell.edu", "Undergraduate Student")).toEqual({ waiver: "cornell", joinCampusGroups: true })

@@ -11,7 +11,7 @@ import { network } from "./network"
 const SIGNER = { name: "Nora Murphy", email: "nora@example.com", phone: "6075550100", signature: "Nora Murphy" }
 
 const FORM_HTML = `<html><body>
-<div class="page_intro"><style>.x{}</style><p>Assumption &amp; Risk</p><p>I agree to the &ldquo;Event&rdquo; terms.</p></div>
+<div class="page_intro"><style>.x{}</style><p><b>Assumption &amp; Risk</b></p><p><b>WARNINGS</b>: I agree to the &ldquo;Event&rdquo; <b><i>terms</i></b>.<br>I am fit.</p><ul><li>I am of age.</li></ul></div>
 <form id="survey" method="post" action="https://cornell.campusgroups.com/survey">
   <input type="hidden" name="_csrf" value="token" />
   <input type="hidden" name="survey_uid" value="cbbab8ae" />
@@ -44,20 +44,34 @@ function waiverRequest(init?: RequestInit): Request {
 }
 
 beforeEach(async () => {
+  for (const { name } of (await env.MEMBER_CACHE.list({ prefix: "waiver-form-alert:" })).keys) await env.MEMBER_CACHE.delete(name)
   await env.EVENTS_DB.exec("DROP TABLE IF EXISTS rsvps")
   await env.EVENTS_DB.exec("DROP TABLE IF EXISTS events")
   await env.EVENTS_DB.exec(migration.replaceAll("\n", " "))
 })
 
 describe("participant waiver", () => {
-  it("shows the waiver text and names a lesson night after its date", async () => {
+  it("shows the waiver with its bold, italic, and bulleted text and names a lesson night after its date", async () => {
     useCampusGroups()
 
     const response = await handleApiRequest(waiverRequest(), env)
 
     const today = new Intl.DateTimeFormat("en-US", { timeZone: env.TIME_ZONE, month: "long", day: "numeric", year: "numeric" }).format(new Date())
     expect(await response.json()).toEqual({
-      paragraphs: ["Assumption & Risk", "I agree to the “Event” terms."],
+      blocks: [
+        { list: false, runs: [{ text: "Assumption & Risk", bold: true, italic: false }] },
+        {
+          list: false,
+          runs: [
+            { text: "WARNINGS", bold: true, italic: false },
+            { text: ": I agree to the “Event” ", bold: false, italic: false },
+            { text: "terms", bold: true, italic: true },
+            { text: ".", bold: false, italic: false },
+          ],
+        },
+        { list: false, runs: [{ text: "I am fit.", bold: false, italic: false }] },
+        { list: true, runs: [{ text: "I am of age.", bold: false, italic: false }] },
+      ],
       eventName: `${today} Swing Dance`,
     })
   })
@@ -93,21 +107,28 @@ describe("participant waiver", () => {
     })
   })
 
-  it("requires a signature and refuses to submit when the form's fields change", async () => {
+  it("requires the signer's own name as the signature, and skips the waiver and emails once a day when the form's fields change", async () => {
     useCampusGroups()
+    const send = vi.fn(async () => ({ messageId: "message" }))
+    const alertEnv = { ...env, ALERT_EMAIL: { send } } as unknown as Env
     const post = (body: unknown) => handleApiRequest(waiverRequest({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    }), env)
+    }), alertEnv)
 
     expect((await post({ ...SIGNER, signature: " " })).status).toBe(400)
+    const wrongName = await post({ ...SIGNER, signature: "Someone Else" })
+    expect(wrongName.status).toBe(400)
+    expect(await wrongName.json()).toEqual({ message: "Sign with your full name: Nora Murphy" })
 
     network.use(http.get("https://cornell.campusgroups.com/RMI/survey", () =>
       new HttpResponse(FORM_HTML.replace("free_text_49c9efdc", "free_text_renamed"), { headers: { "Content-Type": "text/html" } })))
     const changed = await post(SIGNER)
     expect(changed.status).toBe(503)
-    expect(await changed.json()).toEqual({ message: "The waiver form changed. Ask an officer for help." })
+    expect(await changed.json()).toEqual({ formChanged: true })
+    expect(await (await handleApiRequest(waiverRequest(), alertEnv)).json()).toEqual({ formChanged: true })
+    expect(send).toHaveBeenCalledTimes(1)
   })
 
   it("emails an officer each morning only while the form is missing a field", async () => {

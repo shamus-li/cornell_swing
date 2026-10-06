@@ -1,3 +1,4 @@
+import type { WaiverBlock } from "../src/lib/checkin"
 import { dateKeyInTimeZone } from "./google"
 import { isRecord } from "./util"
 
@@ -21,7 +22,7 @@ type WaiverForm = {
   cookies: Map<string, string>
   hidden: Record<string, string>
   endpoint: string
-  paragraphs: string[]
+  blocks: WaiverBlock[]
 }
 
 const ENTITIES: Record<string, string> = {
@@ -61,8 +62,12 @@ export async function loadWaiverForm(): Promise<WaiverForm> {
 
   const hidden: Record<string, string> = {}
   const fieldNames = new Set<string>()
-  const chunks: string[] = []
+  // The waiver's paragraphs and bullets, with bold and italic text kept as CampusGroups shows it.
+  const blocks: WaiverBlock[] = []
+  const startBlock = (list: boolean) => blocks.push({ list, runs: [] })
   let skipped = 0
+  let bold = 0
+  let italic = 0
   await new HTMLRewriter()
     .on("#survey input, #survey select", {
       element(element) {
@@ -78,24 +83,60 @@ export async function loadWaiverForm(): Promise<WaiverForm> {
         element.onEndTag(() => { skipped -= 1 })
       },
     })
-    .on(".page_intro p, .page_intro div, .page_intro br, .page_intro li, .page_intro h1, .page_intro h2, .page_intro h3, .page_intro h4", {
-      element() { chunks.push("\n") },
+    .on(".page_intro p, .page_intro div, .page_intro h1, .page_intro h2, .page_intro h3, .page_intro h4", {
+      element() { startBlock(false) },
+    })
+    // A line break continues a bullet as another bullet and a paragraph as another paragraph.
+    .on(".page_intro li, .page_intro br", {
+      element(element) { startBlock(element.tagName === "li" || blocks.at(-1)?.list === true) },
+    })
+    .on(".page_intro b, .page_intro strong", {
+      element(element) {
+        bold += 1
+        element.onEndTag(() => { bold -= 1 })
+      },
+    })
+    .on(".page_intro i, .page_intro em", {
+      element(element) {
+        italic += 1
+        element.onEndTag(() => { italic -= 1 })
+      },
     })
     .on(".page_intro", {
-      text(text) { if (!skipped) chunks.push(text.text) },
+      text(text) {
+        if (skipped || !text.text) return
+        if (blocks.length === 0) startBlock(false)
+        blocks.at(-1)!.runs.push({ text: text.text, bold: bold > 0, italic: italic > 0 })
+      },
     })
     .transform(new Response(html))
     .arrayBuffer()
 
   const endpoint = html.match(/\/survey_submission_endpoint\?[^`"'\s]+/)?.[0]
-  const paragraphs = decodeEntities(chunks.join(""))
-    .split("\n")
-    .map((line) => line.replace(/\s+/g, " ").trim())
-    .filter(Boolean)
-  if (!endpoint || !hidden._csrf || paragraphs.length === 0 || !Object.values(FIELDS).every((name) => fieldNames.has(name))) {
+  const waiver = blocks.map(tidyBlock).filter((block) => block.runs.length > 0)
+  if (!endpoint || !hidden._csrf || waiver.length === 0 || !Object.values(FIELDS).every((name) => fieldNames.has(name))) {
     throw new WaiverFormChanged("The CampusGroups waiver form changed")
   }
-  return { cookies, hidden, endpoint, paragraphs }
+  return { cookies, hidden, endpoint, blocks: waiver }
+}
+
+// Joins neighboring text with the same style, then decodes it and collapses whitespace like a browser.
+function tidyBlock(block: WaiverBlock): WaiverBlock {
+  const merged: WaiverBlock["runs"] = []
+  for (const run of block.runs) {
+    const previous = merged.at(-1)
+    if (previous && previous.bold === run.bold && previous.italic === run.italic) previous.text += run.text
+    else merged.push({ ...run })
+  }
+  const runs: WaiverBlock["runs"] = []
+  for (const run of merged) {
+    let text = decodeEntities(run.text).replace(/\s+/g, " ")
+    if (runs.length === 0 || runs[runs.length - 1].text.endsWith(" ")) text = text.trimStart()
+    if (text) runs.push({ ...run, text })
+  }
+  const last = runs.at(-1)
+  if (last) last.text = last.text.trimEnd()
+  return { list: block.list, runs: runs.filter((run) => run.text) }
 }
 
 // One event per day: a special event uses its title, and a weekly lesson is "<date> Swing Dance".
@@ -108,9 +149,9 @@ export async function waiverEventName(env: Env, timestamp = Date.now()): Promise
   return `${day} Swing Dance`
 }
 
-export async function readWaiver(env: Env): Promise<{ paragraphs: string[]; eventName: string }> {
+export async function readWaiver(env: Env): Promise<{ blocks: WaiverBlock[]; eventName: string }> {
   const [form, eventName] = await Promise.all([loadWaiverForm(), waiverEventName(env)])
-  return { paragraphs: form.paragraphs, eventName }
+  return { blocks: form.blocks, eventName }
 }
 
 export async function submitWaiver(

@@ -5,6 +5,8 @@ import {
   isValidName,
   normalizeName,
   normalizePhone,
+  PARTICIPANT_WAIVER_AFFILIATIONS,
+  signatureMatchesName,
   type Affiliation,
   type NextSteps,
   type Member,
@@ -48,8 +50,6 @@ const CHECKIN_PATH = "/check-in/api/checkins"
 const WAIVER_PATH = "/check-in/api/waiver"
 // The morning cron that checks the CampusGroups waiver form; the others run the attendance sync.
 const WAIVER_CHECK_CRON = "30 11 * * *"
-// Alumni no longer have Cornell accounts, so they sign the non-Cornell waiver like community members.
-const NON_CORNELL_AFFILIATIONS: Affiliation[] = ["Community Member", "Alumni"]
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 type Attendee = {
   memberId: string | null
@@ -207,7 +207,7 @@ export async function handleCheckin(
 
 // What the attendee still needs to do after checking in, from the latest CampusGroups member upload.
 async function nextSteps(env: Env, attendee: Attendee): Promise<NextSteps> {
-  if (NON_CORNELL_AFFILIATIONS.includes(attendee.affiliation)) return { waiver: "non-cornell" }
+  if (PARTICIPANT_WAIVER_AFFILIATIONS.includes(attendee.affiliation)) return { waiver: null, joinCampusGroups: false }
   const campusGroups = await env.MEMBER_CACHE.get<CampusGroupsData>(campusGroupsKey, "json")
   const person = campusGroups?.people[attendee.email]
   return { waiver: person?.generalRisk ? null : "cornell", joinCampusGroups: !person?.member }
@@ -228,6 +228,9 @@ async function handleWaiver(request: Request, env: Env): Promise<Response> {
   const signature = isRecord(payload) && typeof payload.signature === "string" ? normalizeName(payload.signature) : ""
   if (!isValidName(name) || !EMAIL_PATTERN.test(email) || !phone || !isValidName(signature)) {
     return json({ message: "Enter your name, email, phone number, and signature." }, 400)
+  }
+  if (!signatureMatchesName(signature, name)) {
+    return json({ message: `Sign with your full name: ${name}` }, 400)
   }
   const timestamp = Date.now()
   const eventName = await waiverEventName(env, timestamp)
@@ -504,7 +507,16 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
       if (request.method !== "POST") return json({ message: "Method not allowed" }, 405)
       return await handleCheckin(request, env)
     }
-    if (pathname === WAIVER_PATH) return await handleWaiver(request, env)
+    if (pathname === WAIVER_PATH) {
+      try {
+        return await handleWaiver(request, env)
+      } catch (error) {
+        if (!(error instanceof WaiverFormChanged)) throw error
+        // The kiosk skips the waiver without telling the attendee; an officer gets the email.
+        await alertWaiverFormChanged(env)
+        return json({ formChanged: true }, 503)
+      }
+    }
     return json({ message: "Not found" }, 404)
   } catch (error) {
     console.error(
@@ -517,32 +529,38 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     const message = pathname === MEMBER_SEARCH_PATH
       ? "Member search unavailable"
       : pathname === WAIVER_PATH
-        ? error instanceof WaiverFormChanged
-          ? "The waiver form changed. Ask an officer for help."
-          : "Couldn't reach CampusGroups. Try again."
+        ? "Couldn't reach CampusGroups. Try again."
         : "Check-in failed"
     return json({ message }, 503)
   }
 }
 
-// Emails an officer when the CampusGroups waiver form no longer has the fields the kiosk fills in.
-// The kiosk refuses to submit until the form is fixed, so this is the cue to update waiver.ts.
+// Checked each morning so a changed form is caught before the next event.
 export async function checkWaiverForm(env: Env): Promise<void> {
   try {
     await loadWaiverForm()
   } catch (error) {
     if (!(error instanceof WaiverFormChanged)) throw error
-    await env.ALERT_EMAIL.send({
-      to: "wl757@cornell.edu",
-      from: { email: "check-in@swingsyndicate.club", name: "Swing Syndicate check-in" },
-      subject: "The CampusGroups waiver form changed",
-      text: [
-        "The check-in kiosk can't fill in the non-Cornell participant waiver anymore, so community members can't sign it at check-in.",
-        `Form: ${WAIVER_FORM_URL}`,
-        "Update the field names in check-in/worker/waiver.ts to match the form.",
-      ].join("\n\n"),
-    })
+    await alertWaiverFormChanged(env)
   }
+}
+
+// Emails an officer, at most once a day, when the CampusGroups waiver form no longer has the fields
+// the kiosk fills in. The kiosk skips the waiver until waiver.ts is updated to match.
+async function alertWaiverFormChanged(env: Env): Promise<void> {
+  const key = `waiver-form-alert:${dateKeyInTimeZone(Date.now(), env.TIME_ZONE)}`
+  if (await env.MEMBER_CACHE.get(key)) return
+  await env.ALERT_EMAIL.send({
+    to: "wl757@cornell.edu",
+    from: { email: "check-in@swingsyndicate.club", name: "Swing Syndicate check-in" },
+    subject: "The CampusGroups waiver form changed",
+    text: [
+      "The check-in kiosk can't fill in the non-Cornell participant waiver anymore, so it skips the waiver for community members and alumni.",
+      `Form: ${WAIVER_FORM_URL}`,
+      "Update the field names in check-in/worker/waiver.ts to match the form.",
+    ].join("\n\n"),
+  })
+  await env.MEMBER_CACHE.put(key, "sent", { expirationTtl: 2 * 24 * 60 * 60 })
 }
 
 export default {

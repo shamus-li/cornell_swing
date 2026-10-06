@@ -16,7 +16,7 @@ import {
 import { FloatingField, floatingInputClass } from "@/components/ui/floating-field"
 import { Input } from "@/components/ui/input"
 import { Person } from "@/components/ui/person"
-import { NonCornellWaiver } from "@/Waiver"
+import { forgetWaiver, NonCornellWaiver, preloadWaiver } from "@/Waiver"
 import {
   Select,
   SelectContent,
@@ -31,6 +31,7 @@ import {
   isValidName,
   normalizeName,
   normalizePhone,
+  PARTICIPANT_WAIVER_AFFILIATIONS,
   type Affiliation,
   type Member,
   type NextSteps,
@@ -43,6 +44,14 @@ type MembersResponse = {
 const MEMBER_SEARCH_DELAY_MS = 75
 const MEMBER_SEARCH_CACHE_LIMIT = 12
 const NO_RESULTS = { key: "", members: [] }
+
+type Attendee = {
+  memberId: string | null
+  name: string
+  email: string
+  phone: string
+  affiliation: Affiliation
+}
 
 function memberSearchKey(query: string): string {
   return query.toLocaleLowerCase()
@@ -100,7 +109,12 @@ export default function App() {
       : null,
   )
   const [next, setNext] = useState<NextSteps | null>(null)
+  const [waiverAttendee, setWaiverAttendee] = useState<Attendee | null>(null)
   const memberSearchCache = useRef(new Map<string, Member[]>())
+
+  useEffect(() => {
+    if (affiliation && PARTICIPANT_WAIVER_AFFILIATIONS.includes(affiliation)) preloadWaiver().catch(() => {})
+  }, [affiliation])
 
   const query = name.trim()
   const searchKey = memberSearchKey(query)
@@ -214,7 +228,6 @@ export default function App() {
       return
     }
 
-    setIsSubmitting(true)
     const attendee = {
       memberId: selectedMember?.id ?? null,
       name: normalizedName,
@@ -222,7 +235,18 @@ export default function App() {
       phone: normalizedPhone,
       affiliation,
     }
+    if (PARTICIPANT_WAIVER_AFFILIATIONS.includes(affiliation)) {
+      setWaiverAttendee(attendee)
+      return
+    }
+    setIsSubmitting(true)
+    const error = await checkIn(attendee)
+    if (error) setMessage(error)
+    setIsSubmitting(false)
+  }
 
+  // Records the check-in and shows the confirmation; returns an error message when it fails.
+  async function checkIn(attendee: Attendee): Promise<string | null> {
     try {
       const response = await fetch("api/checkins", {
         method: "POST",
@@ -235,6 +259,7 @@ export default function App() {
       }
 
       setNext(payload.next ?? null)
+      setWaiverAttendee(null)
       const firstName = attendee.name.split(/\s+/)[0]
       setConfirmation(
         response.status === 409
@@ -243,22 +268,20 @@ export default function App() {
             ? `Checked in, ${firstName}!`
             : "Checked in!",
       )
+      return null
     } catch (error) {
       console.error(error)
       // fetch rejects with a TypeError when the request never reached the server.
-      setMessage(
-        error instanceof TypeError
-          ? "Couldn't reach the server. Check the Wi-Fi connection and try again."
-          : error instanceof Error
-            ? error.message
-            : "Check-in failed. Please try again.",
-      )
-    } finally {
-      setIsSubmitting(false)
+      return error instanceof TypeError
+        ? "Couldn't reach the server. Check the Wi-Fi connection and try again."
+        : error instanceof Error
+          ? error.message
+          : "Check-in failed. Please try again."
     }
   }
 
   function resetForm() {
+    forgetWaiver()
     clearSelectedMember()
     setConfirmation(null)
     setNext(null)
@@ -268,30 +291,43 @@ export default function App() {
     return (
       <main className="mx-auto flex min-h-svh w-full max-w-[540px] flex-col items-center justify-center gap-6 px-5 py-12 text-center sm:gap-8">
         <h1 className="text-[1.75rem] leading-tight font-semibold">{confirmation}</h1>
-        {next?.waiver === "non-cornell" ? (
-          <NonCornellWaiver name={name} email={email.trim().toLowerCase()} phone={phone} onDone={resetForm} />
-        ) : (
-          <>
-            {next?.waiver === "cornell" && (
-              <QrCallout
-                title="Sign the General Risk waiver"
-                detail="Scan to sign with your NetID."
-                src={waiverQrUrl}
-              />
-            )}
-            {next?.joinCampusGroups && (
-              <QrCallout
-                title="Join Swing Syndicate on CampusGroups"
-                detail="Scan to become a member."
-                src={campusGroupsQrUrl}
-              />
-            )}
-            <Button className={largeButtonClass} onClick={resetForm}>
-              Check in another person
-            </Button>
-          </>
+        {next?.waiver === "cornell" && (
+          <QrCallout
+            title="Sign the General Risk waiver"
+            detail="Scan to sign with your NetID."
+            src={waiverQrUrl}
+          />
         )}
+        {next?.joinCampusGroups && (
+          <QrCallout
+            title="Join Swing Syndicate on CampusGroups"
+            detail="Scan to become a member."
+            src={campusGroupsQrUrl}
+          />
+        )}
+        <Button className={largeButtonClass} onClick={resetForm}>
+          Check in another person
+        </Button>
       </main>
+    )
+  }
+
+  if (waiverAttendee) {
+    return (
+      <div className="mx-auto min-h-svh w-full max-w-[620px] px-5 pb-12">
+        <header className="flex h-16 items-center">
+          <SiteBrand />
+        </header>
+        <main className="pt-12">
+          <NonCornellWaiver
+            name={waiverAttendee.name}
+            email={waiverAttendee.email}
+            phone={waiverAttendee.phone}
+            onBack={() => setWaiverAttendee(null)}
+            onComplete={() => checkIn(waiverAttendee)}
+          />
+        </main>
+      </div>
     )
   }
 
