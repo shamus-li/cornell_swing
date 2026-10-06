@@ -135,9 +135,9 @@ export async function readCheckins(env: Env, accessToken: string): Promise<Check
       timestamp: sheetValue(source[0]),
       name: stringValue(source[1]).trim(),
       email: stringValue(source[2]).trim().toLowerCase(),
-      affiliation: stringValue(source[3]),
-      memberId: stringValue(source[4]).trim(),
-      phone: stringValue(source[5]).trim(),
+      phone: stringValue(source[3]).trim(),
+      affiliation: stringValue(source[4]),
+      memberId: stringValue(source[5]).trim(),
     }
   })
 }
@@ -153,7 +153,7 @@ export async function readCheckinKeys(
   dateKey: string,
 ): Promise<string[]> {
   const url = new URL(`${spreadsheetUrl(env)}/values:batchGet`)
-  for (const range of ["A2:A", "C2:C", "E2:E"]) {
+  for (const range of ["A2:A", "C2:C", "F2:F"]) {
     url.searchParams.append("ranges", sheetRange(env, range))
   }
   url.searchParams.set("valueRenderOption", "UNFORMATTED_VALUE")
@@ -328,9 +328,9 @@ export async function appendCheckin(
       timestampForSheet(timestamp, env.TIME_ZONE),
       attendee.name,
       attendee.email,
+      attendee.phone,
       attendee.affiliation,
       attendee.memberId,
-      attendee.phone,
     ],
   ])
 }
@@ -354,7 +354,7 @@ export async function updateCheckinRow(
     throw new Error(`Check-in row ${row.rowNumber} changed while syncing`)
   }
   await updateValues(env, accessToken, `B${row.rowNumber}:F${row.rowNumber}`, [
-    [values.name, values.email, values.affiliation, values.memberId, values.phone],
+    [values.name, values.email, values.phone, values.affiliation, values.memberId],
   ])
 }
 
@@ -381,10 +381,10 @@ export async function readWaivers(env: Env, accessToken: string): Promise<Waiver
 export async function appendWaiver(
   env: Env,
   accessToken: string,
-  signer: { name: string; email: string; phone: string; eventName: string },
+  signer: { name: string; email: string; phone: string; eventName: string; responseId: string },
   timestamp: number,
 ): Promise<void> {
   await appendRows(env, accessToken, WAIVER_SHEET_NAME, [
-    [timestampForSheet(timestamp, env.TIME_ZONE), signer.name, signer.email, signer.phone, signer.eventName],
+    [timestampForSheet(timestamp, env.TIME_ZONE), signer.name, signer.email, signer.phone, signer.eventName, signer.responseId],
   ])
 }

@@ -36,7 +36,7 @@ function useFakes() {
 }
 
 const row = (timestamp: number, name: string, email: string, memberId: string, affiliation = "Community Member") =>
-  [timestamp, name, email, affiliation, memberId]
+  [timestamp, name, email, "", affiliation, memberId]
 
 async function quietly<T>(run: () => Promise<T>): Promise<T> {
   const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
@@ -92,10 +92,10 @@ describe("the Sheet as the source of truth", () => {
     sheets.beforeRowRead = () => sheets.rows.reverse()
 
     await quietly(() => expect(runNightlySync(env, token)).rejects.toThrow("1 failed"))
-    expect(sheets.rows.map((cells) => cells[4])).toEqual(["Grace_000001", ""])
+    expect(sheets.rows.map((cells) => cells[5])).toEqual(["Grace_000001", ""])
 
     expect(await runNightlySync(env, token)).toEqual({ synced: 2, failed: 0 })
-    expect(sheets.rows.find((cells) => cells[2] === "ada@example.com")![4]).toMatch(/^[A-Za-z0-9_-]{12}$/)
+    expect(sheets.rows.find((cells) => cells[2] === "ada@example.com")![5]).toMatch(/^[A-Za-z0-9_-]{12}$/)
   })
 })
 
@@ -108,7 +108,7 @@ describe("Notion pages changed by hand", () => {
     expect(await runNightlySync(env, token)).toEqual({ synced: 1, failed: 0 })
     expect(notion.members).toHaveLength(1)
     expect(notion.members[0].memberId).toMatch(/^[A-Za-z0-9_-]{12}$/)
-    expect(sheets.rows[0][4]).toBe(notion.members[0].memberId)
+    expect(sheets.rows[0][5]).toBe(notion.members[0].memberId)
     expect(notion.events[0].attendees).toEqual([notion.members[0].pageId])
   })
 

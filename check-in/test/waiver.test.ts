@@ -33,7 +33,7 @@ function useCampusGroups() {
       HttpResponse.text(JSON.stringify({ canSubmit: true }))),
     http.post("https://cornell.campusgroups.com/survey", async ({ request }) => {
       submissions.push({ cookie: request.headers.get("Cookie"), body: new URLSearchParams(await request.text()) })
-      return new HttpResponse(null, { status: 302, headers: { Location: "/confirmation?type=survey_submission&embed=1" } })
+      return new HttpResponse(null, { status: 302, headers: { Location: "/confirmation?type=survey_submission&embed=1&type_uid1=cbbab8ae&type_uid2=response-1" } })
     }),
   )
   return submissions
@@ -92,7 +92,7 @@ describe("participant waiver", () => {
     }), { ...env, GOOGLE_PRIVATE_KEY: await exportPKCS8(privateKey) })
 
     expect(response.status).toBe(201)
-    expect(sheets.waivers).toEqual([[expect.any(Number), "Nora Murphy", "nora@example.com", "(607) 555-0100", "Fall Formal"]])
+    expect(sheets.waivers).toEqual([[expect.any(Number), "Nora Murphy", "nora@example.com", "(607) 555-0100", "Fall Formal", "response-1"]])
     expect(submissions).toHaveLength(1)
     const [{ cookie, body }] = submissions
     expect(cookie).toContain("CG.SessionID=session")

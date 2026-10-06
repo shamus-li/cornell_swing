@@ -234,10 +234,10 @@ async function handleWaiver(request: Request, env: Env): Promise<Response> {
   }
   const timestamp = Date.now()
   const eventName = await waiverEventName(env, timestamp)
-  await submitWaiver({ name, phone, signature }, eventName)
+  const responseId = await submitWaiver({ name, phone, signature }, eventName)
   // CampusGroups holds the signed waiver, so a failed log entry shouldn't make the attendee sign again.
   try {
-    await appendWaiver(env, await getGoogleAccessToken(env), { name, email, phone, eventName }, timestamp)
+    await appendWaiver(env, await getGoogleAccessToken(env), { name, email, phone, eventName, responseId }, timestamp)
   } catch (error) {
     console.error(JSON.stringify({ message: "waiver log append failed", email, error: errorMessage(error) }))
   }

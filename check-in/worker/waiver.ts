@@ -154,10 +154,11 @@ export async function readWaiver(env: Env): Promise<{ blocks: WaiverBlock[]; eve
   return { blocks: form.blocks, eventName }
 }
 
+// Returns CampusGroups' ID for the saved response.
 export async function submitWaiver(
   signer: { name: string; phone: string; signature: string },
   eventName: string,
-): Promise<void> {
+): Promise<string> {
   const form = await loadWaiverForm()
   const headers = () => ({ Cookie: cookieHeader(form.cookies), Referer: SURVEY_URL, Origin: CAMPUSGROUPS_ORIGIN })
 
@@ -185,9 +186,18 @@ export async function submitWaiver(
     body,
     redirect: "manual",
   })
-  // A saved submission redirects to CampusGroups' confirmation page; anything else means it wasn't saved.
+  // A saved submission redirects to CampusGroups' confirmation page, which names the response in
+  // type_uid2; anything else means it wasn't saved.
   const location = response.headers.get("Location") ?? ""
-  if (response.status !== 302 || !location.includes("/confirmation?type=survey_submission")) {
+  const confirmation = new URL(location, CAMPUSGROUPS_ORIGIN)
+  const responseId = confirmation.searchParams.get("type_uid2")
+  if (
+    response.status !== 302 ||
+    confirmation.pathname !== "/confirmation" ||
+    confirmation.searchParams.get("type") !== "survey_submission" ||
+    !responseId
+  ) {
     throw new Error(`Waiver submission was not confirmed: ${response.status} ${location}`)
   }
+  return responseId
 }

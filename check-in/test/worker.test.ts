@@ -266,10 +266,11 @@ describe("check-in", () => {
 
     expect(response.status).toBe(201)
     expect(sheets.rows).toHaveLength(1)
-    const [timestamp, name, email, affiliation, memberId] = sheets.rows[0]
+    const [timestamp, name, email, phone, affiliation, memberId] = sheets.rows[0]
     expect(timestamp).toBe(serialFor(TEST_TIMESTAMP))
     expect(name).toBe("New Dancer")
     expect(email).toBe("new@example.com")
+    expect(phone).toBe("(607) 555-0100")
     expect(affiliation).toBe("Community Member")
     expect(String(memberId)).toMatch(MEMBER_ID_PATTERN)
   })
@@ -282,7 +283,7 @@ describe("check-in", () => {
 
     expect(missing.status).toBe(400)
     expect(valid.status).toBe(201)
-    expect(sheets.rows[0][5]).toBe("(607) 555-0100")
+    expect(sheets.rows[0][3]).toBe("(607) 555-0100")
   })
 
   it("tells Cornell affiliates what they still need and asks nothing more of non-Cornell attendees", async () => {
@@ -316,7 +317,7 @@ describe("check-in", () => {
     })
 
     expect((await handleCheckin(checkinRequest(), env, token, TEST_TIMESTAMP)).status).toBe(201)
-    expect(sheets.rows[0][4]).toBe(ADA_MEMBER_ID)
+    expect(sheets.rows[0][5]).toBe(ADA_MEMBER_ID)
 
     const sameNight = await handleCheckin(checkinRequest(), env, token, TEST_TIMESTAMP + HOUR)
     expect(sameNight.status).toBe(409)
@@ -334,6 +335,7 @@ describe("check-in", () => {
       serialFor(TEST_TIMESTAMP),
       "Ada Lovelace",
       "ada@example.com",
+      "",
       "Community Member",
       ADA_MEMBER_ID,
     ])
@@ -390,7 +392,7 @@ describe("check-in", () => {
     )
 
     expect(response.status).toBe(201)
-    expect(sheets.rows[0][4]).toBe(SHAMUS_MEMBER_ID)
+    expect(sheets.rows[0][5]).toBe(SHAMUS_MEMBER_ID)
   })
 
   it("links a typed check-in to a same-name, same-affiliation member who has no email", async () => {
@@ -412,8 +414,8 @@ describe("check-in", () => {
 
     expect(typed.status).toBe(201)
     expect(otherAffiliation.status).toBe(201)
-    expect(sheets.rows[0][4]).toBe(ADA_MEMBER_ID)
-    expect(sheets.rows[1][4]).not.toBe(ADA_MEMBER_ID)
+    expect(sheets.rows[0][5]).toBe(ADA_MEMBER_ID)
+    expect(sheets.rows[1][5]).not.toBe(ADA_MEMBER_ID)
   })
 
   it("lets two members who share an email check in separately", async () => {
@@ -449,7 +451,7 @@ describe("check-in", () => {
     expect(ada.status).toBe(201)
     expect(grace.status).toBe(201)
     expect(sheets.reads).toBe(1)
-    expect(sheets.rows.map((row) => row[4]).sort()).toEqual([ADA_MEMBER_ID, GRACE_MEMBER_ID])
+    expect(sheets.rows.map((row) => row[5]).sort()).toEqual([ADA_MEMBER_ID, GRACE_MEMBER_ID])
   })
 
   it("handles concurrent check-ins without losing either", async () => {
@@ -654,7 +656,7 @@ describe("nightly sync", () => {
   it("rejects the scheduled invocation when a row fails", async () => {
     const { sheets } = useFakes()
     sheets.rows.push([
-      serialFor(TEST_TIMESTAMP), "Ada Lovelace", "not-an-email", "Community Member", ADA_MEMBER_ID,
+      serialFor(TEST_TIMESTAMP), "Ada Lovelace", "not-an-email", "", "Community Member", ADA_MEMBER_ID,
     ])
     const { privateKey } = await generateKeyPair("RS256", { extractable: true })
     network.use(http.post("https://oauth2.googleapis.com/token", () =>
@@ -678,10 +680,10 @@ describe("nightly sync", () => {
   it("converges the sheet and Notion, then a second run makes no further writes", async () => {
     const { sheets, notion } = useFakes()
     sheets.rows.push(
-      [serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "Community Member", ADA_MEMBER_ID],
-      [serialFor(TEST_TIMESTAMP + 60_000), "Grace Hopper", "grace@example.com", "Alumni", GRACE_MEMBER_ID],
+      [serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "", "Community Member", ADA_MEMBER_ID],
+      [serialFor(TEST_TIMESTAMP + 60_000), "Grace Hopper", "grace@example.com", "", "Alumni", GRACE_MEMBER_ID],
       // The legacy Student affiliation must keep syncing even though the form no longer offers it.
-      [serialFor(TEST_TIMESTAMP + 120_000), "Legacy Lee", "legacy@example.com", "Student", ""],
+      [serialFor(TEST_TIMESTAMP + 120_000), "Legacy Lee", "legacy@example.com", "", "Student", ""],
     )
 
     const first = await runNightlySync(env, token)
@@ -697,7 +699,7 @@ describe("nightly sync", () => {
     }
     // The legacy row got a durable member ID backfilled into the sheet.
     const legacyRow = sheets.rows.find((row) => row[2] === "legacy@example.com")
-    expect(String(legacyRow?.[4])).toMatch(MEMBER_ID_PATTERN)
+    expect(String(legacyRow?.[5])).toMatch(MEMBER_ID_PATTERN)
     // The sheet ends up sorted newest-first.
     const serials = sheets.rows.map((row) => Number(row[0]))
     expect(serials).toEqual([...serials].sort((left, right) => right - left))
@@ -720,6 +722,7 @@ describe("nightly sync", () => {
       serialFor(TEST_TIMESTAMP),
       "Ada Lovelace",
       "ada@example.com",
+      "",
       "Community Member",
       ADA_MEMBER_ID,
     ])
@@ -734,6 +737,7 @@ describe("nightly sync", () => {
       serialFor(TEST_TIMESTAMP + 60_000),
       "Grace Hopper",
       "grace@example.com",
+      "",
       "Alumni",
       GRACE_MEMBER_ID,
     ])
@@ -765,8 +769,8 @@ describe("nightly sync", () => {
     august24.attendees = [stale.pageId]
     august31.attendees = [ella.pageId]
     sheets.rows.push(
-      [serialFor(Date.parse("2026-08-24T23:00:00Z")), "Earlier Name", "ella@example.com", "Community Member", ADA_MEMBER_ID],
-      [serialFor(Date.parse("2026-08-31T23:00:00Z")), "Ella Kramer", "ella@example.com", "Community Member", ADA_MEMBER_ID],
+      [serialFor(Date.parse("2026-08-24T23:00:00Z")), "Earlier Name", "ella@example.com", "", "Community Member", ADA_MEMBER_ID],
+      [serialFor(Date.parse("2026-08-31T23:00:00Z")), "Ella Kramer", "ella@example.com", "", "Community Member", ADA_MEMBER_ID],
     )
     const legacyFingerprints = sheets.rows.map((row) => JSON.stringify(row))
     await env.MEMBER_CACHE.put(
@@ -791,6 +795,7 @@ describe("nightly sync", () => {
       serialFor(TEST_TIMESTAMP),
       "Ada Lovelace",
       "ada@example.com",
+      "",
       "Community Member",
       ADA_MEMBER_ID,
     ])
@@ -811,7 +816,7 @@ describe("nightly sync", () => {
       affiliation: "Graduate/Professional Student",
       lastEditedTime: "2026-08-26T12:00:00.000Z", // edited after the check-in
     })
-    sheets.rows.push([serialFor(TEST_TIMESTAMP), "Old Name", "ada@example.com", "Community Member", ""])
+    sheets.rows.push([serialFor(TEST_TIMESTAMP), "Old Name", "ada@example.com", "", "Community Member", ""])
 
     const result = await runNightlySync(env, token)
 
@@ -819,9 +824,9 @@ describe("nightly sync", () => {
     expect(sheets.rows[0].slice(1)).toEqual([
       "Old Name",
       "ada@example.com",
+      "",
       "Community Member",
       ADA_MEMBER_ID,
-      "",
     ])
     expect(notion.members[0]).toMatchObject({
       name: "Old Name",
@@ -833,7 +838,7 @@ describe("nightly sync", () => {
   it("copies the newest check-in's phone number to Notion", async () => {
     const { sheets, notion } = useFakes()
     notion.addMember({ memberId: ADA_MEMBER_ID, name: "Ada Lovelace", email: "ada@example.com", affiliation: "Staff" })
-    sheets.rows.push([serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "Staff", ADA_MEMBER_ID, "(607) 555-0100"])
+    sheets.rows.push([serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "(607) 555-0100", "Staff", ADA_MEMBER_ID])
 
     expect(await runNightlySync(env, token)).toEqual({ synced: 1, failed: 0 })
     expect(notion.members[0].phone).toBe("(607) 555-0100")
@@ -843,7 +848,7 @@ describe("nightly sync", () => {
     const { sheets, notion } = useFakes()
     notion.addMember({ memberId: ADA_MEMBER_ID, name: "Ada Lovelace", email: "ada@example.com", affiliation: "Community Member" })
     notion.addMember({ memberId: GRACE_MEMBER_ID, name: "Grace Hopper", email: "gh1@cornell.edu", affiliation: "Staff" })
-    sheets.rows.push([serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "Community Member", ADA_MEMBER_ID])
+    sheets.rows.push([serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "", "Community Member", ADA_MEMBER_ID])
     sheets.waivers.push([serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "(607) 555-0100", "August 25, 2026 Swing Dance"])
     await env.MEMBER_CACHE.put("campusgroups:v1", JSON.stringify({
       uploadedAt: "2026-10-01T12:00:00.000Z",
@@ -866,7 +871,7 @@ describe("nightly sync", () => {
       events: ["previous-event-id"],
       lastEditedTime: "2026-08-26T12:00:00.000Z", // edited after the check-in
     })
-    sheets.rows.push([serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "Community Member", ""])
+    sheets.rows.push([serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "", "Community Member", ""])
 
     const result = await runNightlySync(env, token)
 
@@ -876,7 +881,7 @@ describe("nightly sync", () => {
       affiliation: "Community Member",
       events: ["previous-event-id", notion.events[0].pageId],
     })
-    expect(sheets.rows[0][4]).toBe(ADA_MEMBER_ID)
+    expect(sheets.rows[0][5]).toBe(ADA_MEMBER_ID)
   })
 
   it("creates a Notion member when a check-in Member ID is missing from the roster", async () => {
@@ -891,6 +896,7 @@ describe("nightly sync", () => {
       serialFor(TEST_TIMESTAMP),
       "Grace Hopper",
       "grace@example.com",
+      "",
       "Alumni",
       GRACE_MEMBER_ID,
     ])
@@ -912,12 +918,12 @@ describe("nightly sync", () => {
       affiliation: "Community Member",
     })
     // The kiosk assigns a fresh ID when someone checks in before reaching Notion.
-    sheets.rows.push([serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "Alumni", GRACE_MEMBER_ID])
+    sheets.rows.push([serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "", "Alumni", GRACE_MEMBER_ID])
 
     expect(await runNightlySync(env, token)).toEqual({ synced: 1, failed: 0 })
     expect(notion.members).toHaveLength(1)
     expect(notion.members[0]).toMatchObject({ affiliation: "Alumni", events: [notion.events[0].pageId] })
-    expect(sheets.rows[0][4]).toBe(ADA_MEMBER_ID)
+    expect(sheets.rows[0][5]).toBe(ADA_MEMBER_ID)
   })
 
   it("rejects an ID and email that point to different Notion members", async () => {
@@ -939,6 +945,7 @@ describe("nightly sync", () => {
       serialFor(TEST_TIMESTAMP),
       "Not Ada",
       "ada@example.com",
+      "",
       "Alumni",
       GRACE_MEMBER_ID,
     ])
@@ -977,6 +984,7 @@ describe("nightly sync", () => {
         serialFor(TEST_TIMESTAMP + index * 60_000),
         `Member ${index}`,
         `member${index}@example.com`,
+        "",
         "Community Member",
         `Member${String(index).padStart(6, "0")}`,
       ])
@@ -992,6 +1000,7 @@ describe("nightly sync", () => {
       serialFor(TEST_TIMESTAMP + 50 * 60_000),
       "Member 50",
       "member50@example.com",
+      "",
       "Community Member",
       "Member000050",
     ])
@@ -1012,6 +1021,7 @@ describe("nightly sync", () => {
       serialFor(TEST_TIMESTAMP),
       "ada@example.com",
       "ada@example.com",
+      "",
       "Community Member",
       "",
     ])
@@ -1021,7 +1031,7 @@ describe("nightly sync", () => {
     expect(result).toEqual({ synced: 1, failed: 0 })
     expect(notion.members[0].name).toBe("")
     expect(sheets.rows[0][1]).toBe("")
-    expect(sheets.rows[0][4]).toBe(ADA_MEMBER_ID)
+    expect(sheets.rows[0][5]).toBe(ADA_MEMBER_ID)
     expect(sheets.updates).toBe(1)
   })
 
@@ -1029,9 +1039,9 @@ describe("nightly sync", () => {
     const { sheets, notion } = useFakes()
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
     sheets.rows.push(
-      [serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "Community Member", ADA_MEMBER_ID],
-      [serialFor(TEST_TIMESTAMP), "Broken Row", "not-an-email", "Community Member", ""],
-      [serialFor(TEST_TIMESTAMP), "Grace Hopper", "grace@example.com", "Alumni", GRACE_MEMBER_ID],
+      [serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "", "Community Member", ADA_MEMBER_ID],
+      [serialFor(TEST_TIMESTAMP), "Broken Row", "not-an-email", "", "Community Member", ""],
+      [serialFor(TEST_TIMESTAMP), "Grace Hopper", "grace@example.com", "", "Alumni", GRACE_MEMBER_ID],
     )
 
     try {
@@ -1057,6 +1067,7 @@ describe("nightly sync", () => {
       serialFor(TEST_TIMESTAMP),
       "Ada Lovelace",
       "ada@example.com",
+      "",
       "Community Member",
       ADA_MEMBER_ID,
     ])
@@ -1076,6 +1087,7 @@ describe("nightly sync", () => {
       serialFor(TEST_TIMESTAMP),
       "Ada Lovelace",
       "ada@example.com",
+      "",
       "Community Member",
       ADA_MEMBER_ID,
     ])

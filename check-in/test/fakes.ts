@@ -33,7 +33,7 @@ export class FakeSheets {
           return new HttpResponse(null, { status: 503 })
         }
         return HttpResponse.json({
-          valueRanges: [0, 2, 4].map((column) => ({
+          valueRanges: [0, 2, 5].map((column) => ({
             values: this.rows.map((row) => row[column] == null ? [] : [row[column]]),
           })),
         })

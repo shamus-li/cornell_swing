@@ -27,7 +27,7 @@ beforeEach(async () => {
 function useFakes() {
   const sheets = new FakeSheets()
   const notion = new FakeNotion()
-  sheets.rows.push([timestamp, "Ada Lovelace", "ada@example.com", "Community Member", MEMBER_ID])
+  sheets.rows.push([timestamp, "Ada Lovelace", "ada@example.com", "", "Community Member", MEMBER_ID])
   network.use(...sheets.handlers(), ...notion.handlers())
   return { sheets, notion }
 }
@@ -59,7 +59,7 @@ describe("attendance sync creation safety", () => {
     it(`holds an unresolved ${kind} creation for an hour, then creates it once`, async () => {
       const { sheets, notion } = useFakes()
       // A second check-in seconds later on the same day.
-      sheets.rows.push([timestamp + 0.0001, "Ada Lovelace", "ada@example.com", "Community Member", MEMBER_ID])
+      sheets.rows.push([timestamp + 0.0001, "Ada Lovelace", "ada@example.com", "", "Community Member", MEMBER_ID])
       notion.createFailure = { kind, committed: false }
       const creates = () => kind === "member" ? notion.memberCreates : notion.eventCreates
       const checkpoint = await env.MEMBER_CACHE.get(ATTENDANCE_SYNC_STATE_KEY)
@@ -120,11 +120,11 @@ describe("attendance sync creation safety", () => {
 
   it("retains a generated ID across coordinator restart, failed Sheet write, and stale Notion queries", async () => {
     const { sheets, notion } = useFakes()
-    sheets.rows[0][4] = ""
+    sheets.rows[0][5] = ""
     sheets.failUpdates = true
     await expect(runNightlySync(env, token)).rejects.toThrow("1 failed")
     const createdId = notion.members[0].memberId
-    expect(sheets.rows[0][4]).toBe("")
+    expect(sheets.rows[0][5]).toBe("")
 
     sheets.failUpdates = false
     notion.hideMembers = true
@@ -133,7 +133,7 @@ describe("attendance sync creation safety", () => {
       const restarted = new AttendanceSync(state, env)
       expect(await restarted.run("test-access-token")).toEqual({ synced: 1, failed: 0 })
     })
-    expect(sheets.rows[0][4]).toBe(createdId)
+    expect(sheets.rows[0][5]).toBe(createdId)
     expect(notion.memberCreates).toBe(1)
   })
 
@@ -141,7 +141,7 @@ describe("attendance sync creation safety", () => {
     const { sheets, notion } = useFakes()
     expect(await runNightlySync(env, token)).toEqual({ synced: 1, failed: 0 })
     notion.members = []
-    sheets.rows.push([timestamp + 0.0001, "Ada Lovelace", "ada@example.com", "Community Member", MEMBER_ID])
+    sheets.rows.push([timestamp + 0.0001, "Ada Lovelace", "ada@example.com", "", "Community Member", MEMBER_ID])
 
     expect(await runNightlySync(env, token)).toEqual({ synced: 1, failed: 0 })
     expect(notion.memberCreates).toBe(2)
