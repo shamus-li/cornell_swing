@@ -98,7 +98,8 @@
   },
   "triggers": {
     "crons": [
-      "0 9-12 * * *"
+      "0 9-12 * * *",
+      "30 11 * * *"
     ]
   },
   "observability": {
@@ -112,6 +113,13 @@
       "head_sampling_rate": 0.01
     }
   },
+  // Alerts go only to this verified Email Routing address, which is free.
+  "send_email": [
+    {
+      "name": "ALERT_EMAIL",
+      "destination_address": "wl757@cornell.edu"
+    }
+  ],
   "d1_databases": [
     {
       "binding": "EVENTS_DB",

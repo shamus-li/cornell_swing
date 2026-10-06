@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react"
 
+import campusGroupsQrUrl from "../../assets/campusgroups-qr.png"
 import waiverQrUrl from "../../assets/waiver-qr.png"
 
 import { SiteBrand } from "@shared/site/components/SiteBrand"
@@ -15,6 +16,7 @@ import {
 import { FloatingField, floatingInputClass } from "@/components/ui/floating-field"
 import { Input } from "@/components/ui/input"
 import { Person } from "@/components/ui/person"
+import { NonCornellWaiver } from "@/Waiver"
 import {
   Select,
   SelectContent,
@@ -28,8 +30,10 @@ import {
   hasUnusualNameCapitalization,
   isValidName,
   normalizeName,
+  normalizePhone,
   type Affiliation,
   type Member,
+  type NextSteps,
 } from "@/lib/checkin"
 
 type MembersResponse = {
@@ -63,29 +67,15 @@ function MemberResults() {
   )
 }
 
-function WaiverCallout() {
+function QrCallout({ title, detail, src }: { title: string; detail: string; src: string }) {
   return (
-    <aside
-      className="flex w-full flex-col items-center gap-5 rounded-xl bg-muted p-5 text-center sm:flex-row sm:gap-6 sm:p-6 sm:text-left"
-      aria-labelledby="waiver-title"
-    >
+    <aside className="flex w-full flex-col items-center gap-5 rounded-xl bg-muted p-5 text-center sm:flex-row sm:gap-6 sm:p-6 sm:text-left">
       <div className="min-w-0 flex-1">
-        <h2 id="waiver-title" className="font-sans text-lg leading-tight font-semibold">
-          Cornell affiliates
-        </h2>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          Please complete the{" "}
-          <span className="font-medium text-foreground">Physical Activity Waiver</span>.
-        </p>
+        <h2 className="font-sans text-lg leading-tight font-semibold">{title}</h2>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{detail}</p>
       </div>
       <div className="shrink-0 rounded-sm bg-white p-1">
-        <img
-          className="size-24"
-          src={waiverQrUrl}
-          width="444"
-          height="444"
-          alt="QR code for the Physical Activity Waiver"
-        />
+        <img className="size-24" src={src} width="444" height="444" alt={`QR code: ${title}`} />
       </div>
     </aside>
   )
@@ -94,6 +84,7 @@ function WaiverCallout() {
 export default function App() {
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
+  const [phone, setPhone] = useState("")
   const [affiliation, setAffiliation] = useState<Affiliation | "">("")
   // Tagged with the search they answer so "Don't see your name?" waits for the current results.
   const [results, setResults] = useState<{ key: string; members: Member[] }>(NO_RESULTS)
@@ -108,6 +99,7 @@ export default function App() {
       ? "Checked in!"
       : null,
   )
+  const [next, setNext] = useState<NextSteps | null>(null)
   const memberSearchCache = useRef(new Map<string, Member[]>())
 
   const query = name.trim()
@@ -172,6 +164,7 @@ export default function App() {
     setSelectedMember(null)
     setName("")
     setEmail("")
+    setPhone("")
     setAffiliation("")
     setResults(NO_RESULTS)
     memberSearchCache.current.clear()
@@ -188,6 +181,7 @@ export default function App() {
 
     setName(member.name)
     setEmail(member.email)
+    setPhone(member.phone)
     setAffiliation(AFFILIATIONS.some((option) => option === member.affiliation) ? member.affiliation : "")
     setMemberSearchOpen(false)
     setMessage("")
@@ -209,6 +203,12 @@ export default function App() {
       setMessage("Enter a valid email.")
       return
     }
+    const normalizedPhone = normalizePhone(phone)
+    if (!normalizedPhone) {
+      setMessage("Enter a valid phone number.")
+      return
+    }
+    setPhone(normalizedPhone)
     if (!affiliation) {
       setMessage("Choose an affiliation.")
       return
@@ -219,6 +219,7 @@ export default function App() {
       memberId: selectedMember?.id ?? null,
       name: normalizedName,
       email: email.trim().toLowerCase(),
+      phone: normalizedPhone,
       affiliation,
     }
 
@@ -228,11 +229,12 @@ export default function App() {
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify(attendee),
       })
-      const payload = (await response.json().catch(() => ({}))) as { message?: string }
+      const payload = (await response.json().catch(() => ({}))) as { message?: string; next?: NextSteps }
       if (!response.ok && response.status !== 409) {
         throw new Error(payload.message || "Check-in failed")
       }
 
+      setNext(payload.next ?? null)
       const firstName = attendee.name.split(/\s+/)[0]
       setConfirmation(
         response.status === 409
@@ -259,16 +261,36 @@ export default function App() {
   function resetForm() {
     clearSelectedMember()
     setConfirmation(null)
+    setNext(null)
   }
 
   if (confirmation) {
     return (
       <main className="mx-auto flex min-h-svh w-full max-w-[540px] flex-col items-center justify-center gap-6 px-5 py-12 text-center sm:gap-8">
         <h1 className="text-[1.75rem] leading-tight font-semibold">{confirmation}</h1>
-        <WaiverCallout />
-        <Button className={largeButtonClass} onClick={resetForm}>
-          Check in another person
-        </Button>
+        {next?.waiver === "non-cornell" ? (
+          <NonCornellWaiver name={name} email={email.trim().toLowerCase()} phone={phone} onDone={resetForm} />
+        ) : (
+          <>
+            {next?.waiver === "cornell" && (
+              <QrCallout
+                title="Sign the General Risk waiver"
+                detail="Scan to sign with your NetID."
+                src={waiverQrUrl}
+              />
+            )}
+            {next?.joinCampusGroups && (
+              <QrCallout
+                title="Join Swing Syndicate on CampusGroups"
+                detail="Scan to become a member."
+                src={campusGroupsQrUrl}
+              />
+            )}
+            <Button className={largeButtonClass} onClick={resetForm}>
+              Check in another person
+            </Button>
+          </>
+        )}
       </main>
     )
   }
@@ -369,6 +391,22 @@ export default function App() {
               onChange={(event) => setEmail(event.target.value)}
               aria-invalid={message === "Enter a valid email."}
               required
+            />
+          </FloatingField>
+
+          <FloatingField id="phone" label="Phone" filled={!!phone}>
+            <Input
+              id="phone"
+              name="phone"
+              className={floatingInputClass}
+              type="tel"
+              inputMode="tel"
+              autoComplete="off"
+              data-1p-ignore
+              value={phone}
+              onChange={(event) => setPhone(event.target.value)}
+              onBlur={() => setPhone(normalizePhone(phone) || phone)}
+              aria-invalid={message === "Enter a valid phone number."}
             />
           </FloatingField>
 

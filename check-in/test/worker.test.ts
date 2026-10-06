@@ -47,6 +47,7 @@ beforeEach(async () => {
     })
   }
   await env.MEMBER_CACHE.delete("members:v2")
+  await env.MEMBER_CACHE.delete("campusgroups:v1")
   await env.MEMBER_CACHE.put(
     ATTENDANCE_SYNC_STATE_KEY,
     JSON.stringify({ version: ATTENDANCE_SYNC_STATE_VERSION, fingerprints: [] }),
@@ -69,6 +70,7 @@ function checkinRequest(overrides: Record<string, unknown> = {}): Request {
       name: "Ada Lovelace",
       email: "ADA@EXAMPLE.COM",
       affiliation: "Community Member",
+      phone: "607-555-0100",
       ...overrides,
     }),
   })
@@ -88,7 +90,10 @@ async function cacheMembers(...members: Array<{
   email: string
   affiliation: string
 }>): Promise<void> {
-  await env.MEMBER_CACHE.put("members:v2", JSON.stringify({ refreshedAt: Date.now(), members }))
+  await env.MEMBER_CACHE.put(
+    "members:v2",
+    JSON.stringify({ refreshedAt: Date.now(), members: members.map((member) => ({ phone: "", ...member })) }),
+  )
 }
 
 describe("sheet timestamps", () => {
@@ -155,6 +160,7 @@ describe("member search", () => {
           id: ADA_MEMBER_ID,
           name: "Ada Lovelace",
           email: "ada@example.com",
+          phone: "",
           affiliation: "Community Member",
         },
       ],
@@ -173,7 +179,7 @@ describe("member search", () => {
       email: "fiona@example.com",
       affiliation: "Staff",
     })
-    const cachedSam = { id: "Stale_000001", name: "Stale Sam", email: "sam@example.com", affiliation: "Staff" }
+    const cachedSam = { id: "Stale_000001", name: "Stale Sam", email: "sam@example.com", phone: "", affiliation: "Staff" }
 
     await env.MEMBER_CACHE.put(
       "members:v2",
@@ -268,6 +274,38 @@ describe("check-in", () => {
     expect(String(memberId)).toMatch(MEMBER_ID_PATTERN)
   })
 
+  it("requires a phone number and stores it formatted in the Phone column", async () => {
+    const { sheets } = useFakes()
+
+    const missing = await handleCheckin(checkinRequest({ phone: "123" }), env, token, TEST_TIMESTAMP)
+    const valid = await handleCheckin(checkinRequest({ memberId: null, phone: "1 607.555.0100" }), env, token, TEST_TIMESTAMP)
+
+    expect(missing.status).toBe(400)
+    expect(valid.status).toBe(201)
+    expect(sheets.rows[0][5]).toBe("(607) 555-0100")
+  })
+
+  it("sends non-Cornell attendees to the participant waiver and Cornell affiliates to what they still need", async () => {
+    useFakes()
+    await env.MEMBER_CACHE.put("campusgroups:v1", JSON.stringify({
+      uploadedAt: "2026-10-01T00:00:00.000Z",
+      people: {
+        "signed@cornell.edu": { member: true, generalRisk: true },
+        "contact@cornell.edu": { member: false, generalRisk: true },
+      },
+    }))
+    const nextFor = async (email: string, affiliation: string) => {
+      const response = await handleCheckin(checkinRequest({ memberId: null, email, affiliation }), env, token, TEST_TIMESTAMP)
+      return ((await response.json()) as { next: unknown }).next
+    }
+
+    expect(await nextFor("guest@example.com", "Community Member")).toEqual({ waiver: "non-cornell" })
+    expect(await nextFor("alum@example.com", "Alumni")).toEqual({ waiver: "non-cornell" })
+    expect(await nextFor("signed@cornell.edu", "Staff")).toEqual({ waiver: null, joinCampusGroups: false })
+    expect(await nextFor("contact@cornell.edu", "Faculty")).toEqual({ waiver: null, joinCampusGroups: true })
+    expect(await nextFor("unknown@cornell.edu", "Undergraduate Student")).toEqual({ waiver: "cornell", joinCampusGroups: true })
+  })
+
   it("rejects a second check-in the same night but allows the next day", async () => {
     const { sheets } = useFakes()
     await cacheMembers({
@@ -282,7 +320,7 @@ describe("check-in", () => {
 
     const sameNight = await handleCheckin(checkinRequest(), env, token, TEST_TIMESTAMP + HOUR)
     expect(sameNight.status).toBe(409)
-    expect(await sameNight.json()).toEqual({ message: "Already checked in" })
+    expect(await sameNight.json()).toMatchObject({ message: "Already checked in" })
     expect(sheets.rows).toHaveLength(1)
 
     const nextDay = await handleCheckin(checkinRequest(), env, token, TEST_TIMESTAMP + 24 * HOUR)
@@ -475,7 +513,7 @@ describe("check-in", () => {
       const response = await handleCheckin(checkinRequest(overrides), env, token, TEST_TIMESTAMP)
       expect(response.status).toBe(400)
       expect(await response.json()).toEqual({
-        message: "Enter a valid name, email, and affiliation",
+        message: "Enter a valid name, email, phone number, and affiliation",
       })
     }
 
@@ -536,6 +574,7 @@ describe("check-in", () => {
           id: ADA_MEMBER_ID,
           name: "Ada Lovelace",
           email: "ada@example.com",
+          phone: "",
           affiliation: "Community Member",
         }],
       }),
@@ -560,6 +599,7 @@ describe("check-in", () => {
           name: "New Dancer",
           email: "new@example.com",
           affiliation: "Community Member",
+          phone: "(607) 555-0100",
         },
         TEST_TIMESTAMP,
         await token(),
@@ -781,12 +821,39 @@ describe("nightly sync", () => {
       "ada@example.com",
       "Community Member",
       ADA_MEMBER_ID,
+      "",
     ])
     expect(notion.members[0]).toMatchObject({
       name: "Old Name",
       affiliation: "Community Member",
     })
     expect(notion.members[0].events).toEqual([notion.events[0].pageId])
+  })
+
+  it("copies the newest check-in's phone number to Notion", async () => {
+    const { sheets, notion } = useFakes()
+    notion.addMember({ memberId: ADA_MEMBER_ID, name: "Ada Lovelace", email: "ada@example.com", affiliation: "Staff" })
+    sheets.rows.push([serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "Staff", ADA_MEMBER_ID, "(607) 555-0100"])
+
+    expect(await runNightlySync(env, token)).toEqual({ synced: 1, failed: 0 })
+    expect(notion.members[0].phone).toBe("(607) 555-0100")
+  })
+
+  it("lists each night's waiver signers on the Notion event and marks General Risk waivers from the upload", async () => {
+    const { sheets, notion } = useFakes()
+    notion.addMember({ memberId: ADA_MEMBER_ID, name: "Ada Lovelace", email: "ada@example.com", affiliation: "Community Member" })
+    notion.addMember({ memberId: GRACE_MEMBER_ID, name: "Grace Hopper", email: "gh1@cornell.edu", affiliation: "Staff" })
+    sheets.rows.push([serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "Community Member", ADA_MEMBER_ID])
+    sheets.waivers.push([serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "(607) 555-0100", "August 25, 2026 Swing Dance"])
+    await env.MEMBER_CACHE.put("campusgroups:v1", JSON.stringify({
+      uploadedAt: "2026-10-01T12:00:00.000Z",
+      people: { "gh1@cornell.edu": { member: true, generalRisk: true } },
+    }))
+
+    expect(await runNightlySync(env, token)).toEqual({ synced: 1, failed: 0 })
+    expect(notion.events[0].waivers).toEqual([notion.members[0].pageId])
+    expect(notion.members[1].generalRiskWaiver).toBe("AY 26/27")
+    expect(notion.members[0].generalRiskWaiver ?? null).toBeNull()
   })
 
   it("uses Sheet details regardless of edit time while preserving existing event relations", async () => {

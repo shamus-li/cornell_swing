@@ -7,6 +7,7 @@ import { renderToString } from 'react-dom/server'
 import { EventSections, NextEvent } from '../site/components/Events'
 import { createRedirect, deleteRedirect, listRedirects, RedirectError, updateRedirect } from '../redirects/cloudflare'
 import { isRecord, parseRedirect } from '../redirects/redirect'
+import { buildCampusGroups, campusGroupsKey, summarizeCampusGroups, type CampusGroupsData } from './campusgroups'
 import { formatEventLocation, hasEventDetails, todayInNewYork, validateEvent, validateRSVP, type EventRecord, type ManagedEvent, type RSVP } from './model'
 
 class HttpError extends Error {
@@ -17,7 +18,7 @@ function json(value: unknown, status = 200): Response {
   return Response.json(value, { status, headers: { 'Cache-Control': 'no-store' } })
 }
 
-async function readBody(request: Request): Promise<unknown> {
+async function readBody(request: Request, limit = 90000): Promise<unknown> {
   if (request.headers.get('content-type')?.split(';')[0].trim() !== 'application/json') throw new HttpError(415, 'Send JSON event details.')
   const reader = request.body?.getReader()
   if (!reader) throw new HttpError(400, 'Enter the required details.')
@@ -27,7 +28,7 @@ async function readBody(request: Request): Promise<unknown> {
     const { value, done } = await reader.read()
     if (done) break
     size += value.length
-    if (size > 90000) { await reader.cancel(); throw new HttpError(413, 'The request is too large.') }
+    if (size > limit) { await reader.cancel(); throw new HttpError(413, 'The request is too large.') }
     chunks.push(value)
   }
   const buffer = new Uint8Array(size)
@@ -51,6 +52,7 @@ async function requireManager(request: Request, env: Env): Promise<void> {
 }
 
 const managerPage = (path: string) => ['/manage', '/redirects'].some(page => path === page || path.startsWith(`${page}/`))
+const dateTaken = 'Another event is already on that date.'
 
 async function redirectsApi(request: Request, env: Env, method: string): Promise<Response> {
   if (method === 'GET') return json(await listRedirects(env))
@@ -166,6 +168,14 @@ async function route(request: Request, env: Env): Promise<Response> {
     else if (method !== 'GET') throw new HttpError(405, 'Method not allowed.')
     return json(await getSheetStatus(env))
   }
+  if (path === '/manage/api/campusgroups') {
+    if (method === 'GET') return json(summarizeCampusGroups(await env.MEMBER_CACHE.get<CampusGroupsData>(campusGroupsKey, 'json')))
+    if (method !== 'PUT') throw new HttpError(405, 'Method not allowed.')
+    let data
+    try { data = buildCampusGroups(await readBody(request, 2_000_000)) } catch (error) { if (error instanceof HttpError) throw error; throw new HttpError(400, (error as Error).message) }
+    await env.MEMBER_CACHE.put(campusGroupsKey, JSON.stringify(data))
+    return json(summarizeCampusGroups(data))
+  }
   const managerMatch = path.match(/^\/manage\/api\/events\/([^/]+)(\/rsvps)?$/)
   if (managerMatch?.[2] && method === 'DELETE') {
     const body = await readBody(request) as { email?: unknown }
@@ -188,7 +198,8 @@ async function route(request: Request, env: Env): Promise<Response> {
     const values = [input.kind, input.title, input.date, input.startTime, input.endTime, input.location, input.description, updatedAt, input.locationUrl || '', input.room || '', input.published ? 1 : 0]
     if (method === 'POST') {
       const create = async () => {
-      await env.EVENTS_DB.prepare('INSERT INTO events (kind, title, date, startTime, endTime, location, description, updatedAt, locationUrl, room, published, id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(...values, id).run()
+      const result = await env.EVENTS_DB.prepare('INSERT INTO events (kind, title, date, startTime, endTime, location, description, updatedAt, locationUrl, room, published, id) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ?3 = \'\' OR NOT EXISTS (SELECT 1 FROM events WHERE date = ?3)').bind(...values, id).run()
+      if (!result.meta.changes) throw new EventConflict(dateTaken)
       }
       if (input.kind === 'special') await createEventWithSheet(env, input.title, create)
       else await create()
@@ -200,8 +211,10 @@ async function route(request: Request, env: Env): Promise<Response> {
       const current = await env.EVENTS_DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first<EventRecord>()
       if (!current || current.updatedAt !== previous) throw new HttpError(409, 'The event changed. Refresh before saving.')
       const update = async () => {
-      const result = await env.EVENTS_DB.prepare('UPDATE events SET kind = ?, title = ?, date = ?, startTime = ?, endTime = ?, location = ?, description = ?, updatedAt = ?, locationUrl = ?, room = ?, published = ? WHERE id = ? AND updatedAt = ? AND (? = \'special\' OR NOT EXISTS (SELECT 1 FROM rsvps WHERE eventId = ?))').bind(...values, id, previous, input.kind, id).run()
-      if (!result.meta.changes) throw new EventConflict('The event changed, or has RSVPs and cannot become a normal event. Refresh before saving.')
+      const result = await env.EVENTS_DB.prepare('UPDATE events SET kind = ?, title = ?, date = ?, startTime = ?, endTime = ?, location = ?, description = ?, updatedAt = ?, locationUrl = ?, room = ?, published = ? WHERE id = ?12 AND updatedAt = ? AND (?1 = \'special\' OR NOT EXISTS (SELECT 1 FROM rsvps WHERE eventId = ?12)) AND (?3 = \'\' OR NOT EXISTS (SELECT 1 FROM events WHERE date = ?3 AND id != ?12))').bind(...values, id, previous).run()
+      if (result.meta.changes) return
+      if (input.date && await env.EVENTS_DB.prepare('SELECT 1 FROM events WHERE date = ? AND id != ?').bind(input.date, id).first()) throw new EventConflict(dateTaken)
+      throw new EventConflict('The event changed, or has RSVPs and cannot become a normal event. Refresh before saving.')
       }
       const sheetUnchanged = current.kind === input.kind && (input.kind === 'normal' || (current.title === input.title && current.date === input.date))
       if (sheetUnchanged) await update()

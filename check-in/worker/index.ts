@@ -4,16 +4,20 @@ import {
   isAffiliation,
   isValidName,
   normalizeName,
+  normalizePhone,
   type Affiliation,
+  type NextSteps,
   type Member,
 } from "../src/lib/checkin"
 import { cachedMembers, findCachedMemberById, searchCachedMembers, storeMemberCache } from "./cache"
 import {
   type CheckinRow,
+  appendWaiver,
   dateKeyForSheetTimestamp,
   dateKeyInTimeZone,
   getGoogleAccessToken,
   readCheckins,
+  readWaivers,
   sortCheckins,
   updateCheckinRow,
 } from "./google"
@@ -23,6 +27,9 @@ import {
   findEventForDate,
   findOrCreateEventForDate,
   loadMemberRoster,
+  type MemberRoster,
+  setGeneralRiskWaiver,
+  syncEventWaivers,
   rosterMembers,
   RowProblem,
   syncEventAttendance,
@@ -30,23 +37,33 @@ import {
 } from "./notion"
 import { ATTENDANCE_SYNC_STATE_KEY, ATTENDANCE_SYNC_STATE_VERSION } from "./sync-state"
 import { isRecord } from "./util"
+import { loadWaiverForm, readWaiver, submitWaiver, WAIVER_FORM_URL, WaiverFormChanged, waiverEventName } from "./waiver"
+import { generalRiskTag } from "../../src/events/campusgroups"
+import { campusGroupsKey, type CampusGroupsData } from "../../src/events/campusgroups"
 
 export { CheckinGuard } from "./checkin-guard"
 
 const MEMBER_SEARCH_PATH = "/check-in/api/members"
 const CHECKIN_PATH = "/check-in/api/checkins"
+const WAIVER_PATH = "/check-in/api/waiver"
+// The morning cron that checks the CampusGroups waiver form; the others run the attendance sync.
+const WAIVER_CHECK_CRON = "30 11 * * *"
+// Alumni no longer have Cornell accounts, so they sign the non-Cornell waiver like community members.
+const NON_CORNELL_AFFILIATIONS: Affiliation[] = ["Community Member", "Alumni"]
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 type Attendee = {
   memberId: string | null
   name: string
   email: string
   affiliation: Affiliation
+  phone: string
 }
 
 type AccessTokenProvider = (env: Env) => Promise<string>
 
+// Phone is only included when present so rows from before the Phone column keep their fingerprints.
 function checkinFingerprint(row: CheckinRow): string {
-  return JSON.stringify([row.timestamp, row.name, row.email, row.affiliation, row.memberId])
+  return JSON.stringify([row.timestamp, row.name, row.email, row.affiliation, row.memberId, ...(row.phone ? [row.phone] : [])])
 }
 
 // Missing, outdated, or unreadable state means every night is synced again, which is safe because
@@ -79,15 +96,20 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-function validateAttendee(value: unknown, requireName = false): Attendee | null {
+// The kiosk must send a name and phone; older Sheet rows may lack both.
+function validateAttendee(value: unknown, fromKiosk = false): Attendee | null {
   if (!isRecord(value)) return null
   const email = typeof value.email === "string" ? value.email.trim().toLowerCase() : ""
   const memberId = typeof value.memberId === "string" ? value.memberId.trim() : null
   const enteredName = typeof value.name === "string" ? normalizeName(value.name) : ""
   const name = enteredName.toLowerCase() === email ? "" : enteredName
+  const enteredPhone = typeof value.phone === "string" ? value.phone.trim() : ""
+  const phone = fromKiosk ? normalizePhone(enteredPhone) : enteredPhone
   if (
     (memberId !== null && !MEMBER_ID_PATTERN.test(memberId)) ||
-    (name ? !isValidName(name) : requireName) ||
+    (name ? !isValidName(name) : fromKiosk) ||
+    (fromKiosk && !phone) ||
+    phone.length > 40 ||
     !email ||
     email.length > 254 ||
     !EMAIL_PATTERN.test(email) ||
@@ -95,7 +117,7 @@ function validateAttendee(value: unknown, requireName = false): Attendee | null 
   ) {
     return null
   }
-  return { memberId, name, email, affiliation: value.affiliation }
+  return { memberId, name, email, affiliation: value.affiliation, phone }
 }
 
 async function handleMemberSearch(request: Request, env: Env): Promise<Response> {
@@ -141,7 +163,7 @@ export async function handleCheckin(
     return json({ message: "Invalid check-in data" }, 400)
   }
   const attendee = validateAttendee(payload, true)
-  if (!attendee) return json({ message: "Enter a valid name, email, and affiliation" }, 400)
+  if (!attendee) return json({ message: "Enter a valid name, email, phone number, and affiliation" }, 400)
 
   if (attendee.memberId) {
     const member = await findCachedMemberById(env, attendee.memberId)
@@ -177,9 +199,46 @@ export async function handleCheckin(
   const dateKey = dateKeyInTimeZone(timestamp, env.TIME_ZONE)
   const result = await env.CHECKIN_GUARD.getByName(dateKey).checkin(attendee, timestamp, accessToken)
   if (result === "failed") throw new Error("Check-in persistence failed")
+  const next = await nextSteps(env, attendee)
   return result === "duplicate"
-    ? json({ message: "Already checked in" }, 409)
-    : json({ message: "Checked in" }, 201)
+    ? json({ message: "Already checked in", next }, 409)
+    : json({ message: "Checked in", next }, 201)
+}
+
+// What the attendee still needs to do after checking in, from the latest CampusGroups member upload.
+async function nextSteps(env: Env, attendee: Attendee): Promise<NextSteps> {
+  if (NON_CORNELL_AFFILIATIONS.includes(attendee.affiliation)) return { waiver: "non-cornell" }
+  const campusGroups = await env.MEMBER_CACHE.get<CampusGroupsData>(campusGroupsKey, "json")
+  const person = campusGroups?.people[attendee.email]
+  return { waiver: person?.generalRisk ? null : "cornell", joinCampusGroups: !person?.member }
+}
+
+async function handleWaiver(request: Request, env: Env): Promise<Response> {
+  if (request.method === "GET") return json(await readWaiver(env))
+  if (request.method !== "POST") return json({ message: "Method not allowed" }, 405)
+  let payload: unknown
+  try {
+    payload = await request.json()
+  } catch {
+    return json({ message: "Invalid waiver data" }, 400)
+  }
+  const name = isRecord(payload) && typeof payload.name === "string" ? normalizeName(payload.name) : ""
+  const email = isRecord(payload) && typeof payload.email === "string" ? payload.email.trim().toLowerCase() : ""
+  const phone = isRecord(payload) && typeof payload.phone === "string" ? normalizePhone(payload.phone) : ""
+  const signature = isRecord(payload) && typeof payload.signature === "string" ? normalizeName(payload.signature) : ""
+  if (!isValidName(name) || !EMAIL_PATTERN.test(email) || !phone || !isValidName(signature)) {
+    return json({ message: "Enter your name, email, phone number, and signature." }, 400)
+  }
+  const timestamp = Date.now()
+  const eventName = await waiverEventName(env, timestamp)
+  await submitWaiver({ name, phone, signature }, eventName)
+  // CampusGroups holds the signed waiver, so a failed log entry shouldn't make the attendee sign again.
+  try {
+    await appendWaiver(env, await getGoogleAccessToken(env), { name, email, phone, eventName }, timestamp)
+  } catch (error) {
+    console.error(JSON.stringify({ message: "waiver log append failed", email, error: errorMessage(error) }))
+  }
+  return json({ message: "Waiver signed" }, 201)
 }
 
 // The date in a stored fingerprint, so a deleted row still marks its night as changed.
@@ -201,6 +260,7 @@ function rowAttendee(row: CheckinRow): Attendee {
     name: row.name,
     email: row.email,
     affiliation: row.affiliation,
+    phone: row.phone,
   })
   if (!attendee) throw new RowProblem("Check-in row has invalid member data")
   return attendee
@@ -278,8 +338,8 @@ async function syncAttendance(env: Env, accessToken: string, storage: DurableObj
       const member = await syncMemberAttendance(env, roster, attendee, details(attendee), date, event.id, storage)
       attendees.set(date, (attendees.get(date) ?? new Set()).add(member.pageId))
       // Write back only this row's own cleaned-up values and its Member ID.
-      const values = { name: attendee.name, email: attendee.email, affiliation: attendee.affiliation, memberId: member.id }
-      if (values.name !== row.name || values.email !== row.email || values.affiliation !== row.affiliation || values.memberId !== row.memberId) {
+      const values = { name: attendee.name, email: attendee.email, affiliation: attendee.affiliation, memberId: member.id, phone: attendee.phone }
+      if (values.name !== row.name || values.email !== row.email || values.affiliation !== row.affiliation || values.memberId !== row.memberId || values.phone !== row.phone) {
         await updateCheckinRow(env, accessToken, row, values)
         Object.assign(row, values)
       }
@@ -328,7 +388,59 @@ async function syncAttendance(env: Env, accessToken: string, storage: DurableObj
     if (date && retryDates.has(date)) nextFingerprints.add(fingerprint)
   }
 
+  failed += await syncWaivers(env, accessToken, roster)
+  failed += await syncGeneralRisk(env, roster)
+
   return { synced, failed, attempted, previousFingerprints, nextFingerprints, members: rosterMembers(roster) }
+}
+
+// Lists each night's participant waiver signers on its Notion event. Returns how many items failed.
+async function syncWaivers(env: Env, accessToken: string, roster: MemberRoster): Promise<number> {
+  const signers = new Map<string, Set<string>>()
+  let failed = 0
+  for (const row of await readWaivers(env, accessToken)) {
+    const date = dateKeyForSheetTimestamp(row.timestamp)
+    // Members who share an email are told apart by name, as at the kiosk.
+    const emailMatches = roster.byEmail.get(row.email) ?? []
+    const matches = emailMatches.length > 1
+      ? emailMatches.filter((member) => member.name.toLocaleLowerCase() === row.name.toLocaleLowerCase())
+      : emailMatches
+    if (!date || matches.length !== 1) {
+      failed += 1
+      console.error(JSON.stringify({ message: "waiver row has no single matching member", email: row.email, date }))
+      continue
+    }
+    signers.set(date, (signers.get(date) ?? new Set()).add(matches[0].pageId))
+  }
+  for (const [date, pageIds] of signers) {
+    try {
+      const event = await findEventForDate(env, date)
+      if (!event) throw new RowProblem(`No Notion event for ${date}`)
+      await syncEventWaivers(env, event, pageIds)
+    } catch (error) {
+      failed += 1
+      console.error(JSON.stringify({ message: "event waiver sync failed", date, error: errorMessage(error) }))
+    }
+  }
+  return failed
+}
+
+// Marks members whose General Risk waiver appears in the latest CampusGroups upload with that academic year.
+async function syncGeneralRisk(env: Env, roster: MemberRoster): Promise<number> {
+  const campusGroups = await env.MEMBER_CACHE.get<CampusGroupsData>(campusGroupsKey, "json")
+  if (!campusGroups) return 0
+  const academicYear = generalRiskTag(new Date(campusGroups.uploadedAt)).replace(" - General Risk", "")
+  let failed = 0
+  for (const member of roster.records) {
+    if (!campusGroups.people[member.email]?.generalRisk) continue
+    try {
+      await setGeneralRiskWaiver(env, member, academicYear)
+    } catch (error) {
+      failed += 1
+      console.error(JSON.stringify({ message: "general risk sync failed", member: member.id, error: errorMessage(error) }))
+    }
+  }
+  return failed
 }
 
 export async function runNightlySync(
@@ -392,6 +504,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
       if (request.method !== "POST") return json({ message: "Method not allowed" }, 405)
       return await handleCheckin(request, env)
     }
+    if (pathname === WAIVER_PATH) return await handleWaiver(request, env)
     return json({ message: "Not found" }, 404)
   } catch (error) {
     console.error(
@@ -401,8 +514,34 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
         error: errorMessage(error),
       }),
     )
-    const message = pathname === MEMBER_SEARCH_PATH ? "Member search unavailable" : "Check-in failed"
+    const message = pathname === MEMBER_SEARCH_PATH
+      ? "Member search unavailable"
+      : pathname === WAIVER_PATH
+        ? error instanceof WaiverFormChanged
+          ? "The waiver form changed. Ask an officer for help."
+          : "Couldn't reach CampusGroups. Try again."
+        : "Check-in failed"
     return json({ message }, 503)
+  }
+}
+
+// Emails an officer when the CampusGroups waiver form no longer has the fields the kiosk fills in.
+// The kiosk refuses to submit until the form is fixed, so this is the cue to update waiver.ts.
+export async function checkWaiverForm(env: Env): Promise<void> {
+  try {
+    await loadWaiverForm()
+  } catch (error) {
+    if (!(error instanceof WaiverFormChanged)) throw error
+    await env.ALERT_EMAIL.send({
+      to: "wl757@cornell.edu",
+      from: { email: "check-in@swingsyndicate.club", name: "Swing Syndicate check-in" },
+      subject: "The CampusGroups waiver form changed",
+      text: [
+        "The check-in kiosk can't fill in the non-Cornell participant waiver anymore, so community members can't sign it at check-in.",
+        `Form: ${WAIVER_FORM_URL}`,
+        "Update the field names in check-in/worker/waiver.ts to match the form.",
+      ].join("\n\n"),
+    })
   }
 }
 
@@ -413,7 +552,8 @@ export default {
       : env.ASSETS.fetch(request)
   },
 
-  async scheduled(_controller, env): Promise<void> {
+  async scheduled(controller, env): Promise<void> {
+    if (controller.cron === WAIVER_CHECK_CRON) return checkWaiverForm(env)
     try {
       const result = await runNightlySync(env)
       console.log(JSON.stringify({ message: "nightly attendance sync complete", ...result }))

@@ -13,6 +13,7 @@ type CheckinAttendee = {
   name: string
   email: string
   affiliation: string
+  phone: string
 }
 
 export class CheckinGuard extends DurableObject<Env> {

@@ -4,6 +4,8 @@ import { isRecord, RETRYABLE_STATUSES, wait } from "./util"
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
 const ACCESS_TOKEN_CACHE_MS = 50 * 60 * 1000
+// The tab that logs each non-Cornell participant waiver signed at the kiosk.
+const WAIVER_SHEET_NAME = "Waivers"
 
 type SheetValue = string | number | boolean | null
 
@@ -14,6 +16,7 @@ export type CheckinRow = {
   email: string
   affiliation: string
   memberId: string
+  phone: string
 }
 
 function stringValue(value: unknown): string {
@@ -112,7 +115,7 @@ async function sheetsRequest(url: URL, init?: RequestInit): Promise<Response> {
 }
 
 export async function readCheckins(env: Env, accessToken: string): Promise<CheckinRow[]> {
-  const url = valuesUrl(env, sheetRange(env, "A2:E"))
+  const url = valuesUrl(env, sheetRange(env, "A2:F"))
   url.searchParams.set("valueRenderOption", "UNFORMATTED_VALUE")
   url.searchParams.set("dateTimeRenderOption", "SERIAL_NUMBER")
 
@@ -134,6 +137,7 @@ export async function readCheckins(env: Env, accessToken: string): Promise<Check
       email: stringValue(source[2]).trim().toLowerCase(),
       affiliation: stringValue(source[3]),
       memberId: stringValue(source[4]).trim(),
+      phone: stringValue(source[5]).trim(),
     }
   })
 }
@@ -207,7 +211,7 @@ async function appendRows(
   sheetTitle: string,
   values: SheetValue[][],
 ): Promise<void> {
-  const url = valuesUrl(env, `${quoteSheetTitle(sheetTitle)}!A1:E1`, ":append")
+  const url = valuesUrl(env, `${quoteSheetTitle(sheetTitle)}!A1:F1`, ":append")
   url.searchParams.set("valueInputOption", "RAW")
   url.searchParams.set("insertDataOption", "INSERT_ROWS")
   const response = await sheetsRequest(url, {
@@ -271,7 +275,7 @@ export async function sortCheckins(env: Env, accessToken: string): Promise<void>
           sheetId: sheet.sheetId,
           startRowIndex: 1,
           startColumnIndex: 0,
-          endColumnIndex: 5,
+          endColumnIndex: 6,
         },
         sortSpecs: [{ dimensionIndex: 0, sortOrder: "DESCENDING" }],
       },
@@ -316,7 +320,7 @@ export function dateKeyInTimeZone(timestamp: number, timeZone: string): string {
 export async function appendCheckin(
   env: Env,
   accessToken: string,
-  attendee: { memberId: string; name: string; email: string; affiliation: string },
+  attendee: { memberId: string; name: string; email: string; affiliation: string; phone: string },
   timestamp: number,
 ): Promise<void> {
   await appendRows(env, accessToken, env.GOOGLE_SHEET_NAME, [
@@ -326,6 +330,7 @@ export async function appendCheckin(
       attendee.email,
       attendee.affiliation,
       attendee.memberId,
+      attendee.phone,
     ],
   ])
 }
@@ -336,9 +341,9 @@ export async function updateCheckinRow(
   env: Env,
   accessToken: string,
   row: CheckinRow,
-  values: { name: string; email: string; affiliation: string; memberId: string },
+  values: { name: string; email: string; affiliation: string; memberId: string; phone: string },
 ): Promise<void> {
-  const url = valuesUrl(env, sheetRange(env, `A${row.rowNumber}:E${row.rowNumber}`))
+  const url = valuesUrl(env, sheetRange(env, `A${row.rowNumber}:F${row.rowNumber}`))
   url.searchParams.set("valueRenderOption", "UNFORMATTED_VALUE")
   url.searchParams.set("dateTimeRenderOption", "SERIAL_NUMBER")
   const response = await sheetsRequest(url, { headers: { Authorization: `Bearer ${accessToken}` } })
@@ -348,7 +353,38 @@ export async function updateCheckinRow(
   if (sheetValue(cells[0]) !== row.timestamp || stringValue(cells[2]).trim().toLowerCase() !== row.email) {
     throw new Error(`Check-in row ${row.rowNumber} changed while syncing`)
   }
-  await updateValues(env, accessToken, `B${row.rowNumber}:E${row.rowNumber}`, [
-    [values.name, values.email, values.affiliation, values.memberId],
+  await updateValues(env, accessToken, `B${row.rowNumber}:F${row.rowNumber}`, [
+    [values.name, values.email, values.affiliation, values.memberId, values.phone],
+  ])
+}
+
+export type WaiverRow = { timestamp: SheetValue; name: string; email: string }
+
+export async function readWaivers(env: Env, accessToken: string): Promise<WaiverRow[]> {
+  const url = valuesUrl(env, `${quoteSheetTitle(WAIVER_SHEET_NAME)}!A2:C`)
+  url.searchParams.set("valueRenderOption", "UNFORMATTED_VALUE")
+  url.searchParams.set("dateTimeRenderOption", "SERIAL_NUMBER")
+  const response = await sheetsRequest(url, { headers: { Authorization: `Bearer ${accessToken}` } })
+  const payload: unknown = await response.json()
+  if (!response.ok || !isRecord(payload)) throw new Error(`Google Sheets waiver read failed with ${response.status}`)
+  const values = Array.isArray(payload.values) ? payload.values : []
+  return values.map((row) => {
+    const source = Array.isArray(row) ? row : []
+    return {
+      timestamp: sheetValue(source[0]),
+      name: stringValue(source[1]).trim(),
+      email: stringValue(source[2]).trim().toLowerCase(),
+    }
+  })
+}
+
+export async function appendWaiver(
+  env: Env,
+  accessToken: string,
+  signer: { name: string; email: string; phone: string; eventName: string },
+  timestamp: number,
+): Promise<void> {
+  await appendRows(env, accessToken, WAIVER_SHEET_NAME, [
+    [timestampForSheet(timestamp, env.TIME_ZONE), signer.name, signer.email, signer.phone, signer.eventName],
   ])
 }

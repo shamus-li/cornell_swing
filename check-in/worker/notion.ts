@@ -29,20 +29,22 @@ class NotionRequestError extends Error {
   }
 }
 
-type MemberRecord = Member & { pageId: string }
+// generalRiskWaiver is the academic year of the member's Cornell General Risk waiver, e.g. "AY 26/27".
+type MemberRecord = Member & { pageId: string; generalRiskWaiver: string }
 
-type MemberRoster = {
+export type MemberRoster = {
   records: MemberRecord[]
   byId: Map<string, MemberRecord>
   byEmail: Map<string, MemberRecord[]>
   duplicateIds: Set<string>
 }
 
-type MemberDetails = { name: string; email: string; affiliation: Affiliation }
+type MemberDetails = { name: string; email: string; affiliation: Affiliation; phone: string }
 
 export type AttendanceEvent = {
   id: string
   attendeePageIds: string[]
+  waiverPageIds: string[]
 }
 
 type AttendanceDetails = {
@@ -50,6 +52,7 @@ type AttendanceDetails = {
   name: string
   email: string
   affiliation: Affiliation
+  phone: string
 }
 
 function asPage(value: unknown): NotionPage | null {
@@ -73,8 +76,11 @@ function plainText(value: unknown): string {
 function pageToMemberRecord(page: NotionPage): MemberRecord {
   const memberId = plainText(property(page, "Member ID")?.rich_text)
   const emailProperty = property(page, "Email")
+  const phoneProperty = property(page, "Phone")
   const affiliationProperty = property(page, "Affiliation")
   const select = affiliationProperty && isRecord(affiliationProperty.select) ? affiliationProperty.select : null
+  const generalRiskProperty = property(page, "General Risk Waiver")
+  const generalRisk = generalRiskProperty && isRecord(generalRiskProperty.select) ? generalRiskProperty.select.name : null
   const affiliation = select?.name
 
   return {
@@ -82,7 +88,9 @@ function pageToMemberRecord(page: NotionPage): MemberRecord {
     id: memberId,
     name: plainText(property(page, "Name")?.title),
     email: typeof emailProperty?.email === "string" ? emailProperty.email.trim().toLowerCase() : "",
+    phone: typeof phoneProperty?.phone_number === "string" ? phoneProperty.phone_number.trim() : "",
     affiliation: isAffiliation(affiliation) ? affiliation : "",
+    generalRiskWaiver: typeof generalRisk === "string" ? generalRisk : "",
   }
 }
 
@@ -279,7 +287,7 @@ export async function loadMemberRoster(env: Env, { assignMissingIds = false } = 
         page_size: 100,
         ...(startCursor ? { start_cursor: startCursor } : {}),
       },
-      ["Name", "Email", "Affiliation", "Member ID"],
+      ["Name", "Email", "Phone", "Affiliation", "Member ID", "General Risk Waiver"],
     )
     pages.push(...result.pages)
     startCursor = result.nextCursor
@@ -298,7 +306,7 @@ export async function loadMemberRoster(env: Env, { assignMissingIds = false } = 
 export function rosterMembers(roster: MemberRoster): Member[] {
   return roster.records
     .filter((record) => record.name || record.email)
-    .map(({ id, name, email, affiliation }) => ({ id, name, email, affiliation }))
+    .map(({ id, name, email, phone, affiliation }) => ({ id, name, email, phone, affiliation }))
 }
 
 export async function listMembers(env: Env): Promise<Member[]> {
@@ -358,7 +366,7 @@ function eventLookup(env: Env, date: string): () => Promise<NotionPage | null> {
         page_size: 2,
         filter: { property: "Date", date: { equals: date } },
       },
-      ["Name", "Date", "Attendees"],
+      ["Name", "Date", "Attendees", "Waivers Signed"],
     )
     if (result.pages.length > 1) {
       throw new RowProblem(`Expected at most one Notion event for ${date}, found ${result.pages.length}`)
@@ -368,13 +376,11 @@ function eventLookup(env: Env, date: string): () => Promise<NotionPage | null> {
 }
 
 async function attendanceEvent(env: Env, page: NotionPage): Promise<AttendanceEvent> {
-  const relation = inlineRelation(page, "Attendees")
-  return {
-    id: page.id,
-    attendeePageIds: relation.hasMore
-      ? await retrieveRelationIds(env, page.id, relation.propertyId)
-      : relation.relationIds,
+  const relationIds = async (name: string) => {
+    const relation = inlineRelation(page, name)
+    return relation.hasMore ? retrieveRelationIds(env, page.id, relation.propertyId) : relation.relationIds
   }
+  return { id: page.id, attendeePageIds: await relationIds("Attendees"), waiverPageIds: await relationIds("Waivers Signed") }
 }
 
 export async function findEventForDate(env: Env, date: string): Promise<AttendanceEvent | null> {
@@ -397,12 +403,12 @@ export async function findOrCreateEventForDate(
       Date: { date: { start: date } },
     },
   })
-  return created.recovered ? attendanceEvent(env, created.recovered) : { id: created.id, attendeePageIds: [] }
+  return created.recovered ? attendanceEvent(env, created.recovered) : { id: created.id, attendeePageIds: [], waiverPageIds: [] }
 }
 
 async function createMember(
   env: Env,
-  attendee: { memberId: string; name: string; email: string; affiliation: Affiliation },
+  attendee: { memberId: string } & MemberDetails,
   date: string,
   eventId: string,
   storage: DurableObjectStorage,
@@ -411,7 +417,7 @@ async function createMember(
     const result = await queryPages(env, env.NOTION_MEMBERS_DATA_SOURCE_ID, {
       page_size: 2,
       filter: { property: "Member ID", rich_text: { equals: attendee.memberId } },
-    }, ["Name", "Email", "Affiliation", "Member ID"])
+    }, ["Name", "Email", "Phone", "Affiliation", "Member ID", "General Risk Waiver"])
     if (result.pages.length > 1) throw new Error(`More than one Notion member has Member ID ${attendee.memberId}`)
     return result.pages[0] ?? null
   }
@@ -426,6 +432,7 @@ async function createMember(
         rich_text: [{ type: "text", text: { content: attendee.memberId } }],
       },
       Affiliation: { select: { name: attendee.affiliation } },
+      Phone: { phone_number: attendee.phone || null },
       "Member Since": { date: { start: date } },
       "Events Attended": { relation: [{ id: eventId }] },
     },
@@ -436,14 +443,16 @@ async function createMember(
     id: attendee.memberId,
     name: attendee.name,
     email: attendee.email,
+    phone: attendee.phone,
     affiliation: attendee.affiliation,
+    generalRiskWaiver: "",
   }
 }
 
 async function updateMemberDetails(
   env: Env,
   pageId: string,
-  details: { name: string; email: string; affiliation: Affiliation },
+  details: MemberDetails,
 ): Promise<void> {
   await notionRequest(env, `/pages/${encodeURIComponent(pageId)}`, {
     method: "PATCH",
@@ -454,6 +463,7 @@ async function updateMemberDetails(
           : { title: [] },
         Email: { email: details.email },
         Affiliation: { select: { name: details.affiliation } },
+        Phone: { phone_number: details.phone || null },
       },
     }),
   })
@@ -494,12 +504,18 @@ export async function syncMemberAttendance(
     addRosterRecord(roster, member)
   }
 
-  if (member.name !== details.name || member.email !== details.email || member.affiliation !== details.affiliation) {
+  if (
+    member.name !== details.name ||
+    member.email !== details.email ||
+    member.affiliation !== details.affiliation ||
+    member.phone !== details.phone
+  ) {
     await updateMemberDetails(env, member.pageId, details)
     removeEmailIndex(roster, member, member.email)
     member.name = details.name
     member.email = details.email
     member.affiliation = details.affiliation
+    member.phone = details.phone
     addEmailIndex(roster, member)
   }
   return member
@@ -540,4 +556,26 @@ export async function syncEventAttendance(
   })
   for (const memberPageId of relationIds.slice(MAX_RELATION_ITEMS)) await addEventToMember(env, memberPageId, event.id)
   event.attendeePageIds = relationIds
+}
+
+// Each event lists the members who signed the non-Cornell participant waiver that night.
+export async function syncEventWaivers(env: Env, event: AttendanceEvent, memberPageIds: Iterable<string>): Promise<void> {
+  const relationIds = [...new Set(memberPageIds)]
+  const existingIds = new Set(event.waiverPageIds)
+  if (relationIds.length === existingIds.size && relationIds.every((id) => existingIds.has(id))) return
+  if (relationIds.length > MAX_RELATION_ITEMS) throw new RowProblem(`More than ${MAX_RELATION_ITEMS} waivers on one night`)
+  await notionRequest(env, `/pages/${encodeURIComponent(event.id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ properties: { "Waivers Signed": { relation: relationIds.map((id) => ({ id })) } } }),
+  })
+  event.waiverPageIds = relationIds
+}
+
+export async function setGeneralRiskWaiver(env: Env, member: MemberRecord, academicYear: string): Promise<void> {
+  if (member.generalRiskWaiver === academicYear) return
+  await notionRequest(env, `/pages/${encodeURIComponent(member.pageId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ properties: { "General Risk Waiver": { select: { name: academicYear } } } }),
+  })
+  member.generalRiskWaiver = academicYear
 }

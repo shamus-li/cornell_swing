@@ -12,6 +12,7 @@ const NOTION_API = "https://api.notion.com/v1"
 
 export class FakeSheets {
   rows: Cell[][] = []
+  waivers: Cell[][] = []
   reads = 0
   appends = 0
   updates = 0
@@ -43,7 +44,8 @@ export class FakeSheets {
           this.transientFailures -= 1
           return new HttpResponse(null, { status: 503 })
         }
-        const singleRow = String(params.range).match(/!A(\d+):E\1$/)
+        if (String(params.range).startsWith("'Waivers'!")) return HttpResponse.json({ values: this.waivers.map((row) => [...row]) })
+        const singleRow = String(params.range).match(/!A(\d+):F\1$/)
         if (singleRow) {
           this.beforeRowRead?.()
           this.beforeRowRead = null
@@ -56,6 +58,10 @@ export class FakeSheets {
         if (!String(params.range).endsWith(":append")) return new HttpResponse(null, { status: 400 })
         if (this.failAppends) return new HttpResponse(null, { status: 503 })
         const body = (await request.json()) as { values: Cell[][] }
+        if (String(params.range).startsWith("'Waivers'!")) {
+          this.waivers.push(...body.values)
+          return HttpResponse.json({ updates: { updatedRows: body.values.length } })
+        }
         this.rows.push(...body.values)
         this.appends += 1
         return HttpResponse.json({ updates: { updatedRows: body.values.length } })
@@ -96,7 +102,9 @@ export type FakeMember = {
   memberId: string
   name: string
   email: string | null
+  phone?: string | null
   affiliation: string | null
+  generalRiskWaiver?: string | null
   memberSince: string | null
   events: string[]
   lastEditedTime: string
@@ -107,6 +115,7 @@ export type FakeEvent = {
   name: string
   date: string
   attendees: string[]
+  waivers?: string[]
 }
 
 function richText(items: unknown): string {
@@ -231,6 +240,7 @@ export class FakeNotion {
           memberId: richText(properties["Member ID"]?.rich_text),
           name: richText(properties.Name?.title),
           email: properties.Email?.email ?? null,
+          phone: properties.Phone?.phone_number ?? null,
           affiliation: properties.Affiliation?.select?.name ?? null,
           memberSince: properties["Member Since"]?.date?.start ?? null,
           events: (properties["Events Attended"]?.relation ?? []).map((item: { id: string }) => item.id),
@@ -252,6 +262,9 @@ export class FakeNotion {
         const event = this.events.find((candidate) => candidate.pageId === params.pageId)
         if (event) {
           if (properties.Attendees?.relation?.length > 100) return new HttpResponse(null, { status: 400 })
+          if ("Waivers Signed" in properties) {
+            event.waivers = properties["Waivers Signed"].relation.map((item: { id: string }) => item.id)
+          }
           if ("Attendees" in properties) {
             event.attendees = properties.Attendees.relation.map((item: { id: string }) => item.id)
             for (const member of this.members) {
@@ -267,7 +280,9 @@ export class FakeNotion {
         if ("Name" in properties) member.name = richText(properties.Name.title)
         if ("Member ID" in properties) member.memberId = richText(properties["Member ID"].rich_text)
         if ("Email" in properties) member.email = properties.Email.email
+        if ("Phone" in properties) member.phone = properties.Phone.phone_number
         if ("Affiliation" in properties) member.affiliation = properties.Affiliation.select?.name ?? null
+        if ("General Risk Waiver" in properties) member.generalRiskWaiver = properties["General Risk Waiver"].select?.name ?? null
         if ("Events Attended" in properties) {
           if (properties["Events Attended"].relation.length > 100) return new HttpResponse(null, { status: 400 })
           member.events = properties["Events Attended"].relation.map((item: { id: string }) => item.id)
@@ -319,7 +334,9 @@ export class FakeNotion {
       properties: {
         Name: { title: member.name ? [{ plain_text: member.name }] : [] },
         Email: { email: member.email },
+        Phone: { phone_number: member.phone ?? null },
         Affiliation: { select: member.affiliation ? { name: member.affiliation } : null },
+        "General Risk Waiver": { select: member.generalRiskWaiver ? { name: member.generalRiskWaiver } : null },
         "Member ID": { rich_text: [{ plain_text: member.memberId }] },
         "Events Attended": {
           id: "events-attended-property",
@@ -343,6 +360,12 @@ export class FakeNotion {
           type: "relation",
           relation: event.attendees.slice(0, 25).map((id) => ({ id })),
           has_more: event.attendees.length > 25,
+        },
+        "Waivers Signed": {
+          id: "waivers-signed-property",
+          type: "relation",
+          relation: (event.waivers ?? []).map((id) => ({ id })),
+          has_more: false,
         },
       },
     }

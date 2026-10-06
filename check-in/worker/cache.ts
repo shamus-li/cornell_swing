@@ -16,6 +16,7 @@ function isMember(value: unknown): value is Member {
     typeof value.id === "string" &&
     typeof value.name === "string" &&
     typeof value.email === "string" &&
+    typeof value.phone === "string" &&
     (value.affiliation === "" || isAffiliation(value.affiliation))
   )
 }

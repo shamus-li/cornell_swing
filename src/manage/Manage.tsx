@@ -10,6 +10,7 @@ import { DiscardChangesButton } from "./DiscardChangesButton"
 import { DeleteEventButton } from "./DeleteEventButton"
 import { ConfirmButton } from "./ConfirmButton"
 import { SheetConnection } from "./SheetConnection"
+import { CampusGroupsUpload } from "./CampusGroupsUpload"
 import { api, errorMessage } from "./api"
 import { MarkdownEditor } from "./MarkdownEditor"
 import { SiteBrand } from "../site/components/SiteBrand"
@@ -114,7 +115,7 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
         {notice && <p role="status" className="manage-notice">{notice}</p>}
         {error && <p role="alert" className="event-error manage-notice">{error} <Button variant="link" size="sm" onClick={() => window.location.reload()}>Reload</Button></p>}
         <div role="tabpanel" className="manage-panel" aria-label={views.find(item => item.value === view)!.label}>
-          {view === "settings" ? <SheetConnection onSync={load} /> : loading ? <p role="status" className="event-muted manage-notice">Loading events…</p> : view === "special"
+          {view === "settings" ? <><SheetConnection onSync={load} /><CampusGroupsUpload /></> : loading ? <p role="status" className="event-muted manage-notice">Loading events…</p> : view === "special"
             ? <EventGroups events={events.filter(event => event.kind === "special")} render={specialRow} empty="No special events yet." />
             : <EventGroups events={events.filter(event => event.kind === "normal")} render={lessonRow} empty="No weekly lessons yet." first={activeNormal === "" && <NormalEventRow ref={normalEditor} editing onEdit={() => {}} event={newEvent("normal")} onSave={saveNormal} onCancel={() => setActiveNormal(null)} />} />}
         </div>

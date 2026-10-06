@@ -101,7 +101,7 @@ describe("attendance sync creation safety", () => {
     const results = await Promise.all([first, second])
 
     expect(results).toEqual([{ synced: 1, failed: 0 }, { synced: 1, failed: 0 }])
-    expect(sheets.reads).toBe(1)
+    expect(sheets.reads).toBe(2) // one run: the check-ins and the waiver log
     expect(notion.memberCreates).toBe(1)
     expect(notion.eventCreates).toBe(1)
   })

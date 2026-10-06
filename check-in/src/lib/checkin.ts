@@ -28,7 +28,21 @@ export type Member = {
   id: string
   name: string
   email: string
+  phone: string
   affiliation: Affiliation | ""
+}
+
+// What an attendee still needs to do after checking in.
+export type NextSteps =
+  | { waiver: "non-cornell" }
+  | { waiver: "cornell" | null; joinCampusGroups: boolean }
+
+// Formats US numbers as (607) 555-1234 and others as +<digits>; returns "" when it isn't a phone number.
+export function normalizePhone(value: string): string {
+  const digits = value.replace(/\D/g, "")
+  const us = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits
+  if (!value.trim().startsWith("+") && us.length === 10) return `(${us.slice(0, 3)}) ${us.slice(3, 6)}-${us.slice(6)}`
+  return digits.length >= 8 && digits.length <= 15 ? `+${digits}` : ""
 }
 
 export function normalizeName(value: string): string {

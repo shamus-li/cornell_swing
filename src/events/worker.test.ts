@@ -12,6 +12,7 @@ import worker from './worker'
 import siteWorker from '../worker'
 import { changeEventWithSheet } from './sheets'
 import { getGoogleAccessToken } from '../../check-in/worker/google'
+import { campusGroupsKey, generalRiskTag } from './campusgroups'
 
 vi.mock('../../check-in/worker/google', () => ({ getGoogleAccessToken: vi.fn(async () => 'test-token') }))
 const network = setupNetwork()
@@ -116,13 +117,28 @@ describe('event storage and RSVPs', () => {
     expect((await call(`/manage/api/events/${created.id}`, 'DELETE', undefined, true)).status).toBe(200)
     expect(await env.EVENTS_DB.prepare('SELECT COUNT(*) AS count FROM rsvps').first('count')).toBe(0)
   })
+  it('allows one dated event per day', async () => {
+    const first = await create()
+    const blocked = await call('/manage/api/events', 'POST', { ...event, kind: 'normal', title: 'Lesson' }, true)
+    expect(blocked.status).toBe(409)
+    expect(await blocked.json()).toEqual({ error: 'Another event is already on that date.' })
+    const second = await create({ title: 'Later dance', date: '2099-10-11' })
+    const moved = await call(`/manage/api/events/${second.id}`, 'PUT', { ...second, date: first.date }, true)
+    expect(moved.status).toBe(409)
+    expect(await moved.json()).toEqual({ error: 'Another event is already on that date.' })
+    expect(await env.EVENTS_DB.prepare('SELECT date FROM events WHERE id = ?').bind(second.id).first('date')).toBe('2099-10-11')
+    expect((await call(`/manage/api/events/${first.id}`, 'PUT', { ...first, location: 'New venue' }, true)).status).toBe(200)
+    const undated = await create({ title: 'Date TBA', date: '', startTime: '', endTime: '' })
+    await create({ title: 'Also TBA', date: '', startTime: '', endTime: '' })
+    expect((await call(`/manage/api/events/${undated.id}`, 'PUT', { ...undated, location: 'Somewhere' }, true)).status).toBe(200)
+  })
   it('refuses RSVP and calendar for normal events and RSVP for past events', async () => {
     const normal = await create({ kind: 'normal' })
     expect((await call(`/api/events/${normal.id}/rsvp`, 'POST', { name: 'Jane', email: 'jane@example.com' })).status).toBe(404)
     expect((await call(`/api/events/${normal.id}/calendar`)).status).toBe(404)
     const past = await create({ date: '2000-01-01' })
     expect((await call(`/api/events/${past.id}/rsvp`, 'POST', { name: 'Jane', email: 'jane@example.com' })).status).toBe(400)
-    const tba = await create({ title: 'To be announced', startTime: '', endTime: '', location: '' })
+    const tba = await create({ title: 'To be announced', date: '2099-10-11', startTime: '', endTime: '', location: '' })
     expect((await call(`/api/events/${tba.id}/rsvp`, 'POST', { name: 'Jane', email: 'jane@example.com' })).status).toBe(400)
   })
   it('keeps unpublished events off the public site until they are published', async () => {
@@ -335,7 +351,7 @@ describe('Sheets source of truth', () => {
   })
   it('migrates hidden IDs without changing visible rows and keeps identity through display edits, renames, and deletion', async () => {
     const created = await create()
-    const other = await create({title:'Another event'})
+    const other = await create({title:'Another event',date:'2099-10-11'})
     const rows = [['Event','Name','Email'],[created.title,'Jane','jane@example.com']]
     const sheet = await connect(rows)
     expect((await call('/manage/api/rsvp-sheet/sync','POST',undefined,true)).status).toBe(200)
@@ -365,7 +381,7 @@ describe('Sheets source of truth', () => {
   })
   it('reports a duplicate title as a conflict without marking the sheet as failing', async () => {
     const first = await create({ title: 'Fall formal' })
-    const second = await create({ title: 'Winter formal' })
+    const second = await create({ title: 'Winter formal', date: '2099-10-11' })
     await connect([['Event','Name','Email']])
     const response = await call(`/manage/api/events/${second.id}`, 'PUT', { ...second, title: first.title }, true)
     expect(response.status).toBe(409)
@@ -429,5 +445,45 @@ describe('redirect manager', () => {
     const operations = fakeList([])
     expect((await call('/redirects/api', 'POST', { ...redirect, source }, true)).status).toBe(400)
     expect(operations).toEqual([])
+  })
+})
+
+describe('CampusGroups member list', () => {
+  beforeEach(async () => { await env.MEMBER_CACHE.delete(campusGroupsKey) })
+  it('names the General Risk tag for the August-to-July academic year in New York', () => {
+    expect(generalRiskTag(new Date('2026-10-06T12:00:00Z'))).toBe('AY 26/27 - General Risk')
+    expect(generalRiskTag(new Date('2027-03-01T12:00:00Z'))).toBe('AY 26/27 - General Risk')
+    expect(generalRiskTag(new Date('2027-08-01T03:30:00Z'))).toBe('AY 26/27 - General Risk')
+    expect(generalRiskTag(new Date('2027-08-15T12:00:00Z'))).toBe('AY 27/28 - General Risk')
+    expect(generalRiskTag(new Date('2099-09-01T12:00:00Z'))).toBe('AY 99/00 - General Risk')
+  })
+  it('stores member and current-year waiver flags by lowercased email for managers only', async () => {
+    const tag = generalRiskTag()
+    const [start] = tag.match(/\d{2}/)!
+    const stale = `AY ${String(Number(start) + 99).slice(-2)}/${start} - General Risk`
+    const rows = [
+      { email: ' Jane@Cornell.EDU ', memberType: 'Member', tags: `${tag}|Main Campus|Over 21` },
+      { email: 'old@cornell.edu', memberType: 'Member', tags: `${stale}|Main Campus` },
+      { email: 'contact@cornell.edu', memberType: 'Contact', tags: tag },
+      { email: 'past@cornell.edu', memberType: 'Past Member', tags: '-' },
+      { email: '', memberType: 'Member', tags: tag },
+      ...Array.from({ length: 1500 }, (_, index) => ({ email: `guest${index}@cornell.edu`, memberType: 'Contact', tags: 'Main Campus|Over 21' })),
+    ]
+    expect((await call('/manage/api/campusgroups', 'PUT', { rows })).status).toBe(401)
+    expect(await (await call('/manage/api/campusgroups', 'GET', undefined, true)).json()).toEqual({ uploadedAt: null, count: null, members: null, generalRisk: null })
+    expect(JSON.stringify({ rows }).length).toBeGreaterThan(90000)
+    const response = await call('/manage/api/campusgroups', 'PUT', { rows }, true)
+    const summary = await response.json() as { uploadedAt: string }
+    expect(summary).toMatchObject({ count: 1504, members: 2, generalRisk: 2 })
+    const stored = await env.MEMBER_CACHE.get<{ uploadedAt: string; people: Record<string, unknown> }>(campusGroupsKey, 'json')
+    expect(stored!.uploadedAt).toBe(summary.uploadedAt)
+    expect(stored!.people).toMatchObject({
+      'jane@cornell.edu': { member: true, generalRisk: true },
+      'old@cornell.edu': { member: true, generalRisk: false },
+      'contact@cornell.edu': { member: false, generalRisk: true },
+      'past@cornell.edu': { member: false, generalRisk: false },
+    })
+    expect(await (await call('/manage/api/campusgroups', 'GET', undefined, true)).json()).toEqual(summary)
+    expect((await call('/manage/api/campusgroups', 'PUT', { rows: [{ email: 'jane@cornell.edu' }] }, true)).status).toBe(400)
   })
 })
