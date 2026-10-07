@@ -139,11 +139,19 @@ function tidyBlock(block: WaiverBlock): WaiverBlock {
   return { list: block.list, runs: runs.filter((run) => run.text) }
 }
 
+// CampusGroups records the event name as plain text, so "The Lindy Haunt 👻" becomes "The Lindy Haunt".
+export function withoutEmoji(title: string): string {
+  return title
+    .replace(/[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Regional_Indicator}\u200D\uFE0F\u20E3]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
 // One event per day: a special event uses its title, and a weekly lesson is "<date> Swing Dance".
 export async function waiverEventName(env: Env, timestamp = Date.now()): Promise<string> {
   const date = dateKeyInTimeZone(timestamp, env.TIME_ZONE)
   const event = await env.EVENTS_DB.prepare("SELECT kind, title FROM events WHERE date = ?").bind(date).first<{ kind: string; title: string }>()
-  if (event?.kind === "special") return event.title
+  if (event?.kind === "special") return withoutEmoji(event.title)
   const day = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "long", day: "numeric", year: "numeric" })
     .format(new Date(`${date}T00:00:00Z`))
   return `${day} Swing Dance`

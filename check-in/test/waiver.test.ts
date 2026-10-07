@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import migration from "../../migrations/events/0001_events.sql?raw"
 import { checkWaiverForm, handleApiRequest } from "../worker"
+import { withoutEmoji } from "../worker/waiver"
 import { FakeSheets } from "./fakes"
 import { network } from "./network"
 
@@ -143,5 +144,11 @@ describe("participant waiver", () => {
       new HttpResponse(FORM_HTML.replace("free_text_919c0e74", "free_text_renamed"), { headers: { "Content-Type": "text/html" } })))
     await checkWaiverForm(alertEnv)
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ subject: "The CampusGroups waiver form changed" }))
+  })
+
+  it("names special events without emoji", () => {
+    expect(withoutEmoji("The Lindy Haunt 👻")).toBe("The Lindy Haunt")
+    expect(withoutEmoji("🎃 Fall 👩🏽‍🦰 Formal 🇺🇸")).toBe("Fall Formal")
+    expect(withoutEmoji("Swing 2026 #1")).toBe("Swing 2026 #1")
   })
 })
