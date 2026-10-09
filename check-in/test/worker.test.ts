@@ -275,13 +275,15 @@ describe("check-in", () => {
     expect(String(memberId)).toMatch(MEMBER_ID_PATTERN)
   })
 
-  it("requires a phone number and stores it formatted in the Phone column", async () => {
+  it("requires a full email and a phone number, and stores the phone formatted in the Phone column", async () => {
     const { sheets } = useFakes()
 
     const missing = await handleCheckin(checkinRequest({ phone: "123" }), env, token, TEST_TIMESTAMP)
+    const noDomain = await handleCheckin(checkinRequest({ email: "ada@cornell" }), env, token, TEST_TIMESTAMP)
     const valid = await handleCheckin(checkinRequest({ memberId: null, phone: "1 607.555.0100" }), env, token, TEST_TIMESTAMP)
 
     expect(missing.status).toBe(400)
+    expect(noDomain.status).toBe(400)
     expect(valid.status).toBe(201)
     expect(sheets.rows[0][3]).toBe("(607) 555-0100")
   })

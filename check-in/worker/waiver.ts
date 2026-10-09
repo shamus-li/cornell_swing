@@ -1,3 +1,5 @@
+import { decodeHTML, decodeHTMLAttribute } from "entities"
+
 import type { WaiverBlock } from "../src/lib/checkin"
 import { dateKeyInTimeZone } from "./google"
 import { isRecord } from "./util"
@@ -23,19 +25,6 @@ type WaiverForm = {
   hidden: Record<string, string>
   endpoint: string
   blocks: WaiverBlock[]
-}
-
-const ENTITIES: Record<string, string> = {
-  amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ",
-  lsquo: "‘", rsquo: "’", ldquo: "“", rdquo: "”", ndash: "–", mdash: "—", hellip: "…",
-}
-
-function decodeEntities(text: string): string {
-  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (entity, code: string) => {
-    if (code.startsWith("#x") || code.startsWith("#X")) return String.fromCodePoint(Number.parseInt(code.slice(2), 16))
-    if (code.startsWith("#")) return String.fromCodePoint(Number.parseInt(code.slice(1), 10))
-    return ENTITIES[code.toLowerCase()] ?? entity
-  })
 }
 
 function storeCookies(cookies: Map<string, string>, response: Response): void {
@@ -74,7 +63,7 @@ export async function loadWaiverForm(): Promise<WaiverForm> {
         const name = element.getAttribute("name")
         if (!name) return
         fieldNames.add(name)
-        if (element.getAttribute("type") === "hidden") hidden[name] = decodeEntities(element.getAttribute("value") ?? "")
+        if (element.getAttribute("type") === "hidden") hidden[name] = decodeHTMLAttribute(element.getAttribute("value") ?? "")
       },
     })
     .on(".page_intro style, .page_intro title, .page_intro script", {
@@ -130,7 +119,7 @@ function tidyBlock(block: WaiverBlock): WaiverBlock {
   }
   const runs: WaiverBlock["runs"] = []
   for (const run of merged) {
-    let text = decodeEntities(run.text).replace(/\s+/g, " ")
+    let text = decodeHTML(run.text).replace(/\s+/g, " ")
     if (runs.length === 0 || runs[runs.length - 1].text.endsWith(" ")) text = text.trimStart()
     if (text) runs.push({ ...run, text })
   }

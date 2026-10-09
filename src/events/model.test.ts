@@ -19,7 +19,7 @@ describe('RSVP validation', () => {
   it('normalizes email for duplicate detection', () => {
     expect(validateRSVP({ name: ' Jane Doe ', email: ' Jane@Cornell.edu ' })).toEqual({ name: 'Jane Doe', email: 'jane@cornell.edu' })
   })
-  it.each([{ name: '', email: 'jane@cornell.edu' }, { name: 'Jane', email: 'not-email' }, { name: 'Jane\nDoe', email: 'jane@cornell.edu' }])('rejects malformed participant details', value => {
+  it.each([{ name: '', email: 'jane@cornell.edu' }, { name: 'Jane', email: 'not-email' }, { name: 'Jane', email: 'jane@cornell' }, { name: 'Jane\nDoe', email: 'jane@cornell.edu' }])('rejects malformed participant details', value => {
     expect(() => validateRSVP(value)).toThrow()
   })
 })

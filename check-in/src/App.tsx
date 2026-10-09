@@ -16,6 +16,8 @@ import {
 import { FloatingField, floatingInputClass } from "@/components/ui/floating-field"
 import { Input } from "@/components/ui/input"
 import { Person } from "@/components/ui/person"
+import { QrCallout } from "@/components/ui/qr-callout"
+import PhoneInput from "react-phone-number-input/input"
 import { forgetWaiver, NonCornellWaiver, preloadWaiver } from "@/Waiver"
 import {
   Select,
@@ -28,9 +30,11 @@ import {
   AFFILIATION_LABELS,
   AFFILIATIONS,
   hasUnusualNameCapitalization,
+  isValidEmail,
   isValidName,
   normalizeName,
   normalizePhone,
+  phoneNumberForInput,
   PARTICIPANT_WAIVER_AFFILIATIONS,
   type Affiliation,
   type Member,
@@ -73,20 +77,6 @@ function MemberResults() {
         )}
       </ComboboxList>
     </ComboboxContent>
-  )
-}
-
-function QrCallout({ title, detail, src }: { title: string; detail: string; src: string }) {
-  return (
-    <aside className="flex w-full flex-col items-center gap-5 rounded-xl bg-muted p-5 text-center sm:flex-row sm:gap-6 sm:p-6 sm:text-left">
-      <div className="min-w-0 flex-1">
-        <h2 className="font-sans text-lg leading-tight font-semibold">{title}</h2>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{detail}</p>
-      </div>
-      <div className="shrink-0 rounded-sm bg-white p-1">
-        <img className="size-24" src={src} width="444" height="444" alt={`QR code: ${title}`} />
-      </div>
-    </aside>
   )
 }
 
@@ -195,7 +185,7 @@ export default function App() {
 
     setName(member.name)
     setEmail(member.email)
-    setPhone(member.phone)
+    setPhone(phoneNumberForInput(member.phone))
     setAffiliation(AFFILIATIONS.some((option) => option === member.affiliation) ? member.affiliation : "")
     setMemberSearchOpen(false)
     setMessage("")
@@ -213,7 +203,7 @@ export default function App() {
       return
     }
 
-    if (!event.currentTarget.checkValidity()) {
+    if (!isValidEmail(email.trim())) {
       setMessage("Enter a valid email.")
       return
     }
@@ -222,7 +212,6 @@ export default function App() {
       setMessage("Enter a valid phone number.")
       return
     }
-    setPhone(normalizedPhone)
     if (!affiliation) {
       setMessage("Choose an affiliation.")
       return
@@ -431,17 +420,16 @@ export default function App() {
           </FloatingField>
 
           <FloatingField id="phone" label="Phone" filled={!!phone}>
-            <Input
+            <PhoneInput
               id="phone"
               name="phone"
               className={floatingInputClass}
-              type="tel"
-              inputMode="tel"
+              inputComponent={Input}
+              defaultCountry="US"
               autoComplete="off"
               data-1p-ignore
-              value={phone}
-              onChange={(event) => setPhone(event.target.value)}
-              onBlur={() => setPhone(normalizePhone(phone) || phone)}
+              value={phone || undefined}
+              onChange={(value) => setPhone(value ?? "")}
               aria-invalid={message === "Enter a valid phone number."}
             />
           </FloatingField>

@@ -151,4 +151,18 @@ describe("participant waiver", () => {
     expect(withoutEmoji("🎃 Fall 👩🏽‍🦰 Formal 🇺🇸")).toBe("Fall Formal")
     expect(withoutEmoji("Swing 2026 #1")).toBe("Swing 2026 #1")
   })
+
+  it("tells the kiosk to have the attendee sign on their phone when CampusGroups is down", async () => {
+    network.use(http.get("https://cornell.campusgroups.com/RMI/survey", () => new HttpResponse(null, { status: 502 })))
+
+    const loaded = await handleApiRequest(waiverRequest(), env)
+    const signed = await handleApiRequest(waiverRequest({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(SIGNER),
+    }), env)
+
+    expect([loaded.status, await loaded.json()]).toEqual([503, { unavailable: true }])
+    expect([signed.status, await signed.json()]).toEqual([503, { unavailable: true }])
+  })
 })

@@ -1,22 +1,30 @@
 import { FormEvent, useEffect, useRef, useState } from "react"
 
+import participantWaiverQrUrl from "../../assets/participant-waiver-qr.png"
+
 import { Button } from "@/components/ui/button"
 import { FloatingField, floatingInputClass } from "@/components/ui/floating-field"
 import { Input } from "@/components/ui/input"
+import { QrCallout } from "@/components/ui/qr-callout"
 import { signatureMatchesName, type WaiverBlock } from "@/lib/checkin"
 import { largeButtonClass } from "@/lib/sizes"
 
 type WaiverText = { blocks: WaiverBlock[]; eventName: string }
-type WaiverResult = { waiver: WaiverText } | { formChanged: true }
+type WaiverResult = { waiver: WaiverText } | { formChanged: true } | { unavailable: true }
+type WaiverResponse = WaiverText & { message?: string; formChanged?: boolean; unavailable?: boolean }
 
 let pendingWaiver: Promise<WaiverResult> | null = null
 
 // Starts loading the waiver while the attendee is still filling in the form, so the waiver screen
-// opens with the text ready. A failed load is retried the next time.
+// opens with the text ready. A failed load is retried for the next attendee.
 export function preloadWaiver(): Promise<WaiverResult> {
   pendingWaiver ??= fetch("api/waiver", { headers: { Accept: "application/json" } }).then(async (response) => {
-    const payload = (await response.json()) as WaiverText & { message?: string; formChanged?: boolean }
+    const payload = (await response.json()) as WaiverResponse
     if (payload.formChanged) return { formChanged: true as const }
+    if (payload.unavailable) {
+      pendingWaiver = null
+      return { unavailable: true as const }
+    }
     if (!response.ok) throw new Error(payload.message || "Couldn't load the waiver.")
     return { waiver: payload }
   })
@@ -33,7 +41,8 @@ export function forgetWaiver(): void {
 
 // Cornell's non-Cornell participant waiver, signed on the kiosk before the check-in is recorded and
 // submitted to CampusGroups by the server. When the CampusGroups form has changed, the server emails
-// an officer and the kiosk checks the attendee in without the waiver.
+// an officer and the kiosk checks the attendee in without the waiver. When CampusGroups is down, the
+// attendee signs the same waiver on their phone instead.
 export function NonCornellWaiver({
   name,
   email,
@@ -53,6 +62,7 @@ export function NonCornellWaiver({
   const [signature, setSignature] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState("")
+  const [signOnPhone, setSignOnPhone] = useState(false)
   // Retrying after a failed check-in must not submit the waiver to CampusGroups twice.
   const signed = useRef(false)
 
@@ -62,7 +72,8 @@ export function NonCornellWaiver({
     preloadWaiver()
       .then(async (result) => {
         if (!active) return
-        if (!("formChanged" in result)) return setWaiver(result.waiver)
+        if ("waiver" in result) return setWaiver(result.waiver)
+        if ("unavailable" in result) return setSignOnPhone(true)
         const error = await onComplete()
         if (error) setMessage(error)
       })
@@ -96,7 +107,8 @@ export function NonCornellWaiver({
           headers: { "Content-Type": "application/json", Accept: "application/json" },
           body: JSON.stringify({ name, email, phone, signature }),
         })
-        const payload = (await response.json().catch(() => ({}))) as { message?: string; formChanged?: boolean }
+        const payload = (await response.json().catch(() => ({}))) as WaiverResponse
+        if (payload.unavailable) return setSignOnPhone(true)
         if (!response.ok && !payload.formChanged) throw new Error(payload.message || "Couldn't submit the waiver. Try again.")
         signed.current = true
       }
@@ -113,6 +125,35 @@ export function NonCornellWaiver({
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  async function checkInAfterSigningOnPhone() {
+    setMessage("")
+    setIsSubmitting(true)
+    const error = await onComplete()
+    if (error) setMessage(error)
+    setIsSubmitting(false)
+  }
+
+  if (signOnPhone) {
+    return (
+      <div className="space-y-4">
+        <QrCallout
+          title="Sign the participant waiver"
+          detail="The waiver can't be signed on this screen right now. Scan to sign it on your phone, then check in."
+          src={participantWaiverQrUrl}
+        />
+        <Button className={`w-full ${largeButtonClass}`} onClick={checkInAfterSigningOnPhone} disabled={isSubmitting}>
+          {isSubmitting ? "Checking in…" : "Check in"}
+        </Button>
+        <Button className={`w-full ${largeButtonClass}`} variant="outline" onClick={onBack} disabled={isSubmitting}>
+          Back
+        </Button>
+        <p className="text-destructive text-base" role="alert">
+          {message}
+        </p>
+      </div>
+    )
   }
 
   return (

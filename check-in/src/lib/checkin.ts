@@ -1,3 +1,7 @@
+import { parsePhoneNumberFromString } from "libphonenumber-js"
+
+export { isValidEmail } from "../../../src/lib/email"
+
 export const AFFILIATIONS = [
   "Graduate/Professional Student",
   "Undergraduate Student",
@@ -42,12 +46,17 @@ export type WaiverBlock = { list: boolean; runs: { text: string; bold: boolean; 
 // What a Cornell affiliate still needs to do after checking in.
 export type NextSteps = { waiver: "cornell" | null; joinCampusGroups: boolean }
 
-// Formats US numbers as (607) 555-1234 and others as +<digits>; returns "" when it isn't a phone number.
+// Saves US numbers as (607) 555-1234 and others as +44 7911 123456; returns "" when the number
+// can't exist.
 export function normalizePhone(value: string): string {
-  const digits = value.replace(/\D/g, "")
-  const us = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits
-  if (!value.trim().startsWith("+") && us.length === 10) return `(${us.slice(0, 3)}) ${us.slice(3, 6)}-${us.slice(6)}`
-  return digits.length >= 8 && digits.length <= 15 ? `+${digits}` : ""
+  const phone = parsePhoneNumberFromString(value, "US")
+  if (!phone?.isValid()) return ""
+  return phone.country === "US" ? phone.formatNational() : phone.formatInternational()
+}
+
+// The phone field works in +16075550100 form, so a saved "(607) 555-0100" is converted to fill it in.
+export function phoneNumberForInput(saved: string): string {
+  return parsePhoneNumberFromString(saved, "US")?.number ?? ""
 }
 
 export function normalizeName(value: string): string {

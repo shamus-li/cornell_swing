@@ -1,3 +1,5 @@
+import { isValidEmail } from '../lib/email'
+
 type EventKind = 'normal' | 'special'
 
 export interface EventRecord {
@@ -88,6 +90,6 @@ export function validateRSVP(value: unknown): { name: string; email: string } {
   const name = typeof input.name === 'string' ? input.name.trim() : ''
   const email = typeof input.email === 'string' ? input.email.trim().toLowerCase() : ''
   if (!name || name.length > 120 || /[\r\n\x00-\x1f]/.test(name)) throw new Error('Enter your name (up to 120 characters).')
-  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Enter a valid email address.')
+  if (!isValidEmail(email)) throw new Error('Enter a valid email address.')
   return { name, email }
 }

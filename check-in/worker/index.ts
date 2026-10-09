@@ -2,6 +2,7 @@ import { DurableObject } from "cloudflare:workers"
 
 import {
   isAffiliation,
+  isValidEmail,
   isValidName,
   normalizeName,
   normalizePhone,
@@ -50,7 +51,6 @@ const CHECKIN_PATH = "/check-in/api/checkins"
 const WAIVER_PATH = "/check-in/api/waiver"
 // The morning cron that checks the CampusGroups waiver form; the others run the attendance sync.
 const WAIVER_CHECK_CRON = "30 11 * * *"
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 type Attendee = {
   memberId: string | null
   name: string
@@ -111,8 +111,7 @@ function validateAttendee(value: unknown, fromKiosk = false): Attendee | null {
     (fromKiosk && !phone) ||
     phone.length > 40 ||
     !email ||
-    email.length > 254 ||
-    !EMAIL_PATTERN.test(email) ||
+    !isValidEmail(email) ||
     !isAffiliation(value.affiliation)
   ) {
     return null
@@ -226,7 +225,7 @@ async function handleWaiver(request: Request, env: Env): Promise<Response> {
   const email = isRecord(payload) && typeof payload.email === "string" ? payload.email.trim().toLowerCase() : ""
   const phone = isRecord(payload) && typeof payload.phone === "string" ? normalizePhone(payload.phone) : ""
   const signature = isRecord(payload) && typeof payload.signature === "string" ? normalizeName(payload.signature) : ""
-  if (!isValidName(name) || !EMAIL_PATTERN.test(email) || !phone || !isValidName(signature)) {
+  if (!isValidName(name) || !isValidEmail(email) || !phone || !isValidName(signature)) {
     return json({ message: "Enter your name, email, phone number, and signature." }, 400)
   }
   if (!signatureMatchesName(signature, name)) {
@@ -511,10 +510,14 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
       try {
         return await handleWaiver(request, env)
       } catch (error) {
-        if (!(error instanceof WaiverFormChanged)) throw error
-        // The kiosk skips the waiver without telling the attendee; an officer gets the email.
-        await alertWaiverFormChanged(env)
-        return json({ formChanged: true }, 503)
+        if (error instanceof WaiverFormChanged) {
+          // The kiosk skips the waiver without telling the attendee; an officer gets the email.
+          await alertWaiverFormChanged(env)
+          return json({ formChanged: true }, 503)
+        }
+        // CampusGroups is down or refused the submission, so the kiosk has the attendee sign on their phone.
+        console.error(JSON.stringify({ message: "waiver request failed", error: errorMessage(error) }))
+        return json({ unavailable: true }, 503)
       }
     }
     return json({ message: "Not found" }, 404)
@@ -526,11 +529,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
         error: errorMessage(error),
       }),
     )
-    const message = pathname === MEMBER_SEARCH_PATH
-      ? "Member search unavailable"
-      : pathname === WAIVER_PATH
-        ? "Couldn't reach CampusGroups. Try again."
-        : "Check-in failed"
+    const message = pathname === MEMBER_SEARCH_PATH ? "Member search unavailable" : "Check-in failed"
     return json({ message }, 503)
   }
 }
