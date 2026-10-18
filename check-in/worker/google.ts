@@ -208,10 +208,9 @@ async function updateValues(
 async function appendRows(
   env: Env,
   accessToken: string,
-  sheetTitle: string,
   values: SheetValue[][],
 ): Promise<void> {
-  const url = valuesUrl(env, `${quoteSheetTitle(sheetTitle)}!A1:F1`, ":append")
+  const url = valuesUrl(env, sheetRange(env, "A1:F1"), ":append")
   url.searchParams.set("valueInputOption", "RAW")
   url.searchParams.set("insertDataOption", "INSERT_ROWS")
   const response = await sheetsRequest(url, {
@@ -323,7 +322,7 @@ export async function appendCheckin(
   attendee: { memberId: string; name: string; email: string; affiliation: string; phone: string },
   timestamp: number,
 ): Promise<void> {
-  await appendRows(env, accessToken, env.GOOGLE_SHEET_NAME, [
+  await appendRows(env, accessToken, [
     [
       timestampForSheet(timestamp, env.TIME_ZONE),
       attendee.name,
@@ -384,7 +383,32 @@ export async function appendWaiver(
   signer: { name: string; email: string; phone: string; eventName: string; responseId: string },
   timestamp: number,
 ): Promise<void> {
-  await appendRows(env, accessToken, WAIVER_SHEET_NAME, [
-    [timestampForSheet(timestamp, env.TIME_ZONE), signer.name, signer.email, signer.phone, signer.eventName, signer.responseId],
+  const sheet = (await listSheets(env, accessToken)).find((candidate) => candidate.title === WAIVER_SHEET_NAME)
+  if (!sheet) throw new Error(`Google Sheet ${WAIVER_SHEET_NAME} was not found`)
+  const text = (value: string) => ({ userEnteredValue: { stringValue: value } })
+
+  // The timestamp stays a date serial so reads can compare it, with the format Sheets uses for form responses.
+  await batchUpdate(env, accessToken, [
+    {
+      appendCells: {
+        sheetId: sheet.sheetId,
+        fields: "userEnteredValue,userEnteredFormat.numberFormat",
+        rows: [
+          {
+            values: [
+              {
+                userEnteredValue: { numberValue: timestampForSheet(timestamp, env.TIME_ZONE) },
+                userEnteredFormat: { numberFormat: { type: "DATE_TIME", pattern: "yyyy-mm-dd h:mm:ss AM/PM" } },
+              },
+              text(signer.name),
+              text(signer.email),
+              text(signer.phone),
+              text(signer.eventName),
+              text(signer.responseId),
+            ],
+          },
+        ],
+      },
+    },
   ])
 }

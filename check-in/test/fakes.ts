@@ -9,6 +9,14 @@ type Cell = string | number | boolean | null
 
 const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets"
 const NOTION_API = "https://api.notion.com/v1"
+const WAIVER_SHEET_ID = 456
+
+type CellData = { userEnteredValue: { stringValue?: string; numberValue?: number } }
+type WaiverAppend = { sheetId: number; rows: { values: CellData[] }[] }
+
+function cellValue(cell: CellData): Cell {
+  return cell.userEnteredValue.numberValue ?? cell.userEnteredValue.stringValue ?? null
+}
 
 export class FakeSheets {
   rows: Cell[][] = []
@@ -58,10 +66,6 @@ export class FakeSheets {
         if (!String(params.range).endsWith(":append")) return new HttpResponse(null, { status: 400 })
         if (this.failAppends) return new HttpResponse(null, { status: 503 })
         const body = (await request.json()) as { values: Cell[][] }
-        if (String(params.range).startsWith("'Waivers'!")) {
-          this.waivers.push(...body.values)
-          return HttpResponse.json({ updates: { updatedRows: body.values.length } })
-        }
         this.rows.push(...body.values)
         this.appends += 1
         return HttpResponse.json({ updates: { updatedRows: body.values.length } })
@@ -75,10 +79,20 @@ export class FakeSheets {
       }),
       http.get(`${SHEETS_API}/:spreadsheetId`, () =>
         HttpResponse.json({
-          sheets: [{ properties: { sheetId: 123, title: env.GOOGLE_SHEET_NAME } }],
+          sheets: [
+            { properties: { sheetId: 123, title: env.GOOGLE_SHEET_NAME } },
+            { properties: { sheetId: WAIVER_SHEET_ID, title: "Waivers" } },
+          ],
         }),
       ),
-      http.post(/https:\/\/sheets\.googleapis\.com\/v4\/spreadsheets\/[^/]+:batchUpdate/, () => {
+      http.post(/https:\/\/sheets\.googleapis\.com\/v4\/spreadsheets\/[^/]+:batchUpdate/, async ({ request }) => {
+        const body = (await request.json()) as { requests: { appendCells?: WaiverAppend }[] }
+        const append = body.requests[0].appendCells
+        if (append) {
+          if (append.sheetId !== WAIVER_SHEET_ID) return new HttpResponse(null, { status: 400 })
+          this.waivers.push(...append.rows.map((row) => row.values.map(cellValue)))
+          return HttpResponse.json({ replies: [{}] })
+        }
         if (this.failSort) return new HttpResponse(null, { status: 403 })
         this.rows.sort((left, right) => Number(right[0] ?? 0) - Number(left[0] ?? 0))
         this.sorts += 1
