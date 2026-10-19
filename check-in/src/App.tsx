@@ -47,6 +47,7 @@ type MembersResponse = {
 
 const MEMBER_SEARCH_DELAY_MS = 75
 const MEMBER_SEARCH_CACHE_LIMIT = 12
+const CONFIRMATION_TIMEOUT_MS = 30_000
 const NO_RESULTS = { key: "", members: [] }
 
 type Attendee = {
@@ -276,6 +277,13 @@ export default function App() {
     setNext(null)
   }
 
+  // Nobody taps "Check in another person", so the kiosk returns to a blank form on its own.
+  useEffect(() => {
+    if (!confirmation) return
+    const timeout = window.setTimeout(resetForm, CONFIRMATION_TIMEOUT_MS)
+    return () => window.clearTimeout(timeout)
+  }, [confirmation])
+
   if (confirmation) {
     return (
       <main className="mx-auto flex min-h-svh w-full max-w-[540px] flex-col items-center justify-center gap-6 px-5 py-12 text-center sm:gap-8">
@@ -294,8 +302,14 @@ export default function App() {
             src={campusGroupsQrUrl}
           />
         )}
-        <Button className={largeButtonClass} onClick={resetForm}>
-          Check in another person
+        <Button className={`relative overflow-hidden ${largeButtonClass}`} onClick={resetForm}>
+          {/* Lightens the button from the right over the 30 seconds before the kiosk returns to the form. */}
+          <span
+            aria-hidden="true"
+            className="absolute inset-0 origin-right bg-white/35"
+            style={{ animation: `confirmation-timer ${CONFIRMATION_TIMEOUT_MS}ms linear forwards` }}
+          />
+          <span className="relative">Check in another person</span>
         </Button>
       </main>
     )
