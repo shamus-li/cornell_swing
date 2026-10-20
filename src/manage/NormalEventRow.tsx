@@ -80,7 +80,8 @@ export function NormalEventRow({ event, editing, onEdit, onSave, onDelete, onCan
       return false
     } finally { saving.current = false; setBusy(false) }
   }
-  useImperativeHandle(ref, () => ({ save: () => save() }))
+  // Leaving an untouched new lesson discards it instead of creating one.
+  useImperativeHandle(ref, () => ({ save: () => event.id || dirty ? save() : (onCancel?.(), Promise.resolve(true)) }))
   const change = (key: keyof Programs, value: string) => setPrograms(current => ({ ...current, [key]: value }))
   return <article className="normal-event-row">
     {editing ? <form className="normal-event-edit" onSubmit={e => { e.preventDefault(); void save() }}>
@@ -92,7 +93,7 @@ export function NormalEventRow({ event, editing, onEdit, onSave, onDelete, onCan
         <label className="editor-row editor-row-top"><span>Notes</span><Textarea rows={2} placeholder="Optional" value={programs.notes} onChange={e => change("notes", e.target.value)} disabled={busy} /></label>
       </div>
       {error && <p role="alert" className="event-error">{error}</p>}
-      <div className="normal-event-actions"><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</Button><Button type="button" variant="outline" onClick={() => void save(!event.published)} disabled={busy}>{event.published ? "Unpublish" : "Publish"}</Button><Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>{event.id && onDelete && <span className="ml-auto"><DeleteEventButton onDelete={onDelete} disabled={busy} onBusyChange={value => { saving.current = value; setBusy(value) }} /></span>}</div>
+      <div className="normal-event-actions"><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</Button><Button type="button" variant="outline" onClick={() => void save(!event.published)} disabled={busy}>{event.published ? "Unpublish" : "Publish"}</Button><Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>{event.id && onDelete && <span className="ml-auto"><DeleteEventButton noun="lesson" onDelete={onDelete} disabled={busy} onBusyChange={value => { saving.current = value; setBusy(value) }} /></span>}</div>
     </form> : <Button asChild variant="ghost" className="normal-event-summary"><div role="button" tabIndex={0} onClick={e => { e.preventDefault(); onEdit() }} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onEdit() } }}>
       <DateTile date={event.date} />
       <div className="event-row-text">

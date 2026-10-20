@@ -19,7 +19,7 @@ it("offers RSVP and calendar only for special events", () => {
   expect(container.querySelector("strong")?.textContent).toBe("Live music")
 })
 
-it("moves past events behind the Past switch, where they offer no RSVP", async () => {
+it("moves past events behind the Past switch, where they offer no RSVP or calendar link", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true)
   const container = document.createElement("div"); document.body.appendChild(container)
   const root = createRoot(container)
@@ -28,7 +28,7 @@ it("moves past events behind the Past switch, where they offer no RSVP", async (
   const past = [...container.querySelectorAll<HTMLButtonElement>("#special-events .segmented button")].find(button => button.textContent === "Past")!
   await act(async () => past.click())
   expect([...container.querySelectorAll("button")].some(button => button.textContent === "RSVP")).toBe(false)
-  expect(container.querySelector("#special-events [popovertarget]")?.textContent).toBe("Add to calendar")
+  expect(container.querySelector("#special-events [popovertarget]")).toBeNull()
   await act(async () => root.unmount())
 })
 

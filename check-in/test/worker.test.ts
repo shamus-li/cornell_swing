@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import worker, {
   handleApiRequest,
   handleCheckin,
+  handleCheckinStatus,
   runNightlySync,
 } from "../worker"
 import { refreshMemberCache, searchCachedMembers } from "../worker/cache"
@@ -61,18 +62,22 @@ function useFakes() {
   return { sheets, notion }
 }
 
+function checkinRequestBody(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    memberId: ADA_MEMBER_ID,
+    name: "Ada Lovelace",
+    email: "ADA@EXAMPLE.COM",
+    affiliation: "Community Member",
+    phone: "607-555-0100",
+    ...overrides,
+  })
+}
+
 function checkinRequest(overrides: Record<string, unknown> = {}): Request {
   return new Request("https://example.com/check-in/api/checkins", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      memberId: ADA_MEMBER_ID,
-      name: "Ada Lovelace",
-      email: "ADA@EXAMPLE.COM",
-      affiliation: "Community Member",
-      phone: "607-555-0100",
-      ...overrides,
-    }),
+    body: checkinRequestBody(overrides),
   })
 }
 
@@ -254,6 +259,24 @@ describe("member search", () => {
 })
 
 describe("check-in", () => {
+  it("reports tonight's check-ins before the waiver, by member ID or by email for new attendees", async () => {
+    useFakes()
+    await cacheMembers({ id: ADA_MEMBER_ID, name: "Ada Lovelace", email: "ada@example.com", affiliation: "Community Member" })
+    const statusRequest = (overrides: Record<string, unknown> = {}) =>
+      new Request("https://example.com/check-in/api/checkins/status", { method: "POST", headers: { "Content-Type": "application/json" }, body: checkinRequestBody(overrides) })
+    const status = async (overrides: Record<string, unknown> = {}) =>
+      (await (await handleCheckinStatus(statusRequest(overrides), env, token, TEST_TIMESTAMP)).json()) as { checkedIn: boolean }
+
+    expect(await status()).toEqual({ checkedIn: false })
+    expect((await handleCheckin(checkinRequest(), env, token, TEST_TIMESTAMP)).status).toBe(201)
+    expect(await status()).toEqual({ checkedIn: true })
+
+    const newcomer = { memberId: null, name: "New Dancer", email: "new@example.com" }
+    expect(await status(newcomer)).toEqual({ checkedIn: false })
+    expect((await handleCheckin(checkinRequest(newcomer), env, token, TEST_TIMESTAMP)).status).toBe(201)
+    expect(await status(newcomer)).toEqual({ checkedIn: true })
+  })
+
   it("records a first-time attendee with a generated durable member ID", async () => {
     const { sheets } = useFakes()
 

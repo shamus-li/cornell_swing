@@ -45,7 +45,7 @@ it("updates RSVP counts and event deletion locally and loads the sheet status on
   await click("Copy names and emails")
   expect(writeText).toHaveBeenCalledWith("Dancer\tdancer@example.com")
   await click("Remove Dancer")
-  await click("Confirm")
+  await click("Confirm (Remove Dancer)")
   expect(container.querySelector(".guest-list")).toBeNull()
   await click("← Events")
   expect(container.querySelector(".guest-count")?.textContent).toBe("0 RSVPs")

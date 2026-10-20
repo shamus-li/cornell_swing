@@ -12,6 +12,9 @@ export interface EventRecord {
   location: string
   locationUrl?: string
   room?: string
+  // Ticket prices in dollars, like "5" or "7.50"; empty when not announced.
+  studentPrice?: string
+  generalPrice?: string
   description: string
   published: boolean
   updatedAt: string
@@ -55,6 +58,15 @@ export function formatEventLocation(event: Pick<EventRecord, 'location' | 'room'
   return [event.room, event.location].filter(Boolean).join(', ') || 'TBA'
 }
 
+const formatPrice = (price: string, who: string) => Number(price) === 0 ? `Free for ${who}` : `$${Number(price).toFixed(Number.isInteger(Number(price)) ? 0 : 2)} ${who}`
+// ["$5 students", "$10 general"], leaving out prices that are not set; ["Free"] when both are free.
+export function formatEventPrices({ studentPrice, generalPrice }: Pick<EventRecord, 'studentPrice' | 'generalPrice'>): string[] {
+  if (studentPrice && generalPrice && Number(studentPrice) === 0 && Number(generalPrice) === 0) return ['Free']
+  return [studentPrice && formatPrice(studentPrice, 'students'), generalPrice && formatPrice(generalPrice, 'general')].filter((price): price is string => !!price)
+}
+// Up to $999.99, without leading zeros or more than two decimal places; empty when not announced.
+export const isValidPrice = (price: string) => /^((0|[1-9]\d{0,2})(\.\d{1,2})?)?$/.test(price)
+
 export function validateEvent(value: unknown): EventInput {
   if (!value || typeof value !== 'object') throw new Error('Enter the event details.')
   const input = value as Record<string, unknown>
@@ -75,13 +87,19 @@ export function validateEvent(value: unknown): EventInput {
   if (fields.endTime && fields.endTime <= fields.startTime) throw new Error('The end time must be after the start time on the same day.')
   if (input.room !== undefined && (typeof input.room !== 'string' || input.room.length > 300)) throw new Error('Enter room details up to 300 characters.')
   const room = typeof input.room === 'string' ? input.room.trim() : ''
+  const prices = { studentPrice: '', generalPrice: '' }
+  for (const key of ['studentPrice', 'generalPrice'] as const) {
+    const price = input[key] ?? ''
+    if (typeof price !== 'string' || !isValidPrice(price.trim())) throw new Error('Enter ticket prices in dollars up to $999.99, like 5 or 7.50.')
+    prices[key] = price.trim()
+  }
   const locationUrl = typeof input.locationUrl === 'string' ? input.locationUrl.trim() : ''
   if (locationUrl) {
     let url: URL
     try { url = new URL(locationUrl) } catch { throw new Error('Enter a valid Google Maps link.') }
     if (locationUrl.length > 2000 || url.protocol !== 'https:' || url.hostname !== 'www.google.com' || url.pathname !== '/maps/search/' || url.username || url.password || url.port) throw new Error('Enter a valid Google Maps link.')
   }
-  return { room, locationUrl, kind: input.kind, published: input.published, title: fields.title, date: fields.date, startTime: fields.startTime, endTime: fields.endTime, location: fields.location, description: fields.description }
+  return { room, locationUrl, ...prices, kind: input.kind, published: input.published, title: fields.title, date: fields.date, startTime: fields.startTime, endTime: fields.endTime, location: fields.location, description: fields.description }
 }
 
 export function validateRSVP(value: unknown): { name: string; email: string } {

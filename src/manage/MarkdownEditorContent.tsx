@@ -13,6 +13,7 @@ import "@mdxeditor/editor/style.css"
 import "./markdown-editor.css"
 import { URLOnlyLinkDialog } from "./URLOnlyLinkDialog"
 
+// Paragraphs are spaced apart on their own; an empty line adds extra space, which the homepage keeps.
 const blankParagraphsPlugin = realmPlugin({
   init(realm) {
     realm.pub(addExportVisitor$, {
@@ -50,15 +51,17 @@ function EditorToolbar() {
   </>
 }
 
-export function MarkdownEditor({ markdown, label, onChange, onError }: {
+export function MarkdownEditor({ markdown, label, onChange, onError, readOnly }: {
   markdown: string
   label: string
   onChange: (markdown: string) => void
   onError: (message: string) => void
+  readOnly: boolean
 }) {
   const [initialMarkdown] = useState(markdown)
   return <div className="markdown-editor" role="group" aria-label={label}><MDXEditor
     markdown={initialMarkdown}
+    readOnly={readOnly}
     className="inline-editor"
     contentEditableClassName="event-markdown inline-editor-content"
     placeholder="Add a description…"
@@ -68,7 +71,8 @@ export function MarkdownEditor({ markdown, label, onChange, onError }: {
     onError={() => onError("This description could not be opened. Your saved text has been preserved.")}
     plugins={[
       blankParagraphsPlugin(),
-      headingsPlugin({ allowedHeadingLevels: [2, 3] }), listsPlugin(), quotePlugin(), linkPlugin(), linkDialogPlugin({ LinkDialog: URLOnlyLinkDialog }),
+      headingsPlugin({ allowedHeadingLevels: [2, 3] }), listsPlugin(), quotePlugin(), // Automatic linking would rewrite a bare URL in saved text on load; the homepage links bare URLs anyway.
+      linkPlugin({ disableAutoLink: true }), linkDialogPlugin({ LinkDialog: URLOnlyLinkDialog }),
       thematicBreakPlugin(), markdownShortcutPlugin(),
       toolbarPlugin({ toolbarClassName: "editor-toolbar", toolbarContents: () => <EditorToolbar /> }),
     ]}

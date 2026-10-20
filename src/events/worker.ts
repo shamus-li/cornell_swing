@@ -10,8 +10,9 @@ import { isRecord, parseRedirect } from '../redirects/redirect'
 import { buildCampusGroups, campusGroupsKey, summarizeCampusGroups, type CampusGroupsData } from './campusgroups'
 import { formatEventLocation, hasEventDetails, todayInNewYork, validateEvent, validateRSVP, type EventRecord, type ManagedEvent, type RSVP } from './model'
 
+// `code` lets the manager tell specific failures apart, such as "stale" for an event saved elsewhere since it was opened.
 class HttpError extends Error {
-  constructor(readonly status: number, message: string) { super(message) }
+  constructor(readonly status: number, message: string, readonly code?: string) { super(message) }
 }
 
 function json(value: unknown, status = 200): Response {
@@ -40,15 +41,16 @@ async function readBody(request: Request, limit = 90000): Promise<unknown> {
 
 let managerKeys: { issuer: string; keys: ReturnType<typeof createRemoteJWKSet> } | undefined
 
-async function requireManager(request: Request, env: Env): Promise<void> {
+async function requireManager(request: Request, env: Env, path: string): Promise<void> {
   if (!env.ACCESS_TEAM_DOMAIN || !env.ACCESS_AUD) throw new HttpError(503, 'Manager sign-in is not configured.')
+  const signIn = `Sign in to manage ${path.startsWith('/redirects') ? 'redirects' : 'events'}.`
   const token = request.headers.get('Cf-Access-Jwt-Assertion')
-  if (!token) throw new HttpError(401, 'Sign in to manage events.')
+  if (!token) throw new HttpError(401, signIn)
   try {
     const issuer = `https://${env.ACCESS_TEAM_DOMAIN}`
     if (managerKeys?.issuer !== issuer) managerKeys = { issuer, keys: createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`)) }
     await jwtVerify(token, managerKeys.keys, { issuer, audience: env.ACCESS_AUD, algorithms: ['RS256'] })
-  } catch { throw new HttpError(401, 'Sign in to manage events.') }
+  } catch { throw new HttpError(401, signIn) }
 }
 
 const managerPage = (path: string) => ['/manage', '/redirects'].some(page => path === page || path.startsWith(`${page}/`))
@@ -127,7 +129,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (method !== 'GET' && method !== 'HEAD') {
     if (request.headers.get('origin') !== url.origin) throw new HttpError(403, 'Please submit from this website.')
   }
-  if (managerPage(path)) await requireManager(request, env)
+  if (managerPage(path)) await requireManager(request, env, path)
   if (path === '/redirects/api') return redirectsApi(request, env, method)
   if (path === '/manage/api/locations' && method === 'GET') return handleLocationSearch(request, env.GOOGLE_PLACES_API_KEY)
   if (path === '/api/events' && method === 'GET') return json({ events: await listEvents(env) })
@@ -195,10 +197,10 @@ async function route(request: Request, env: Env): Promise<Response> {
     try { input = validateEvent(body) } catch (error) { throw new HttpError(400, (error as Error).message) }
     const id = method === 'POST' ? crypto.randomUUID() : managerMatch![1]
     let updatedAt = new Date().toISOString()
-    const values = [input.kind, input.title, input.date, input.startTime, input.endTime, input.location, input.description, updatedAt, input.locationUrl || '', input.room || '', input.published ? 1 : 0]
+    const values = [input.kind, input.title, input.date, input.startTime, input.endTime, input.location, input.description, updatedAt, input.locationUrl || '', input.room || '', input.published ? 1 : 0, input.studentPrice, input.generalPrice]
     if (method === 'POST') {
       const create = async () => {
-      const result = await env.EVENTS_DB.prepare('INSERT INTO events (kind, title, date, startTime, endTime, location, description, updatedAt, locationUrl, room, published, id) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ?3 = \'\' OR NOT EXISTS (SELECT 1 FROM events WHERE date = ?3)').bind(...values, id).run()
+      const result = await env.EVENTS_DB.prepare('INSERT INTO events (kind, title, date, startTime, endTime, location, description, updatedAt, locationUrl, room, published, studentPrice, generalPrice, id) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ?3 = \'\' OR NOT EXISTS (SELECT 1 FROM events WHERE date = ?3)').bind(...values, id).run()
       if (!result.meta.changes) throw new EventConflict(dateTaken)
       }
       if (input.kind === 'special') await createEventWithSheet(env, input.title, create)
@@ -209,9 +211,9 @@ async function route(request: Request, env: Env): Promise<Response> {
       updatedAt = new Date(Math.max(Date.now(), Date.parse(previous) + 1)).toISOString()
       values[7] = updatedAt
       const current = await env.EVENTS_DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first<EventRecord>()
-      if (!current || current.updatedAt !== previous) throw new HttpError(409, 'The event changed. Refresh before saving.')
+      if (!current || current.updatedAt !== previous) throw new HttpError(409, 'Someone else saved this event after you opened it.', 'stale')
       const update = async () => {
-      const result = await env.EVENTS_DB.prepare('UPDATE events SET kind = ?, title = ?, date = ?, startTime = ?, endTime = ?, location = ?, description = ?, updatedAt = ?, locationUrl = ?, room = ?, published = ? WHERE id = ?12 AND updatedAt = ? AND (?1 = \'special\' OR NOT EXISTS (SELECT 1 FROM rsvps WHERE eventId = ?12)) AND (?3 = \'\' OR NOT EXISTS (SELECT 1 FROM events WHERE date = ?3 AND id != ?12))').bind(...values, id, previous).run()
+      const result = await env.EVENTS_DB.prepare('UPDATE events SET kind = ?, title = ?, date = ?, startTime = ?, endTime = ?, location = ?, description = ?, updatedAt = ?, locationUrl = ?, room = ?, published = ?, studentPrice = ?, generalPrice = ? WHERE id = ?14 AND updatedAt = ? AND (?1 = \'special\' OR NOT EXISTS (SELECT 1 FROM rsvps WHERE eventId = ?14)) AND (?3 = \'\' OR NOT EXISTS (SELECT 1 FROM events WHERE date = ?3 AND id != ?14))').bind(...values, id, previous).run()
       if (result.meta.changes) return
       if (input.date && await env.EVENTS_DB.prepare('SELECT 1 FROM events WHERE date = ? AND id != ?').bind(input.date, id).first()) throw new EventConflict(dateTaken)
       throw new EventConflict('The event changed, or has RSVPs and cannot become a normal event. Refresh before saving.')
@@ -248,11 +250,14 @@ async function route(request: Request, env: Env): Promise<Response> {
   const assetRequest = new Request(request)
   assetRequest.headers.delete('If-None-Match')
   assetRequest.headers.delete('If-Modified-Since')
-  const [response, events] = await Promise.all([env.ASSETS.fetch(assetRequest), cachedEvents(env, url)])
+  // The homepage still renders when the events can't be read, with a notice where they would be.
+  const [response, loaded] = await Promise.all([env.ASSETS.fetch(assetRequest), cachedEvents(env, url).catch((error: unknown) => { logError('Homepage events failed to load', error); return null })])
   if (!response.ok) return response
   const today = todayInNewYork()
-  const snapshot = JSON.stringify({ events, today }).replaceAll('<', '\\u003c')
-  const html = renderToString(createElement(EventSections, { events, today }))
+  const events = loaded ?? []
+  const unavailable = loaded === null
+  const snapshot = JSON.stringify({ events, today, unavailable }).replaceAll('<', '\\u003c')
+  const html = renderToString(createElement(EventSections, { events, today, unavailable }))
   const nextEvent = renderToString(createElement(NextEvent, { events, today }))
   return new HTMLRewriter().on('#next-event', { element: element => { element.setInnerContent(nextEvent, { html: true }) } }).on('#event-sections', { element: element => { element.setInnerContent(html, { html: true }) } }).on('#schedule-data', { element: element => { element.setInnerContent(snapshot, { html: true }) } }).transform(response)
 }
@@ -269,7 +274,7 @@ export default {
       if (error instanceof EventConflict) error = new HttpError(409, error.message)
       if (error instanceof RedirectError) error = new HttpError(error.status, error.message)
       if (!(error instanceof HttpError)) logError('Events request failed', error)
-      response = json({ error: error instanceof HttpError ? error.message : 'Something went wrong. Please try again.' }, error instanceof HttpError ? error.status : 500)
+      response = json({ error: error instanceof HttpError ? error.message : 'Something went wrong. Please try again.', ...(error instanceof HttpError && error.code && { code: error.code }) }, error instanceof HttpError ? error.status : 500)
     }
     response = new Response(response.body, response)
     const pathname = new URL(request.url).pathname

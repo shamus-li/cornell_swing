@@ -16,6 +16,11 @@ type CheckinAttendee = {
   phone: string
 }
 
+// A returning member is matched by member ID (or the email of an older row without one); a new attendee by email.
+function duplicateKeys(attendee: CheckinAttendee): string[] {
+  return attendee.memberId ? [`id:${attendee.memberId}`, `legacy-email:${attendee.email}`] : [`email:${attendee.email}`]
+}
+
 export class CheckinGuard extends DurableObject<Env> {
   private initialization: Promise<void> | null = null
   private readonly getAccessToken = createCachedGoogleAccessTokenProvider()
@@ -79,6 +84,21 @@ export class CheckinGuard extends DurableObject<Env> {
     })
   }
 
+  // Read-only: whether this attendee already checked in tonight. The kiosk asks before showing the
+  // participant waiver, so nobody signs a second waiver only to be told they're already checked in.
+  async isCheckedIn(attendee: CheckinAttendee, timestamp: number, accessToken?: string): Promise<boolean | "failed"> {
+    const dateKey = dateKeyInTimeZone(timestamp, this.env.TIME_ZONE)
+    try {
+      await this.ensureInitialized(dateKey, accessToken ?? await this.getAccessToken(this.env))
+    } catch (error) {
+      console.error(JSON.stringify({ message: "check-in guard initialization failed", error: String(error) }))
+      return "failed"
+    }
+    return duplicateKeys(attendee).some(key =>
+      Array.from(this.ctx.storage.sql.exec("SELECT key FROM checkin_keys WHERE key = ?", key)).length > 0,
+    )
+  }
+
   async checkin(
     attendee: CheckinAttendee,
     timestamp: number,
@@ -97,10 +117,7 @@ export class CheckinGuard extends DurableObject<Env> {
     const memberId = attendee.memberId ?? createMemberId()
     const emailKey = `email:${attendee.email}`
     const memberKey = `id:${memberId}`
-    const checkKeys = attendee.memberId
-      ? [memberKey, `legacy-email:${attendee.email}`]
-      : [emailKey]
-    const reservedKeys = this.reserve(checkKeys, [memberKey, emailKey])
+    const reservedKeys = this.reserve(duplicateKeys(attendee), [memberKey, emailKey])
     if (!reservedKeys) return "duplicate"
 
     try {

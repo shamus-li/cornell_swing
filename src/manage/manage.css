@@ -12,8 +12,11 @@
 html:has(.manage-page) { scroll-behavior: auto; }
 /* App density: 14px text like Vercel and GitHub; touch screens get 16px inputs so iOS does not zoom. */
 /* The homepage uses system fonts on phones; the manager stays in Inter like check-in. */
-.manage-page { --page: min(720px, calc(100% - 32px)); --sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; --serif: var(--sans); --body-font-size: .875rem; --control-font-size: .875rem; --input-font-size: .875rem; --small-font-size: .8125rem; --caption-font-size: .75rem; }
+/* 866px leaves the event editor's description box 832px for text, the width of an event description on the homepage; the list shares the width so the header stays put. */
+.manage-page { --page: min(866px, calc(100% - 32px)); --sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; --serif: var(--sans); --body-font-size: .875rem; --control-font-size: .875rem; --input-font-size: .875rem; --small-font-size: .8125rem; --caption-font-size: .75rem; }
 @media (pointer: coarse) { .manage-page { --input-font-size: 1rem; } }
+/* Every field uses the same text size: 14px with a mouse, 16px on touch screens so iOS does not zoom in. */
+.manage-page :is([data-slot="input"], [data-slot="input-group-control"], [data-slot="textarea"], [data-slot="popover-trigger"]) { font-size: var(--input-font-size); }
 .manage-header { justify-content: space-between; gap: 16px; }
 .manage-main { padding: 24px 0 64px; }
 .manage-main h1 { font-size: 1.5rem; line-height: 1.25; }
@@ -54,25 +57,37 @@ html:has(.manage-page) { scroll-behavior: auto; }
 
 /* Weekly lesson editing in place */
 .normal-event-edit { margin: 8px 0; padding: 16px; border-radius: 12px; background: var(--muted); }
-.normal-event-edit :is([data-slot="input"], [data-slot="textarea"], [data-slot="input-group"]), .editor-card :is([data-slot="input"], [data-slot="input-group"]) { background: var(--background); }
+.normal-event-edit :is([data-slot="input"], [data-slot="textarea"], [data-slot="input-group"]) { background: var(--background); }
 .normal-event-fields { display: grid; gap: 12px; margin-bottom: 16px; }
+.editor-row { display: grid; grid-template-columns: 80px minmax(0, 1fr); align-items: center; gap: 12px; }
+.editor-row > span { color: var(--muted-foreground); font-size: var(--small-font-size); }
+.editor-row-top { align-items: start; }
+.editor-row-top > span { padding-top: 10px; }
 .normal-event-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
 /* Event editor */
 .event-editor-shell { display: grid; gap: 16px; }
 .back-button { justify-self: start; margin-left: -12px; color: var(--muted-foreground); }
-.event-editor { display: grid; gap: 16px; }
-.event-name-input { width: 100%; padding: 4px 0; border: 0; outline: 0; background: transparent; color: var(--foreground); font: 600 1.5rem/1.25 var(--sans); }
+.event-editor { display: grid; gap: 16px; padding-top: 8px; }
+.editor-title { display: flex; align-items: flex-start; gap: 16px; }
+/* A textarea, so a long name wraps as it does on the homepage. */
+.event-name-input { display: block; flex: 1; min-width: 0; padding: 8px 0 0; border: 0; outline: 0; background: transparent; color: var(--foreground); font: 600 1.5rem/1.25 var(--sans); resize: none; overflow: hidden; }
 .event-name-input::placeholder { color: var(--placeholder); }
-.editor-card { display: grid; gap: 8px; padding: 8px; border-radius: 12px; background: var(--muted); }
-.editor-when { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
-.editor-row { display: grid; grid-template-columns: 80px minmax(0, 1fr); align-items: center; gap: 12px; }
-.editor-row > span { color: var(--muted-foreground); font-size: var(--small-font-size); }
-.editor-row-top { align-items: start; }
-.editor-row-top > span { padding-top: 10px; }
-.editor-time { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; color: var(--muted-foreground); }
-.editor-delete { justify-self: start; padding-top: 24px; }
-.editor-actions { display: flex; align-items: center; gap: 8px; }
+.editor-card { display: grid; padding: 0 16px; border-radius: 12px; background: var(--muted); }
+.editor-card :is([data-slot="input"], [data-slot="input-group"], [data-slot="popover-trigger"]) { background: var(--background); }
+.editor-field { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 12px; align-items: start; padding: 8px 0; }
+.editor-field > svg { width: 16px; height: 16px; margin-top: 8px; color: var(--muted-foreground); }
+.editor-when { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 9rem) auto minmax(0, 9rem); align-items: center; gap: 8px; color: var(--muted-foreground); }
+.editor-prices { display: flex; flex-wrap: wrap; gap: 8px; }
+/* "Students $5": as wide as its text, with label, dollar sign and amount sharing one baseline. */
+/* Each part is one 20px line, centered by the field's padding, so nothing shifts vertically. */
+.editor-prices [data-slot="input-group"] { width: auto; align-items: baseline; padding-block: 5px; }
+.editor-prices [data-slot="input-group-addon"] { padding-block: 0; font-size: var(--input-font-size); font-weight: 400; line-height: 20px; }
+.editor-prices [data-slot="input-group-addon"] + [data-slot="input-group-addon"] { padding: 0 0 0 4px; color: var(--foreground); }
+.editor-prices input { flex: none; height: 20px; padding: 0 8px 0 1px; line-height: 20px; font-variant-numeric: tabular-nums; }
+.editor-delete { justify-self: start; padding-top: 8px; }
+/* Save stays in reach while a long description scrolls. */
+.editor-actions { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 1px solid var(--border); background: var(--background); }
 .editor-actions > p { flex: 1; margin: 0; font-size: var(--small-font-size); }
 
 /* Guests */
@@ -99,8 +114,10 @@ html:has(.manage-page) { scroll-behavior: auto; }
   .manage-main { padding-top: 16px; }
   .manage-header .site-name { font-size: 1rem; }
   :is(.event-row-button, .normal-event-summary) { gap: 12px; }
-  .event-name-input { font-size: 1.375rem; }
   .tab { padding: 0 10px; }
-  .editor-when { grid-template-columns: minmax(0, 1fr); }
+  .event-name-input { font-size: 1.375rem; }
+  /* The date takes its own line above the times. */
+  .editor-when { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+  .editor-when > :first-child { grid-column: 1 / -1; }
   .tab[aria-selected="true"]::after { inset: auto 10px -1px; }
 }

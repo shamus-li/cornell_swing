@@ -10,10 +10,9 @@
 .editor-tool[aria-pressed="true"] { background: var(--accentBg); color: var(--primary); }
 .editor-tool:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 .editor-tool-separator { width: 1px; height: 20px; margin: 0 4px; background: var(--border); }
-.inline-editor .inline-editor-content { min-height: 200px; padding: 12px 16px 16px; font-size: var(--input-font-size); font-weight: 400; line-height: 1.5; outline: none; }
-.inline-editor .inline-editor-content h2 { font-size: 1.125rem; }
-.inline-editor .inline-editor-content h3 { font-size: 1rem; }
-.inline-editor [class*="placeholder"] { padding: 12px 16px; color: var(--placeholder); font-size: var(--input-font-size); }
+/* The description uses the homepage's text size and weight so it looks as it will when published. */
+.inline-editor .inline-editor-content { min-height: 200px; padding: 12px 16px 16px; font-size: 1rem; font-weight: 450; line-height: 1.5; outline: none; }
+.inline-editor [class*="placeholder"] { padding: 12px 16px; color: var(--placeholder); font-size: 1rem; }
 .link-bar { display: flex; align-items: center; gap: 4px; min-width: 0; padding-left: 8px; }
 .link-bar > svg { flex: none; width: 16px; height: 16px; color: var(--muted-foreground); }
 .link-input { flex: 1; min-width: 0; height: 36px; padding: 0 4px; border: 0; outline: 0; background: transparent; color: var(--foreground); font: 400 var(--input-font-size) var(--sans); }

@@ -30,12 +30,14 @@ import {
   AFFILIATION_LABELS,
   AFFILIATIONS,
   hasUnusualNameCapitalization,
+  isConnectionError,
   isValidEmail,
   isValidName,
   normalizeName,
   normalizePhone,
   phoneNumberForInput,
   PARTICIPANT_WAIVER_AFFILIATIONS,
+  REQUEST_TIMEOUT_MS,
   type Affiliation,
   type Member,
   type NextSteps,
@@ -48,7 +50,8 @@ type MembersResponse = {
 const MEMBER_SEARCH_DELAY_MS = 75
 const MEMBER_SEARCH_CACHE_LIMIT = 12
 const CONFIRMATION_TIMEOUT_MS = 30_000
-const NO_RESULTS = { key: "", members: [] }
+const IDLE_RESET_MS = 90_000
+const NO_RESULTS = { key: "", members: [], failed: false }
 
 type Attendee = {
   memberId: string | null
@@ -87,7 +90,7 @@ export default function App() {
   const [phone, setPhone] = useState("")
   const [affiliation, setAffiliation] = useState<Affiliation | "">("")
   // Tagged with the search they answer so "Don't see your name?" waits for the current results.
-  const [results, setResults] = useState<{ key: string; members: Member[] }>(NO_RESULTS)
+  const [results, setResults] = useState<{ key: string; members: Member[]; failed: boolean }>(NO_RESULTS)
   const [selectedMember, setSelectedMember] = useState<Member | null>(null)
   const [memberSearchOpen, setMemberSearchOpen] = useState(false)
   const [nameFocused, setNameFocused] = useState(false)
@@ -121,7 +124,7 @@ export default function App() {
 
     const cached = memberSearchCache.current.get(searchKey)
     if (cached) {
-      setResults({ key: searchKey, members: cached })
+      setResults({ key: searchKey, members: cached, failed: false })
       setMemberSearchOpen(true)
       return
     }
@@ -147,13 +150,13 @@ export default function App() {
           const oldestKey = memberSearchCache.current.keys().next().value
           if (oldestKey) memberSearchCache.current.delete(oldestKey)
         }
-        setResults({ key: searchKey, members: matches })
+        setResults({ key: searchKey, members: matches, failed: false })
         setMemberSearchOpen(true)
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return
         if (!active) return
         console.error(error)
-        setResults(NO_RESULTS)
+        setResults({ key: searchKey, members: [], failed: true })
         setMemberSearchOpen(false)
       }
     }, MEMBER_SEARCH_DELAY_MS)
@@ -225,14 +228,41 @@ export default function App() {
       phone: normalizedPhone,
       affiliation,
     }
+    setIsSubmitting(true)
+    // Someone already checked in tonight goes straight to "Already checked in" instead of signing the waiver again.
     if (PARTICIPANT_WAIVER_AFFILIATIONS.includes(affiliation)) {
-      setWaiverAttendee(attendee)
+      const checkedIn = await isCheckedIn(attendee)
+      setIsSubmitting(false)
+      if (typeof checkedIn === "string") setMessage(checkedIn)
+      else if (checkedIn) setConfirmation("Already checked in")
+      else setWaiverAttendee(attendee)
       return
     }
-    setIsSubmitting(true)
     const error = await checkIn(attendee)
     if (error) setMessage(error)
     setIsSubmitting(false)
+  }
+
+  // Asks whether the attendee already checked in tonight; returns an error message when it can't tell.
+  async function isCheckedIn(attendee: Attendee): Promise<boolean | string> {
+    try {
+      const response = await fetch("api/checkins/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(attendee),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      })
+      const payload = (await response.json().catch(() => ({}))) as { message?: string; checkedIn?: boolean }
+      if (!response.ok) throw new Error(payload.message || "Check-in failed")
+      return payload.checkedIn === true
+    } catch (error) {
+      console.error(error)
+      return isConnectionError(error)
+        ? "Couldn't reach the server. Check the Wi-Fi connection and try again."
+        : error instanceof Error
+          ? error.message
+          : "Check-in failed. Please try again."
+    }
   }
 
   // Records the check-in and shows the confirmation; returns an error message when it fails.
@@ -242,6 +272,7 @@ export default function App() {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify(attendee),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       })
       const payload = (await response.json().catch(() => ({}))) as { message?: string; next?: NextSteps }
       if (!response.ok && response.status !== 409) {
@@ -261,8 +292,7 @@ export default function App() {
       return null
     } catch (error) {
       console.error(error)
-      // fetch rejects with a TypeError when the request never reached the server.
-      return error instanceof TypeError
+      return isConnectionError(error)
         ? "Couldn't reach the server. Check the Wi-Fi connection and try again."
         : error instanceof Error
           ? error.message
@@ -273,9 +303,28 @@ export default function App() {
   function resetForm() {
     forgetWaiver()
     clearSelectedMember()
+    setWaiverAttendee(null)
     setConfirmation(null)
     setNext(null)
   }
+
+  // A half-filled form or an open waiver clears itself after 90 seconds without a touch, keypress, or
+  // scroll, so the next person at the kiosk never sees it.
+  const hasEntry = !!(name || email || phone || affiliation || waiverAttendee)
+  useEffect(() => {
+    if (confirmation || !hasEntry) return
+    const events = ["pointerdown", "keydown", "input", "scroll"]
+    let timeout = window.setTimeout(resetForm, IDLE_RESET_MS)
+    const restart = () => {
+      window.clearTimeout(timeout)
+      timeout = window.setTimeout(resetForm, IDLE_RESET_MS)
+    }
+    for (const type of events) window.addEventListener(type, restart, true)
+    return () => {
+      window.clearTimeout(timeout)
+      for (const type of events) window.removeEventListener(type, restart, true)
+    }
+  }, [confirmation, hasEntry])
 
   // Nobody taps "Check in another person", so the kiosk returns to a blank form on its own.
   useEffect(() => {
@@ -319,7 +368,7 @@ export default function App() {
     return (
       <div className="mx-auto min-h-svh w-full max-w-[620px] px-5 pb-12">
         <header className="flex h-16 items-center">
-          <SiteBrand />
+          <SiteBrand link={false} />
         </header>
         <main className="pt-12">
           <NonCornellWaiver
@@ -337,7 +386,7 @@ export default function App() {
   return (
     <div className="mx-auto min-h-svh w-full max-w-[620px] px-5 pb-12">
       <header className="flex h-16 items-center">
-        <SiteBrand />
+        <SiteBrand link={false} />
       </header>
 
       <main className="pt-12">
@@ -403,7 +452,7 @@ export default function App() {
             </FloatingField>
             {showNoMatches && (
               <p className="mt-2 px-3 text-sm leading-5 text-muted-foreground" role="status">
-                Don&apos;t see your name? Continue below.
+                {results.failed ? "Name search isn't working right now. Fill in the form below." : "Don't see your name? Continue below."}
               </p>
             )}
             {showNameCasePrompt && (

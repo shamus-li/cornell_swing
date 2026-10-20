@@ -48,6 +48,7 @@ export { CheckinGuard } from "./checkin-guard"
 
 const MEMBER_SEARCH_PATH = "/check-in/api/members"
 const CHECKIN_PATH = "/check-in/api/checkins"
+const CHECKIN_STATUS_PATH = "/check-in/api/checkins/status"
 const WAIVER_PATH = "/check-in/api/waiver"
 // The morning cron that checks the CampusGroups waiver form; the others run the attendance sync.
 const WAIVER_CHECK_CRON = "30 11 * * *"
@@ -144,12 +145,8 @@ async function handleMemberSearch(request: Request, env: Env): Promise<Response>
   return json({ members: await searchCachedMembers(env, query) })
 }
 
-export async function handleCheckin(
-  request: Request,
-  env: Env,
-  getAccessToken?: AccessTokenProvider,
-  timestamp = Date.now(),
-): Promise<Response> {
+// Reads a kiosk check-in and links it to an existing member record, or returns the error response.
+async function readCheckinAttendee(request: Request, env: Env): Promise<Attendee | Response> {
   const contentLength = Number.parseInt(request.headers.get("Content-Length") ?? "0", 10)
   if (Number.isFinite(contentLength) && contentLength > 4096) {
     return json({ message: "Check-in data is too large" }, 413)
@@ -194,6 +191,18 @@ export async function handleCheckin(
     if (member) attendee.memberId = member.id
   }
 
+  return attendee
+}
+
+export async function handleCheckin(
+  request: Request,
+  env: Env,
+  getAccessToken?: AccessTokenProvider,
+  timestamp = Date.now(),
+): Promise<Response> {
+  const attendee = await readCheckinAttendee(request, env)
+  if (attendee instanceof Response) return attendee
+
   const accessToken = getAccessToken ? await getAccessToken(env) : undefined
   const dateKey = dateKeyInTimeZone(timestamp, env.TIME_ZONE)
   const result = await env.CHECKIN_GUARD.getByName(dateKey).checkin(attendee, timestamp, accessToken)
@@ -202,6 +211,21 @@ export async function handleCheckin(
   return result === "duplicate"
     ? json({ message: "Already checked in", next }, 409)
     : json({ message: "Checked in", next }, 201)
+}
+
+// Whether the attendee already checked in tonight, asked before the participant waiver.
+export async function handleCheckinStatus(
+  request: Request,
+  env: Env,
+  getAccessToken?: AccessTokenProvider,
+  timestamp = Date.now(),
+): Promise<Response> {
+  const attendee = await readCheckinAttendee(request, env)
+  if (attendee instanceof Response) return attendee
+  const accessToken = getAccessToken ? await getAccessToken(env) : undefined
+  const result = await env.CHECKIN_GUARD.getByName(dateKeyInTimeZone(timestamp, env.TIME_ZONE)).isCheckedIn(attendee, timestamp, accessToken)
+  if (result === "failed") throw new Error("Check-in status lookup failed")
+  return json({ checkedIn: result })
 }
 
 // What the attendee still needs to do after checking in, from the latest CampusGroups member upload.
@@ -505,6 +529,10 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     if (pathname === CHECKIN_PATH) {
       if (request.method !== "POST") return json({ message: "Method not allowed" }, 405)
       return await handleCheckin(request, env)
+    }
+    if (pathname === CHECKIN_STATUS_PATH) {
+      if (request.method !== "POST") return json({ message: "Method not allowed" }, 405)
+      return await handleCheckinStatus(request, env)
     }
     if (pathname === WAIVER_PATH) {
       try {

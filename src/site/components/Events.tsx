@@ -1,15 +1,16 @@
-import { useEffect, useRef, useState, type FormEvent } from "react"
-import { ClockIcon, MapPinIcon, XIcon } from "lucide-react"
+import { Fragment, useEffect, useRef, useState, type FormEvent } from "react"
+import { ClockIcon, MapPinIcon, TicketIcon, XIcon } from "lucide-react"
 import { Input } from "../../../check-in/src/components/ui/input"
 import { FloatingField, floatingInputClass } from "../../../check-in/src/components/ui/floating-field"
 import { Button } from "../../../check-in/src/components/ui/button"
 import { largeButtonClass } from "../../../check-in/src/lib/sizes"
-import { formatEventLocation, formatEventDate, formatEventTime, hasEventDetails, scheduleTitle, todayInNewYork, type EventRecord } from "../../events/model"
+import { formatEventLocation, formatEventDate, formatEventPrices, formatEventTime, hasEventDetails, scheduleTitle, todayInNewYork, type EventRecord } from "../../events/model"
 import { EventLocation } from "../../events/EventLocation"
 import { Markdown } from "../../events/Markdown"
 import { DateTile } from "../../events/DateTile"
 
-export type EventSnapshot = { events: EventRecord[]; today: string }
+// `unavailable` is set when the server could not read the events, so the page says so instead of "no events".
+export type EventSnapshot = { events: EventRecord[]; today: string; unavailable?: boolean }
 
 function CalendarLinks({ event, scope = "page" }: { event: EventRecord; scope?: "page" | "rsvp" }) {
   if (event.kind !== "special" || !event.date || !event.startTime || !event.endTime) return null
@@ -33,12 +34,14 @@ function RsvpDialog({ event, onClose }: { event: EventRecord; onClose: () => voi
   const [email, setEmail] = useState("")
   useEffect(() => {
     const element = dialog.current!
+    // React removes the dialog before the browser can return focus, so focus goes back to the RSVP button by hand.
+    const opener = document.activeElement as HTMLElement | null
     element.showModal()
     // showModal focuses the first control, the close button; start on the name field instead.
     element.querySelector<HTMLInputElement>('input[name="name"]')!.focus()
     const previous = document.body.style.overflow
     document.body.style.overflow = "hidden"
-    return () => { element.close(); document.body.style.overflow = previous }
+    return () => { element.close(); document.body.style.overflow = previous; opener?.focus() }
   }, [])
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -69,7 +72,7 @@ function RsvpDialog({ event, onClose }: { event: EventRecord; onClose: () => voi
     <Button type="button" variant="ghost" size="icon" className="dialog-close" aria-label="Close RSVP" onClick={onClose}><XIcon /></Button>
     <p className="event-eyebrow">{formatEventDate(event.date, { weekday: "long", month: "long", day: "numeric" })} · {formatEventTime(event)}</p>
     <h2 id="rsvp-title">{state === "done" ? "See you on the dance floor!" : event.title}</h2>
-    {state === "done" ? <div className="event-actions"><CalendarLinks event={event} scope="rsvp" /><Button type="button" onClick={onClose}>Done</Button></div> : <>
+    {state === "done" ? <div className="event-actions"><CalendarLinks event={event} scope="rsvp" />{/* The form, and the button that had focus, are replaced on success, so focus moves to Done. */}<Button type="button" autoFocus onClick={onClose}>Done</Button></div> : <>
       <p className="event-muted"><EventLocation event={event} /></p>
       <form onSubmit={submit} className="event-form">
         <FloatingField id="rsvp-name" label="Name" filled={!!name}><Input id="rsvp-name" name="name" className={floatingInputClass} autoComplete="name" required maxLength={120} value={name} onChange={e => setName(e.target.value)} /></FloatingField>
@@ -119,6 +122,7 @@ export function EventSections(snapshot: EventSnapshot) {
   const [selected, setSelected] = useState<EventRecord | null>(null)
   const [showPast, setShowPast] = useState(false)
   const [showPastSpecial, setShowPastSpecial] = useState(false)
+  if (snapshot.unavailable) return <section id="special-events" className="section"><p className="event-muted" role="status">Events couldn't be loaded. Refresh the page to try again.</p></section>
   const next = nextLesson(snapshot)
   const special = events.filter(event => event.kind === "special")
   // Undated special events count as upcoming; they are listed last.
@@ -141,26 +145,26 @@ export function EventSections(snapshot: EventSnapshot) {
         <h2 id="special-events-title">Special events</h2>
         {pastSpecial.length > 0 && <PastToggle showPast={showPastSpecial} onChange={setShowPastSpecial} label="Special events to show" />}
       </div>
-      <div className="event-list">{(showPastSpecial ? [...pastSpecial].reverse() : upcomingSpecial).map(event => <article key={event.id} id={`event-${event.id}`} className={`event-row${event === nextSpecial ? " is-next" : ""}`}>
+      <div className="event-list">{(showPastSpecial ? [...pastSpecial].reverse() : upcomingSpecial).map(event => { const prices = formatEventPrices(event); return <article key={event.id} id={`event-${event.id}`} className={`event-row${event === nextSpecial ? " is-next" : ""}`}>
         <DateTile date={event.date} />
         <div className="event-content">
           <h3>{event.title}</h3>
-          {(event.location || event.room || event.startTime) && <div className="event-meta"><p className="icon-line"><ClockIcon aria-hidden="true" /><span>{formatEventTime(event)}</span></p><p className="icon-line"><MapPinIcon aria-hidden="true" /><span><EventLocation event={event} /></span></p></div>}
+          {(event.location || event.room || event.startTime || prices.length > 0) && <div className="event-meta"><p className="icon-line"><ClockIcon aria-hidden="true" /><span>{formatEventTime(event)}</span></p><p className="icon-line"><MapPinIcon aria-hidden="true" /><span><EventLocation event={event} /></span></p>{prices.length > 0 && <p className="icon-line"><TicketIcon aria-hidden="true" /><span>{prices.map((price, index) => <Fragment key={price}>{index > 0 && " · "}<span className="price">{price}</span></Fragment>)}</span></p>}</div>}
           <Markdown>{event.description}</Markdown>
-          <div className="event-actions">{(!event.date || event.date >= today) && hasEventDetails(event) && <Button onClick={() => setSelected(event)}>RSVP</Button>}<CalendarLinks event={event} /></div>
+          {(!event.date || event.date >= today) && <div className="event-actions">{hasEventDetails(event) && <Button onClick={() => setSelected(event)}>RSVP</Button>}<CalendarLinks event={event} /></div>}
         </div>
-      </article>)}</div>
+      </article> })}</div>
       {!showPastSpecial && upcomingSpecial.length === 0 && <p className="event-muted">Events will be announced here.</p>}
     </section>
-    <section id="schedule" className="section" aria-labelledby="normal-events-title">
+    {/* Without upcoming lessons there is no schedule to show, so the section is left out. */}
+    {upcoming.length > 0 && <section id="schedule" className="section" aria-labelledby="normal-events-title">
       <div className="section-heading">
         <h2 id="normal-events-title">{scheduleTitle(events, today)}</h2>
         {earlier.length > 0 && <PastToggle showPast={showPast} onChange={setShowPast} label="Weeks to show" />}
       </div>
       <p className="schedule-times"><span>Lesson 8:00–9:00 PM</span> · <span>Social dance 9:00–10:00 PM</span></p>
       <div className="schedule-list">{(showPast ? [...earlier].reverse() : upcoming).map(lesson)}</div>
-      {!showPast && upcoming.length === 0 && <p className="event-muted">Events will be announced here.</p>}
-    </section>
+    </section>}
     {selected && <RsvpDialog event={selected} onClose={() => setSelected(null)} />}
   </>
 }

@@ -14,7 +14,8 @@ test("the build provides replaceable event markup and hydration data for the Wor
   const snapshot = JSON.parse(data.textContent)
   assert.match(snapshot.today, /^\d{4}-\d{2}-\d{2}$/)
   assert.deepEqual(snapshot.events, [])
-  assert.ok(document.querySelector("#event-sections #schedule"))
+  // With no lessons the schedule section is left out; the Worker renders the real one per request.
+  assert.equal(document.querySelector("#event-sections #schedule"), null)
   assert.ok(document.querySelector("#event-sections #special-events"))
   assert.ok(!html.includes("docs.google.com/spreadsheets"))
 })

@@ -96,7 +96,7 @@ async function runOperation(config: Config, method: 'POST' | 'DELETE', body: unk
     if (operation.status === 'failed') throw new RedirectError(502, typeof operation.error === 'string' ? operation.error : 'Cloudflare redirect update failed')
     await new Promise(resolve => setTimeout(resolve, 300))
   }
-  throw new RedirectError(504, 'Cloudflare redirect update did not finish in time')
+  throw new RedirectError(504, 'The change is taking longer than usual. Reload in a minute to see whether it was saved.')
 }
 
 async function cloudflare(config: Config, path: string, method = 'GET', body?: unknown): Promise<{ result: unknown; resultInfo: unknown }> {

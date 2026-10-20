@@ -48,7 +48,7 @@ export function EventTimePicker({ value, onChange, label, disabled }: {
     itemToStringLabel={timeLabel}
     onInputValueChange={(next, details) => { if (details.reason === "input-change") edit(next) }}
     onValueChange={next => { if (next !== null) edit(next === "tba" ? "" : timeLabel(next)) }}>
-    <ComboboxInput ref={input} aria-label={label} placeholder="TBA" className="w-full" showTrigger={false}
+    <ComboboxInput ref={input} disabled={disabled} aria-label={label} placeholder="TBA" className="w-full" showTrigger={false}
       onFocus={() => { focused.current = true }}
       onBlur={() => {
         focused.current = false

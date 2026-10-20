@@ -8,18 +8,26 @@
 .event-meta p { margin: 0; }
 /* A small grey icon before a detail, like Luma's event listings. */
 .icon-line { display: flex; gap: 8px; }
+/* A price never breaks across lines; the line wraps between prices. */
+.price { white-space: nowrap; }
 .icon-line > svg { flex: none; width: 16px; height: 16px; margin-top: .25em; color: var(--muted-foreground); }
 .event-markdown { overflow-wrap: anywhere; line-height: 1.5; }
 .event-markdown > :first-child { margin-top: 0; }
 .event-markdown > :last-child { margin-bottom: 0; }
 .event-markdown p { margin: 8px 0; }
 .event-markdown li > p { margin: 0; }
-.event-markdown h1, .event-markdown h2, .event-markdown h3 { font-size: 1.125rem; margin: 20px 0 8px; }
+.event-markdown :is(h1, h2, h3) { margin: 20px 0 8px; font: 600 1.25rem/1.3 var(--sans); }
 .event-markdown img { max-width: 100%; height: auto; border-radius: 4px; }
 .event-markdown pre { overflow-x: auto; padding: 12px; background: var(--muted); }
 .event-markdown blockquote { margin-left: 0; padding-left: 16px; border-left: 2px solid var(--border); color: var(--muted-foreground); }
 .event-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 16px; }
 .event-actions:empty { display: none; }
+/* Touch screens get 44px-tall buttons and menu rows so they are easy to tap. */
+@media (pointer: coarse) {
+  .event-actions [data-slot="button"] { height: 44px; padding-inline: 16px; }
+  .dialog-close { width: 44px; height: 44px; top: 4px; right: 4px; }
+  .calendar-menu a { padding: 12px; }
+}
 .calendar-menu { inset: auto; position-area: bottom span-right; position-try-fallbacks: flip-block; margin: 4px 0; min-width: 12rem; padding: 4px; color: var(--foreground); background: var(--background); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 8px 24px color-mix(in srgb, var(--foreground) 10%, transparent); }
 .calendar-menu a { display: block; padding: 6px 8px; border-radius: 4px; text-decoration: none; }
 .calendar-menu a:is(:hover, :focus-visible) { background: var(--muted); outline: none; }
@@ -53,6 +61,8 @@ time { font-variant-numeric: tabular-nums; }
 .next-event-icon { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted-foreground); }
 .next-event-icon svg { width: 20px; height: 20px; }
 .event-dialog h2 { font-size: 1.75rem; padding-right: 12px; }
+/* The date line runs beside the close button, so it stops short of it. */
+.event-dialog .event-eyebrow { padding-right: 28px; }
 .dialog-close { position: absolute; top: 10px; right: 12px; color: var(--muted-foreground); }
 .event-eyebrow { margin: 0 0 12px; }
 .event-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }

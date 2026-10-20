@@ -15,7 +15,7 @@ export function parseRedirect(value: unknown): Redirect {
   if (typeof source !== 'string' || !source.trim().startsWith('/')) throw new Error('Redirect sources must start with /')
   const canonical = canonicalSource(source)
   if (canonical === '/' || reserved.some(path => canonical === path || canonical.startsWith(`${path}/`))) throw new Error(`${canonical} is used by the website`)
-  if (typeof destination !== 'string' || !isHttpUrl(destination.trim())) throw new Error('Redirect destinations must be absolute HTTP(S) URLs')
+  if (typeof destination !== 'string' || !isHttpUrl(destination.trim())) throw new Error('Enter a full web address for the destination, like https://example.com')
   if (code !== 301 && code !== 302) throw new Error('Redirect code must be 301 or 302')
   return { source: canonical, destination: destination.trim(), code }
 }

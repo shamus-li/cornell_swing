@@ -38,6 +38,14 @@ export type Member = {
 
 // Alumni no longer have Cornell accounts, so they sign the non-Cornell participant waiver like
 // community members, before their check-in is recorded.
+// How long the kiosk waits for a check-in or the waiver text before telling the attendee to check the Wi-Fi.
+export const REQUEST_TIMEOUT_MS = 20_000
+
+// fetch rejects with a TypeError when the request never reached the server, and with a TimeoutError when it ran out of time.
+export function isConnectionError(error: unknown): boolean {
+  return error instanceof TypeError || (error instanceof DOMException && error.name === "TimeoutError")
+}
+
 export const PARTICIPANT_WAIVER_AFFILIATIONS: Affiliation[] = ["Community Member", "Alumni"]
 
 // A paragraph or bullet of the CampusGroups waiver, with its bold and italic text.

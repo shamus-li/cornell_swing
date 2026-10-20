@@ -8,13 +8,14 @@ import { api, errorMessage } from "./api"
 
 const normalizedQuery = (text: string) => text.trim().replace(/\s+/g, " ").toLowerCase()
 
-export function LocationPicker({ value, url, room = "", onChange, onRoomChange, disabled = false }: {
+export function LocationPicker({ value, url, room = "", onChange, onRoomChange, disabled = false, icon = true }: {
   value: string
   url?: string
   room?: string
   onChange: (location: string, locationUrl: string) => void
   onRoomChange: (room: string) => void
   disabled?: boolean
+  icon?: boolean
 }) {
   const [places, setPlaces] = useState<PlaceResult[]>([])
   const [selected, setSelected] = useState<PlaceResult | null>(null)
@@ -56,8 +57,8 @@ export function LocationPicker({ value, url, room = "", onChange, onRoomChange, 
         }}
         onValueChange={place => { if (place) { controller.current?.abort(); setQuery(null); setBusy(false); setSelected(place); onChange(place.label, place.url); setOpen(false) } }}
         itemToStringLabel={place => place.label} itemToStringValue={place => place.url} isItemEqualToValue={(place, other) => place.url === other.url} autoHighlight>
-        <ComboboxInput aria-label="Location" aria-busy={busy} placeholder="Location" maxLength={300} className="w-full flex-1" showTrigger={false}>
-          <InputGroupAddon align="inline-start"><MapPin aria-hidden="true" /></InputGroupAddon>
+        <ComboboxInput disabled={disabled} aria-label="Location" aria-busy={busy} placeholder="Location" maxLength={300} className="w-full flex-1" showTrigger={false}>
+          {icon && <InputGroupAddon align="inline-start"><MapPin aria-hidden="true" /></InputGroupAddon>}
           {url && <InputGroupAddon align="inline-end"><a href={url} target="_blank" rel="noreferrer" className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Open in Google Maps" title="Open in Google Maps"><ExternalLink className="size-3.5" /></a></InputGroupAddon>}
         </ComboboxInput>
         <ComboboxContent anchor={field}><ComboboxList>{(place: PlaceResult) => <ComboboxItem key={place.url} value={place}><span><span className="block">{place.label}</span><span className="block text-xs text-muted-foreground">{place.address}</span></span></ComboboxItem>}</ComboboxList><p translate="no" className="m-0 px-3 py-2 text-xs font-normal text-[#5e5e5e] whitespace-nowrap">Google Maps</p></ComboboxContent>

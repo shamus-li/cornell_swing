@@ -8,6 +8,7 @@ import sheetMigration from '../../migrations/events/0002_rsvp_sheets.sql?raw'
 import sourceMigration from '../../migrations/events/0003_sheet_source.sql?raw'
 import roomMigration from '../../migrations/events/0004_event_room.sql?raw'
 import publishedMigration from '../../migrations/events/0005_event_published.sql?raw'
+import pricesMigration from '../../migrations/events/0006_event_prices.sql?raw'
 import worker from './worker'
 import siteWorker from '../worker'
 import { changeEventWithSheet } from './sheets'
@@ -50,6 +51,7 @@ beforeAll(async () => {
   await env.EVENTS_DB.exec(sourceMigration.replaceAll('\n', ' '))
   await env.EVENTS_DB.exec(roomMigration.replaceAll('\n', ' '))
   await env.EVENTS_DB.exec(publishedMigration.replaceAll('\n', ' '))
+  await env.EVENTS_DB.exec(pricesMigration.replaceAll('\n', ' '))
 })
 afterAll(() => network.disable())
 beforeEach(async () => { await env.EVENTS_DB.exec('DELETE FROM rsvp_sheet_connection; DELETE FROM rsvps; DELETE FROM events;') })
@@ -101,6 +103,18 @@ describe('event storage and RSVPs', () => {
     expect(html).not.toContain(created.title)
     expect(response.headers.get('cache-control')).toBe('no-store')
   })
+  it('still serves the homepage with a notice when the events database fails', async () => {
+    await (await caches.open('events')).delete(new Request(`${origin}/api/events`))
+    const response = await worker.fetch(request('/'), {
+      ...env,
+      EVENTS_DB: { prepare: () => { throw new Error('D1 unavailable') } } as unknown as D1Database,
+      ASSETS: { ...env.ASSETS, fetch: async () => new Response('<div id="next-event"></div><div id="event-sections"></div><script id="schedule-data" type="application/json">null</script>', { headers: { 'Content-Type': 'text/html' } }) },
+    })
+    const html = await response.text()
+    expect(response.status).toBe(200)
+    expect(html).toContain("Events couldn&#x27;t be loaded")
+    expect(JSON.parse(html.match(/<script[^>]*>(.*?)<\/script>/s)![1])).toMatchObject({ events: [], unavailable: true })
+  })
   it('stores participants once, does not expose them publicly, and prevents lost manager edits', async () => {
     const created = await create()
     const path = `/api/events/${created.id}/rsvp`
@@ -150,6 +164,13 @@ describe('event storage and RSVPs', () => {
     expect(managed.events.find(event => event.id === draft.id)?.published).toBe(false)
     expect((await call(`/manage/api/events/${draft.id}`, 'PUT', { ...draft, published: true }, true)).status).toBe(200)
     expect(JSON.stringify(await (await call('/api/events')).json())).toContain(draft.id)
+  })
+  it('stores ticket prices on create and update, and rejects amounts that are not dollars', async () => {
+    const created = await create({ studentPrice: '5', generalPrice: '' })
+    expect((await call(`/manage/api/events/${created.id}`, 'PUT', { ...created, studentPrice: '7.50', generalPrice: '10' }, true)).status).toBe(200)
+    const { events } = await (await call('/api/events')).json() as { events: import('./model').EventRecord[] }
+    expect(events[0]).toMatchObject({ id: created.id, studentPrice: '7.50', generalPrice: '10' })
+    expect((await call('/manage/api/events', 'POST', { ...event, date: '2099-11-11', studentPrice: '$5' }, true)).status).toBe(400)
   })
   it('produces escaped timezone-aware calendar downloads', async () => {
     const created = await create({ room: 'Garden Room', location: 'Willard Straight Hall' })

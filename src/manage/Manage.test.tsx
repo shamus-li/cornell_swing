@@ -36,7 +36,7 @@ async function render() {
 }
 
 function inputByLabel(container: HTMLElement, label: string) {
-  return [...container.querySelectorAll<HTMLInputElement>("input")].find(input =>
+  return [...container.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea")].find(input =>
     input.getAttribute("aria-label") === label || [...input.labels ?? []].some(element => element.textContent?.trim() === label)
   )!
 }

@@ -19,7 +19,7 @@ export function ConfirmButton({ children, confirmLabel, busyLabel, onConfirm, di
     try { await onConfirm() } finally { setBusy(false); setArmed(false) }
   }
   const label = busy ? busyLabel : armed ? confirmLabel : children
-  return <Button type="button" size={size} variant={armed ? "destructive" : "outline"} disabled={disabled || busy} aria-label={armed || busy ? label : ariaLabel} onClick={() => void click()} onBlur={() => { if (!busy) setArmed(false) }} onKeyDown={e => { if (e.key === "Escape") setArmed(false) }} className="grid place-items-center">
+  return <Button type="button" size={size} variant={armed ? "destructive" : "outline"} disabled={disabled || busy} aria-label={ariaLabel && (armed || busy) ? `${label} (${ariaLabel})` : armed || busy ? label : ariaLabel} onClick={() => void click()} onBlur={() => { if (!busy) setArmed(false) }} onKeyDown={e => { if (e.key === "Escape") setArmed(false) }} className="grid place-items-center">
     {[children, confirmLabel, busyLabel].map(text => <span key={text} className={`col-start-1 row-start-1 ${text === label ? "" : "invisible"}`} aria-hidden={text !== label}>{text}</span>)}
   </Button>
 }

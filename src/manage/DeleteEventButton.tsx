@@ -7,8 +7,9 @@ import {
 } from "../components/ui/alert-dialog"
 import { errorMessage } from "./api"
 
-export function DeleteEventButton({ onDelete, disabled = false, includesRsvps = false, onBusyChange }: {
+export function DeleteEventButton({ onDelete, noun = "event", disabled = false, includesRsvps = false, onBusyChange }: {
   onDelete: () => Promise<void>
+  noun?: "event" | "lesson"
   disabled?: boolean
   includesRsvps?: boolean
   onBusyChange?: (busy: boolean) => void
@@ -40,16 +41,16 @@ export function DeleteEventButton({ onDelete, disabled = false, includesRsvps = 
     setOpen(next)
     if (next) setError("")
   }}>
-    <AlertDialogTrigger asChild><Button type="button" variant="destructive" disabled={disabled || busy}>Delete event</Button></AlertDialogTrigger>
+    <AlertDialogTrigger asChild><Button type="button" variant="destructive" disabled={disabled || busy}>Delete {noun}</Button></AlertDialogTrigger>
     <AlertDialogContent size="sm" aria-busy={busy}>
       <AlertDialogHeader>
-        <AlertDialogTitle>Delete event?</AlertDialogTitle>
-        <AlertDialogDescription>{includesRsvps ? "This will permanently delete the event and its RSVPs." : "This will permanently delete the event."}</AlertDialogDescription>
+        <AlertDialogTitle>Delete {noun}?</AlertDialogTitle>
+        <AlertDialogDescription>{includesRsvps ? `This will permanently delete the ${noun} and its RSVPs.` : `This will permanently delete the ${noun}.`}</AlertDialogDescription>
       </AlertDialogHeader>
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       <AlertDialogFooter>
         <AlertDialogCancel type="button" disabled={busy}>Cancel</AlertDialogCancel>
-        <AlertDialogAction type="button" variant="destructive" disabled={disabled || busy} onClick={event => { event.preventDefault(); void remove() }}>{busy ? "Deleting…" : "Delete event"}</AlertDialogAction>
+        <AlertDialogAction type="button" variant="destructive" disabled={disabled || busy} onClick={event => { event.preventDefault(); void remove() }}>{busy ? "Deleting…" : `Delete ${noun}`}</AlertDialogAction>
       </AlertDialogFooter>
     </AlertDialogContent>
   </AlertDialog>

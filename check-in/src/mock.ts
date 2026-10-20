@@ -99,6 +99,10 @@ async function respond(path: string, init: RequestInit = {}): Promise<Response> 
     await wait(150)
     return json({ members: fuse.search(body.q, { limit: 8 }).map(({ item }) => item) })
   }
+  if (path.endsWith("api/checkins/status")) {
+    await wait(300)
+    return json({ checkedIn: checkedIn.has(body.email) })
+  }
   if (path.endsWith("api/checkins")) {
     await wait(400)
     const next = nextSteps(body.email, body.affiliation)

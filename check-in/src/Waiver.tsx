@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { FloatingField, floatingInputClass } from "@/components/ui/floating-field"
 import { Input } from "@/components/ui/input"
 import { QrCallout } from "@/components/ui/qr-callout"
-import { signatureMatchesName, type WaiverBlock } from "@/lib/checkin"
+import { isConnectionError, REQUEST_TIMEOUT_MS, signatureMatchesName, type WaiverBlock } from "@/lib/checkin"
 import { largeButtonClass } from "@/lib/sizes"
 
 type WaiverText = { blocks: WaiverBlock[]; eventName: string }
@@ -18,7 +18,7 @@ let pendingWaiver: Promise<WaiverResult> | null = null
 // Starts loading the waiver while the attendee is still filling in the form, so the waiver screen
 // opens with the text ready. A failed load is retried for the next attendee.
 export function preloadWaiver(): Promise<WaiverResult> {
-  pendingWaiver ??= fetch("api/waiver", { headers: { Accept: "application/json" } }).then(async (response) => {
+  pendingWaiver ??= fetch("api/waiver", { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }).then(async (response) => {
     const payload = (await response.json()) as WaiverResponse
     if (payload.formChanged) return { formChanged: true as const }
     if (payload.unavailable) {
@@ -80,7 +80,7 @@ export function NonCornellWaiver({
       .catch((error: unknown) => {
         if (!active) return
         setMessage(
-          error instanceof TypeError
+          isConnectionError(error)
             ? "Couldn't reach the server. Check the Wi-Fi connection and try again."
             : error instanceof Error
               ? error.message
@@ -116,7 +116,7 @@ export function NonCornellWaiver({
       if (error) setMessage(error)
     } catch (error) {
       setMessage(
-        error instanceof TypeError
+        isConnectionError(error)
           ? "Couldn't reach the server. Check the Wi-Fi connection and try again."
           : error instanceof Error
             ? error.message
@@ -199,6 +199,11 @@ export function NonCornellWaiver({
             {isSubmitting ? "Signing…" : "Sign and check in"}
           </Button>
         </>
+      )}
+      {!waiver && !message && (
+        <p className="text-base text-muted-foreground" role="status">
+          Loading the waiver…
+        </p>
       )}
       <Button className={`w-full ${largeButtonClass}`} type="button" variant="outline" onClick={onBack} disabled={isSubmitting}>
         Back

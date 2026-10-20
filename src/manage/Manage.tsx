@@ -1,28 +1,29 @@
-import { useEffect, useRef, useState, type ReactNode } from "react"
-import { Check, Copy } from "lucide-react"
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react"
+import { CalendarIcon, Check, Copy, MapPinIcon, TicketIcon } from "lucide-react"
 import { Button } from "../../check-in/src/components/ui/button"
-import { todayInNewYork, type EventRecord, type ManagedEvent, type RSVP } from "../events/model"
+import { isValidPrice, todayInNewYork, type EventRecord, type ManagedEvent, type RSVP } from "../events/model"
 import { EventTimePicker } from "./EventTimePicker"
 import { LocationPicker } from "./LocationPicker"
 import { EventDatePicker } from "./EventDatePicker"
 import { NormalEventRow, type NormalEventHandle } from "./NormalEventRow"
-import { DiscardChangesButton } from "./DiscardChangesButton"
+import { DiscardChangesButton, DiscardChangesDialog } from "./DiscardChangesButton"
 import { DeleteEventButton } from "./DeleteEventButton"
 import { ConfirmButton } from "./ConfirmButton"
 import { SheetConnection } from "./SheetConnection"
 import { CampusGroupsUpload } from "./CampusGroupsUpload"
-import { api, errorMessage } from "./api"
+import { api, ApiError, errorMessage } from "./api"
 import { MarkdownEditor } from "./MarkdownEditor"
 import { SiteBrand } from "../site/components/SiteBrand"
 import { DraftBadge, eventSummary } from "./EventDate"
 import { DateTile } from "../events/DateTile"
 import { Tabs } from "./Tabs"
 import { Person } from "../../check-in/src/components/ui/person"
+import { InputGroup, InputGroupAddon, InputGroupInput } from "../../check-in/src/components/ui/input-group"
 
 type View = "special" | "lessons" | "settings"
 const views: { value: View; label: string }[] = [{ value: "special", label: "Special events" }, { value: "lessons", label: "Lessons" }, { value: "settings", label: "Settings" }]
 const byDate = (a: EventRecord, b: EventRecord) => (a.date || "9999").localeCompare(b.date || "9999") || a.startTime.localeCompare(b.startTime)
-const newEvent = (kind: EventRecord["kind"]): EventRecord => ({ id: "", kind, title: kind === "normal" ? "Monday swing" : "", date: todayInNewYork(), startTime: kind === "normal" ? "20:00" : "", endTime: kind === "normal" ? "22:00" : "", location: "", description: "", published: false, updatedAt: "" })
+const newEvent = (kind: EventRecord["kind"]): EventRecord => ({ id: "", kind, title: kind === "normal" ? "Monday swing" : "", date: todayInNewYork(), startTime: kind === "normal" ? "20:00" : "", endTime: kind === "normal" ? "22:00" : "", location: "", locationUrl: "", room: "", studentPrice: "", generalPrice: "", description: "", published: false, updatedAt: "" })
 const searchParam = (name: string) => new URLSearchParams(window.location.search).get(name)
 
 export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent[] }) {
@@ -36,8 +37,10 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
   const [activeNormal, setActiveNormal] = useState<string | null>(null)
   const normalEditor = useRef<NormalEventHandle>(null)
   const switching = useRef(false)
+  // Set by the event editor while it has unsaved edits; Back and Forward then ask before leaving.
+  const leaveGuard = useRef<(() => void) | null>(null)
   useEffect(() => {
-    const navigate = () => setEditingId(searchParam("event"))
+    const navigate = () => leaveGuard.current ? leaveGuard.current() : setEditingId(searchParam("event"))
     window.addEventListener("popstate", navigate)
     return () => window.removeEventListener("popstate", navigate)
   }, [])
@@ -56,6 +59,7 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
     setEditingId(event.id || "new")
   }
   function closeSpecial() {
+    leaveGuard.current = null
     if (window.history.state?.eventEditor) window.history.back()
     else {
       const url = new URL(window.location.href)
@@ -70,10 +74,11 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
   }
   useEffect(() => { if (initialEvents === undefined) void load().catch(err => setError(errorMessage(err))).finally(() => setLoading(false)) }, [])
   function acceptDeletedEvent(id: string) {
+    const lesson = events.find(event => event.id === id)?.kind === "normal"
     setEvents(current => current.filter(event => event.id !== id))
     setActiveNormal(null)
     if (editingId) closeSpecial()
-    setNotice("Event deleted."); setError("")
+    setNotice(lesson ? "Lesson deleted." : "Event deleted."); setError("")
   }
   function removeRsvpCount(id: string) {
     setEvents(current => current.map(event => event.id === id ? { ...event, rsvpCount: Math.max(0, event.rsvpCount - 1) } : event))
@@ -105,7 +110,7 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
   return <>
     <header className="site-header manage-header"><SiteBrand /></header>
     <main className="manage-main">
-      {editing ? <EventEditor key={editing.id || "new"} event={editing} onCancel={closeSpecial} onRsvpChange={() => removeRsvpCount(editing.id)} onSave={event => { acceptSavedEvent(event); closeSpecial() }} onDelete={() => acceptDeletedEvent(editing.id)} /> : <>
+      {editing ? <EventEditor key={`${editing.id || "new"}-${editing.updatedAt}`} event={editing} leaveGuard={leaveGuard} onReplace={acceptSavedEvent} onCancel={closeSpecial} onRsvpChange={() => removeRsvpCount(editing.id)} onSave={event => { acceptSavedEvent(event); closeSpecial() }} onDelete={() => acceptDeletedEvent(editing.id)} /> : <>
         <div className="manage-title">
           <h1>Events</h1>
           {view === "special" && <Button onClick={() => { void openEvent(() => openSpecial(newEvent("special"))) }}>New event</Button>}
@@ -136,52 +141,115 @@ function EventGroups<T extends EventRecord>({ events, render, empty, first }: { 
   </>
 }
 
-function EventEditor({ event, onSave, onDelete, onCancel, onRsvpChange }: { event: ManagedEvent; onRsvpChange: () => void; onSave: (event: EventRecord) => void; onDelete: () => void; onCancel: () => void }) {
+function EventEditor({ event, leaveGuard, onSave, onReplace, onDelete, onCancel, onRsvpChange }: { event: ManagedEvent; leaveGuard: RefObject<(() => void) | null>; onRsvpChange: () => void; onSave: (event: EventRecord) => void; onReplace: (event: EventRecord) => void; onDelete: () => void; onCancel: () => void }) {
   const [draft, setDraft] = useState<EventRecord>(event)
   const [tab, setTab] = useState<"details" | "guests">("details")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const [editorError, setEditorError] = useState("")
-  const dirty = (["title", "date", "startTime", "endTime", "location", "locationUrl", "room", "description"] as const).some(key => draft[key] !== event[key])
+  // Set when someone else saved the event after it was opened; the manager then keeps their own version or loads that one.
+  const [conflict, setConflict] = useState(false)
+  const [leaving, setLeaving] = useState(false)
+  const dirty = (["title", "date", "startTime", "endTime", "location", "locationUrl", "room", "studentPrice", "generalPrice", "description"] as const).some(key => draft[key] !== event[key])
   useEffect(() => {
     if (!dirty) return
     const warn = (e: BeforeUnloadEvent) => e.preventDefault()
     window.addEventListener("beforeunload", warn)
-    return () => window.removeEventListener("beforeunload", warn)
+    // Back or Forward put the editor's history entry back and ask before discarding.
+    leaveGuard.current = () => {
+      const url = new URL(window.location.href)
+      url.searchParams.set("event", event.id || "new")
+      window.history.pushState({ eventEditor: true }, "", url)
+      setLeaving(true)
+    }
+    return () => { window.removeEventListener("beforeunload", warn); leaveGuard.current = null }
   }, [dirty])
   const change = (key: keyof EventRecord, value: string) => setDraft(current => ({ ...current, [key]: value }))
-  async function save(published: boolean) {
-    if (editorError) return; setBusy(true); setError("")
-    try { const { event: saved } = await api<{ event: EventRecord }>(`/events${event.id ? `/${event.id}` : ""}`, { method: event.id ? "PUT" : "POST", body: JSON.stringify({ ...draft, published }) }); onSave(saved) }
-    catch (err) { setError(errorMessage(err)); setBusy(false) }
+  // A description that failed to load is never changed, so saving keeps its stored text.
+  async function save(published: boolean, base: EventRecord = draft) {
+    setBusy(true); setError(""); setConflict(false)
+    try { const { event: saved } = await api<{ event: EventRecord }>(`/events${event.id ? `/${event.id}` : ""}`, { method: event.id ? "PUT" : "POST", body: JSON.stringify({ ...base, published }) }); onSave(saved) }
+    catch (err) { setError(errorMessage(err)); setConflict(err instanceof ApiError && err.code === "stale"); setBusy(false) }
+  }
+  async function latest(): Promise<EventRecord | null> {
+    setBusy(true); setError("")
+    try {
+      const { events } = await api<{ events: ManagedEvent[] }>("/events")
+      const found = events.find(item => item.id === event.id)
+      if (!found) setError("This event was deleted.")
+      return found ?? null
+    } catch (err) { setError(errorMessage(err)); return null }
+    finally { setBusy(false) }
+  }
+  async function keepMine() {
+    const current = await latest()
+    if (current) await save(event.published, { ...draft, updatedAt: current.updatedAt })
+  }
+  async function loadTheirs() {
+    const current = await latest()
+    if (current) onReplace(current)
   }
   async function remove() {
     await api(`/events/${event.id}`, { method: "DELETE" })
     await onDelete()
   }
   return <div className="event-editor-shell">
+    <DiscardChangesDialog open={leaving} onOpenChange={setLeaving} onDiscard={onCancel} />
     <DiscardChangesButton variant="ghost" size="sm" className="back-button" dirty={dirty} onDiscard={onCancel} disabled={busy}>← Events</DiscardChangesButton>
     {event.id && <Tabs label="Event sections" tabs={[{ value: "details", label: "Details" }, { value: "guests", label: <>Guests <span className="tab-count">{event.rsvpCount}</span></> }]} value={tab} onChange={setTab} />}
     {tab === "guests" ? <div role="tabpanel" className="guest-panel" aria-label="Guests"><GuestList event={event} onChange={onRsvpChange} /></div> :
     <form role={event.id ? "tabpanel" : undefined} className="event-editor" aria-label={event.id ? "Edit event" : "New event"} onSubmit={e => { e.preventDefault(); if (e.currentTarget.reportValidity()) void save(event.published) }}>
-      <input className="event-name-input" aria-label="Event name" required maxLength={160} value={draft.title} onChange={e => change("title", e.target.value)} placeholder="Event name" />
-      <div className="editor-card">
-        <div className="editor-when">
-          <EventDatePicker allowTba value={draft.date} onChange={value => change("date", value)} />
-          <div className="editor-time"><EventTimePicker label="Start time" value={draft.startTime} onChange={value => change("startTime", value)} /><span aria-hidden="true">–</span><EventTimePicker label="End time" value={draft.endTime} onChange={value => change("endTime", value)} /></div>
-        </div>
-        <LocationPicker value={draft.location} url={draft.locationUrl} room={draft.room} onRoomChange={room => change("room", room)} onChange={(location, locationUrl) => setDraft(current => ({ ...current, location, locationUrl }))} disabled={busy} />
+      <div className="editor-title">
+        <DateTile date={draft.date} />
+        <TitleInput value={draft.title} disabled={busy} onChange={value => change("title", value)} />
       </div>
-      <MarkdownEditor markdown={event.description} label="Description" onChange={value => change("description", value)} onError={setEditorError} />
+      <div className="editor-card">
+        <div className="editor-field"><CalendarIcon aria-hidden="true" /><div className="editor-when">
+          <EventDatePicker allowTba icon={false} disabled={busy} value={draft.date} onChange={value => change("date", value)} />
+          <EventTimePicker label="Start time" disabled={busy} value={draft.startTime} onChange={value => change("startTime", value)} /><span aria-hidden="true">–</span><EventTimePicker label="End time" disabled={busy} value={draft.endTime} onChange={value => change("endTime", value)} />
+        </div></div>
+        <div className="editor-field"><MapPinIcon aria-hidden="true" /><LocationPicker icon={false} value={draft.location} url={draft.locationUrl} room={draft.room} onRoomChange={room => change("room", room)} onChange={(location, locationUrl) => setDraft(current => ({ ...current, location, locationUrl }))} disabled={busy} /></div>
+        <div className="editor-field"><TicketIcon aria-hidden="true" /><div className="editor-prices">
+          <PriceInput label="Students" disabled={busy} value={draft.studentPrice} onChange={value => change("studentPrice", value)} />
+          <PriceInput label="General" disabled={busy} value={draft.generalPrice} onChange={value => change("generalPrice", value)} />
+        </div></div>
+      </div>
+      <MarkdownEditor markdown={draft.description} label="Description" onChange={value => change("description", value)} onError={setEditorError} readOnly={busy} />
       {editorError && <p role="alert" className="event-error">{editorError}</p>}
       <div className="editor-actions">
-        {error ? <p role="alert" className="event-error">{error}</p> : <p className="event-muted" aria-live="polite">{dirty ? "Unsaved changes" : event.published ? "Published" : "Draft"}</p>}
-        <Button type="button" variant="outline" disabled={busy || !!editorError} onClick={e => { if (e.currentTarget.form!.reportValidity()) void save(!event.published) }}>{event.published ? "Unpublish" : "Publish"}</Button>
-        <Button disabled={busy || !!editorError}>{busy ? "Saving…" : "Save"}</Button>
+        {error ? <p role="alert" className="event-error">{error}{conflict && <> <Button type="button" variant="link" size="sm" disabled={busy} onClick={() => void keepMine()}>Save my version</Button><Button type="button" variant="link" size="sm" disabled={busy} onClick={() => void loadTheirs()}>Load theirs</Button></>}</p> : <p className="event-muted" aria-live="polite">{dirty ? "Unsaved changes" : event.published ? "Published" : "Draft"}</p>}
+        <Button type="button" variant="outline" disabled={busy} onClick={e => { if (e.currentTarget.form!.reportValidity()) void save(!event.published) }}>{event.published ? "Unpublish" : "Publish"}</Button>
+        <Button disabled={busy}>{busy ? "Saving…" : "Save"}</Button>
       </div>
       {event.id && <div className="editor-delete"><DeleteEventButton onDelete={remove} disabled={busy} onBusyChange={setBusy} includesRsvps /></div>}
     </form>}
   </div>
+}
+
+// Grows with the name so long names wrap instead of scrolling out of view. Enter saves, as in a one-line field.
+function TitleInput({ value, disabled, onChange }: { value: string; disabled: boolean; onChange: (value: string) => void }) {
+  const field = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => {
+    const element = field.current!
+    const fit = () => { element.style.height = "auto"; element.style.height = `${element.scrollHeight}px` }
+    fit()
+    window.addEventListener("resize", fit)
+    return () => window.removeEventListener("resize", fit)
+  }, [value])
+  return <textarea ref={field} className="event-name-input" rows={1} disabled={disabled} aria-label="Event name" required maxLength={160} placeholder="Event name" value={value}
+    onChange={e => onChange(e.target.value.replace(/\s*\n\s*/g, " "))}
+    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.form!.requestSubmit() } }} />
+}
+
+// Keystrokes that would make an invalid price are ignored. Leaving the field writes cents in full, "12.5" as "12.50".
+function PriceInput({ label, value = "", disabled, onChange }: { label: string; value?: string; disabled: boolean; onChange: (value: string) => void }) {
+  return <InputGroup>
+    <InputGroupAddon>{label}</InputGroupAddon>
+    <InputGroupAddon>$</InputGroupAddon>
+    <InputGroupInput disabled={disabled} aria-label={`${label} ticket price`} inputMode="decimal" style={{ width: `calc(${Math.max(value.length, 1)}ch + 11px)` }} value={value}
+      onChange={e => { if (isValidPrice(e.target.value.replace(/\.$/, ""))) onChange(e.target.value) }}
+      onBlur={() => onChange(value.replace(/\.$/, "").replace(/\.(\d)$/, (_, digit) => `.${digit}0`))} />
+  </InputGroup>
 }
 
 // Tab-separated rows paste into Google Sheets as Name and Email columns.

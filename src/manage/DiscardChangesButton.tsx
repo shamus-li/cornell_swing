@@ -6,7 +6,12 @@ export function DiscardChangesButton({ dirty, onDiscard, children, ...props }: O
   const [open, setOpen] = useState(false)
   return <>
     <Button {...props} type="button" onClick={() => dirty ? setOpen(true) : onDiscard()}>{children}</Button>
-    <AlertDialog open={open} onOpenChange={setOpen}>
+    <DiscardChangesDialog open={open} onOpenChange={setOpen} onDiscard={onDiscard} />
+  </>
+}
+
+export function DiscardChangesDialog({ open, onOpenChange, onDiscard }: { open: boolean; onOpenChange: (open: boolean) => void; onDiscard: () => void }) {
+  return <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent size="sm">
         <AlertDialogHeader>
           <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
@@ -18,5 +23,4 @@ export function DiscardChangesButton({ dirty, onDiscard, children, ...props }: O
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-  </>
 }
