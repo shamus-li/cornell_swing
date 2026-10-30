@@ -17,6 +17,8 @@ export type CheckinRow = {
   affiliation: string
   memberId: string
   phone: string
+  // Empty on rows from before check-ins named their event, and on rows officers add by hand.
+  eventId: string
 }
 
 function stringValue(value: unknown): string {
@@ -58,25 +60,20 @@ export async function getGoogleAccessToken(env: Pick<Env, "GOOGLE_PRIVATE_KEY" |
   return payload.access_token
 }
 
+// Reuses a token until shortly before it expires, or until the credentials change. Refreshes are not
+// shared between callers: a stateless Worker must never await another request's pending I/O.
 export function createCachedGoogleAccessTokenProvider(
-  fetchAccessToken: (env: Env) => Promise<string> = getGoogleAccessToken,
-  now: () => number = Date.now,
-): (env: Env) => Promise<string> {
-  let cached: { token: string; expiresAt: number } | null = null
-  let refresh: Promise<string> | null = null
+  fetchAccessToken: typeof getGoogleAccessToken,
+  now = () => Date.now(),
+): typeof getGoogleAccessToken {
+  let cached: { email: string; key: string; token: string; expiresAt: number } | null = null
 
-  return async (env) => {
-    if (cached && cached.expiresAt > now()) return cached.token
-
-    refresh ??= fetchAccessToken(env)
-      .then((token) => {
-        cached = { token, expiresAt: now() + ACCESS_TOKEN_CACHE_MS }
-        return token
-      })
-      .finally(() => {
-        refresh = null
-      })
-    return refresh
+  return async (env, signal) => {
+    if (cached && cached.email === env.GOOGLE_SERVICE_ACCOUNT_EMAIL && cached.key === env.GOOGLE_PRIVATE_KEY && cached.expiresAt > now()) return cached.token
+    const requestedAt = now()
+    const token = await fetchAccessToken(env, signal)
+    cached = { email: env.GOOGLE_SERVICE_ACCOUNT_EMAIL, key: env.GOOGLE_PRIVATE_KEY, token, expiresAt: requestedAt + ACCESS_TOKEN_CACHE_MS }
+    return token
   }
 }
 
@@ -115,7 +112,7 @@ async function sheetsRequest(url: URL, init?: RequestInit): Promise<Response> {
 }
 
 export async function readCheckins(env: Env, accessToken: string): Promise<CheckinRow[]> {
-  const url = valuesUrl(env, sheetRange(env, "A2:F"))
+  const url = valuesUrl(env, sheetRange(env, "A2:G"))
   url.searchParams.set("valueRenderOption", "UNFORMATTED_VALUE")
   url.searchParams.set("dateTimeRenderOption", "SERIAL_NUMBER")
 
@@ -138,6 +135,7 @@ export async function readCheckins(env: Env, accessToken: string): Promise<Check
       phone: stringValue(source[3]).trim(),
       affiliation: stringValue(source[4]),
       memberId: stringValue(source[5]).trim(),
+      eventId: stringValue(source[6]).trim(),
     }
   })
 }
@@ -147,13 +145,10 @@ function columnValues(valueRange: unknown): SheetValue[] {
   return valueRange.values.map((row) => sheetValue(Array.isArray(row) ? row[0] : null))
 }
 
-export async function readCheckinKeys(
-  env: Env,
-  accessToken: string,
-  dateKey: string,
-): Promise<string[]> {
+// Each row's timestamp and Member ID, which together identify a kiosk check-in.
+export async function readCheckinIds(env: Env, accessToken: string): Promise<Set<string>> {
   const url = new URL(`${spreadsheetUrl(env)}/values:batchGet`)
-  for (const range of ["A2:A", "C2:C", "F2:F"]) {
+  for (const range of ["A2:A", "F2:F"]) {
     url.searchParams.append("ranges", sheetRange(env, range))
   }
   url.searchParams.set("valueRenderOption", "UNFORMATTED_VALUE")
@@ -167,22 +162,11 @@ export async function readCheckinKeys(
     throw new Error(`Google Sheets key read failed with ${response.status}`)
   }
 
-  const [timestamps, emails, memberIds] = payload.valueRanges.map(columnValues)
-  const rowCount = Math.max(timestamps?.length ?? 0, emails?.length ?? 0, memberIds?.length ?? 0)
-  const keys = new Set<string>()
-  for (let index = 0; index < rowCount; index += 1) {
-    if (dateKeyForSheetTimestamp(timestamps?.[index] ?? null) !== dateKey) continue
-    const email = stringValue(emails?.[index]).trim().toLowerCase()
-    const memberId = stringValue(memberIds?.[index]).trim()
-    if (email) keys.add(`email:${email}`)
-    if (memberId) {
-      keys.add(`id:${memberId}`)
-    } else if (email) {
-      keys.add(`legacy-email:${email}`)
-    }
-  }
-  return [...keys]
+  const [timestamps, memberIds] = payload.valueRanges.map(columnValues)
+  return new Set(timestamps.map((timestamp, index) => checkinId(timestamp, stringValue(memberIds?.[index]).trim())))
 }
+
+export const checkinId = (timestamp: SheetValue, memberId: string) => JSON.stringify([timestamp, memberId])
 
 async function updateValues(
   env: Env,
@@ -210,7 +194,7 @@ async function appendRows(
   accessToken: string,
   values: SheetValue[][],
 ): Promise<void> {
-  const url = valuesUrl(env, sheetRange(env, "A1:F1"), ":append")
+  const url = valuesUrl(env, sheetRange(env, "A1:G1"), ":append")
   url.searchParams.set("valueInputOption", "RAW")
   url.searchParams.set("insertDataOption", "INSERT_ROWS")
   const response = await sheetsRequest(url, {
@@ -274,7 +258,7 @@ export async function sortCheckins(env: Env, accessToken: string): Promise<void>
           sheetId: sheet.sheetId,
           startRowIndex: 1,
           startColumnIndex: 0,
-          endColumnIndex: 6,
+          endColumnIndex: 7,
         },
         sortSpecs: [{ dimensionIndex: 0, sortOrder: "DESCENDING" }],
       },
@@ -316,22 +300,27 @@ export function dateKeyInTimeZone(timestamp: number, timeZone: string): string {
   return `${year.toString().padStart(4, "0")}-${month.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`
 }
 
-export async function appendCheckin(
-  env: Env,
-  accessToken: string,
-  attendee: { memberId: string; name: string; email: string; affiliation: string; phone: string },
-  timestamp: number,
-): Promise<void> {
-  await appendRows(env, accessToken, [
-    [
-      timestampForSheet(timestamp, env.TIME_ZONE),
-      attendee.name,
-      attendee.email,
-      attendee.phone,
-      attendee.affiliation,
-      attendee.memberId,
-    ],
-  ])
+// A kiosk check-in, with its timestamp already in Sheet form.
+export type CheckinEntry = {
+  timestamp: number
+  memberId: string
+  name: string
+  email: string
+  affiliation: string
+  phone: string
+  eventId: string
+}
+
+export async function appendCheckins(env: Env, accessToken: string, entries: CheckinEntry[]): Promise<void> {
+  await appendRows(env, accessToken, entries.map((entry) => [
+    entry.timestamp,
+    entry.name,
+    entry.email,
+    entry.phone,
+    entry.affiliation,
+    entry.memberId,
+    entry.eventId,
+  ]))
 }
 
 // The Sheet can be sorted or edited while the sync runs, so confirm the row still holds the same
@@ -357,10 +346,11 @@ export async function updateCheckinRow(
   ])
 }
 
-export type WaiverRow = { timestamp: SheetValue; name: string; email: string }
+// eventId is empty on waivers from before they named their event.
+export type WaiverRow = { timestamp: SheetValue; name: string; email: string; eventId: string }
 
 export async function readWaivers(env: Env, accessToken: string): Promise<WaiverRow[]> {
-  const url = valuesUrl(env, `${quoteSheetTitle(WAIVER_SHEET_NAME)}!A2:C`)
+  const url = valuesUrl(env, `${quoteSheetTitle(WAIVER_SHEET_NAME)}!A2:G`)
   url.searchParams.set("valueRenderOption", "UNFORMATTED_VALUE")
   url.searchParams.set("dateTimeRenderOption", "SERIAL_NUMBER")
   const response = await sheetsRequest(url, { headers: { Authorization: `Bearer ${accessToken}` } })
@@ -373,6 +363,7 @@ export async function readWaivers(env: Env, accessToken: string): Promise<Waiver
       timestamp: sheetValue(source[0]),
       name: stringValue(source[1]).trim(),
       email: stringValue(source[2]).trim().toLowerCase(),
+      eventId: stringValue(source[6]).trim(),
     }
   })
 }
@@ -380,7 +371,7 @@ export async function readWaivers(env: Env, accessToken: string): Promise<Waiver
 export async function appendWaiver(
   env: Env,
   accessToken: string,
-  signer: { name: string; email: string; phone: string; eventName: string; responseId: string },
+  signer: { name: string; email: string; phone: string; eventName: string; responseId: string; eventId: string },
   timestamp: number,
 ): Promise<void> {
   const sheet = (await listSheets(env, accessToken)).find((candidate) => candidate.title === WAIVER_SHEET_NAME)
@@ -405,6 +396,7 @@ export async function appendWaiver(
               text(signer.phone),
               text(signer.eventName),
               text(signer.responseId),
+              text(signer.eventId),
             ],
           },
         ],

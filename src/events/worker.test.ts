@@ -9,13 +9,14 @@ import sourceMigration from '../../migrations/events/0003_sheet_source.sql?raw'
 import roomMigration from '../../migrations/events/0004_event_room.sql?raw'
 import publishedMigration from '../../migrations/events/0005_event_published.sql?raw'
 import pricesMigration from '../../migrations/events/0006_event_prices.sql?raw'
+import alertEmailMigration from '../../migrations/events/0007_alert_email.sql?raw'
 import worker from './worker'
 import siteWorker from '../worker'
 import { changeEventWithSheet } from './sheets'
 import { getGoogleAccessToken } from '../../check-in/worker/google'
 import { campusGroupsKey, generalRiskTag } from './campusgroups'
 
-vi.mock('../../check-in/worker/google', () => ({ getGoogleAccessToken: vi.fn(async () => 'test-token') }))
+vi.mock('../../check-in/worker/google', async (importOriginal) => ({ ...await importOriginal<typeof import('../../check-in/worker/google')>(), getGoogleAccessToken: vi.fn(async () => 'test-token') }))
 const network = setupNetwork()
 let keyRequests = 0
 let managerToken = ''
@@ -52,6 +53,7 @@ beforeAll(async () => {
   await env.EVENTS_DB.exec(roomMigration.replaceAll('\n', ' '))
   await env.EVENTS_DB.exec(publishedMigration.replaceAll('\n', ' '))
   await env.EVENTS_DB.exec(pricesMigration.replaceAll('\n', ' '))
+  await env.EVENTS_DB.exec(alertEmailMigration.replaceAll('\n', ' '))
 })
 afterAll(() => network.disable())
 beforeEach(async () => { await env.EVENTS_DB.exec('DELETE FROM rsvp_sheet_connection; DELETE FROM rsvps; DELETE FROM events;') })
@@ -131,20 +133,12 @@ describe('event storage and RSVPs', () => {
     expect((await call(`/manage/api/events/${created.id}`, 'DELETE', undefined, true)).status).toBe(200)
     expect(await env.EVENTS_DB.prepare('SELECT COUNT(*) AS count FROM rsvps').first('count')).toBe(0)
   })
-  it('allows one dated event per day', async () => {
+  it('allows several events on one day', async () => {
     const first = await create()
-    const blocked = await call('/manage/api/events', 'POST', { ...event, kind: 'normal', title: 'Lesson' }, true)
-    expect(blocked.status).toBe(409)
-    expect(await blocked.json()).toEqual({ error: 'Another event is already on that date.' })
+    expect((await call('/manage/api/events', 'POST', { ...event, kind: 'normal', title: 'Lesson' }, true)).status).toBe(201)
     const second = await create({ title: 'Later dance', date: '2099-10-11' })
-    const moved = await call(`/manage/api/events/${second.id}`, 'PUT', { ...second, date: first.date }, true)
-    expect(moved.status).toBe(409)
-    expect(await moved.json()).toEqual({ error: 'Another event is already on that date.' })
-    expect(await env.EVENTS_DB.prepare('SELECT date FROM events WHERE id = ?').bind(second.id).first('date')).toBe('2099-10-11')
-    expect((await call(`/manage/api/events/${first.id}`, 'PUT', { ...first, location: 'New venue' }, true)).status).toBe(200)
-    const undated = await create({ title: 'Date TBA', date: '', startTime: '', endTime: '' })
-    await create({ title: 'Also TBA', date: '', startTime: '', endTime: '' })
-    expect((await call(`/manage/api/events/${undated.id}`, 'PUT', { ...undated, location: 'Somewhere' }, true)).status).toBe(200)
+    expect((await call(`/manage/api/events/${second.id}`, 'PUT', { ...second, date: first.date }, true)).status).toBe(200)
+    expect(await env.EVENTS_DB.prepare('SELECT COUNT(*) AS count FROM events WHERE date = ?').bind(first.date).first('count')).toBe(3)
   })
   it('refuses RSVP and calendar for normal events and RSVP for past events', async () => {
     const normal = await create({ kind: 'normal' })
@@ -420,6 +414,31 @@ describe('Sheets source of truth', () => {
     await connect([['Event','Name','Email'],[created.title,'Jane','jane@example.com']])
     expect((await call('/manage/api/rsvp-sheet/sync','POST',undefined,true)).status).toBe(502)
     expect(await env.EVENTS_DB.prepare('SELECT COUNT(*) AS count FROM rsvps').first('count')).toBe(0)
+  })
+})
+
+describe('alert email', () => {
+  const addresses = `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/email/routing/addresses`
+  it('requires manager sign-in', async () => {
+    expect((await call('/manage/api/alert-email')).status).toBe(401)
+    expect((await call('/manage/api/alert-email', 'PUT', { email: 'officer@example.com' })).status).toBe(401)
+  })
+  it('shows whether the stored address is verified and asks Cloudflare to verify a new one', async () => {
+    const created: string[] = []
+    network.use(
+      http.get(addresses, () => HttpResponse.json({ success: true, result: [{ email: 'wl757@cornell.edu', verified: '2026-01-01T00:00:00Z' }], result_info: { total_pages: 1 } })),
+      http.post(addresses, async ({ request }) => {
+        const { email } = await request.json() as { email: string }
+        created.push(email)
+        return HttpResponse.json({ success: true, result: { email, verified: null } })
+      }),
+    )
+    expect(await (await call('/manage/api/alert-email', 'GET', undefined, true)).json()).toEqual({ email: 'wl757@cornell.edu', verified: true })
+    const saved = await call('/manage/api/alert-email', 'PUT', { email: ' Officer@Example.com ' }, true)
+    expect(await saved.json()).toEqual({ email: 'officer@example.com', verified: false })
+    expect(created).toEqual(['officer@example.com'])
+    expect(await env.EVENTS_DB.prepare('SELECT alertEmail FROM settings').first('alertEmail')).toBe('officer@example.com')
+    await env.EVENTS_DB.exec("UPDATE settings SET alertEmail = 'wl757@cornell.edu'")
   })
 })
 

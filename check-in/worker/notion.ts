@@ -1,5 +1,6 @@
 import { isAffiliation, type Affiliation, type Member } from "../src/lib/checkin"
 import { createMemberId } from "./member-id"
+import { matchMember, MemberConflict } from "./member-match"
 import { isRecord, RETRYABLE_STATUSES, wait } from "./util"
 
 const NOTION_API = "https://api.notion.com/v1"
@@ -30,12 +31,10 @@ class NotionRequestError extends Error {
 }
 
 // generalRiskWaiver is the academic year of the member's Cornell General Risk waiver, e.g. "AY 26/27".
-type MemberRecord = Member & { pageId: string; generalRiskWaiver: string }
+export type MemberRecord = Member & { pageId: string; generalRiskWaiver: string }
 
 export type MemberRoster = {
   records: MemberRecord[]
-  byId: Map<string, MemberRecord>
-  byEmail: Map<string, MemberRecord[]>
   duplicateIds: Set<string>
 }
 
@@ -244,25 +243,9 @@ async function createPageOnce(
   return { id: created.id, recovered: null }
 }
 
-function addEmailIndex(roster: MemberRoster, record: MemberRecord): void {
-  if (!record.email) return
-  const matches = roster.byEmail.get(record.email) ?? []
-  matches.push(record)
-  roster.byEmail.set(record.email, matches)
-}
-
-function removeEmailIndex(roster: MemberRoster, record: MemberRecord, email: string): void {
-  if (!email) return
-  const matches = (roster.byEmail.get(email) ?? []).filter((candidate) => candidate !== record)
-  if (matches.length > 0) roster.byEmail.set(email, matches)
-  else roster.byEmail.delete(email)
-}
-
 function addRosterRecord(roster: MemberRoster, record: MemberRecord): void {
+  if (roster.records.some((existing) => existing.id === record.id)) roster.duplicateIds.add(record.id)
   roster.records.push(record)
-  if (roster.byId.has(record.id)) roster.duplicateIds.add(record.id)
-  else roster.byId.set(record.id, record)
-  addEmailIndex(roster, record)
 }
 
 // Members added by hand in Notion have no Member ID; give them one so check-ins can match them.
@@ -293,7 +276,7 @@ export async function loadMemberRoster(env: Env, { assignMissingIds = false } = 
     startCursor = result.nextCursor
   } while (startCursor)
 
-  const roster: MemberRoster = { records: [], byId: new Map(), byEmail: new Map(), duplicateIds: new Set() }
+  const roster: MemberRoster = { records: [], duplicateIds: new Set() }
   for (const page of pages) {
     const record = pageToMemberRecord(page)
     if (record.id) addRosterRecord(roster, record)
@@ -357,22 +340,19 @@ async function retrieveRelationIds(env: Env, pageId: string, propertyId: string)
   return relationIds
 }
 
-function eventLookup(env: Env, date: string): () => Promise<NotionPage | null> {
-  return async () => {
-    const result = await queryPages(
-      env,
-      env.NOTION_EVENTS_DATA_SOURCE_ID,
-      {
-        page_size: 2,
-        filter: { property: "Date", date: { equals: date } },
-      },
-      ["Name", "Date", "Attendees", "Waivers Signed"],
-    )
-    if (result.pages.length > 1) {
-      throw new RowProblem(`Expected at most one Notion event for ${date}, found ${result.pages.length}`)
-    }
-    return result.pages[0] ?? null
+const EVENT_PROPERTIES = ["Name", "Date", "Event ID", "Attendees", "Waivers Signed"]
+
+async function eventPageById(env: Env, eventId: string): Promise<NotionPage | null> {
+  const result = await queryPages(
+    env,
+    env.NOTION_EVENTS_DATA_SOURCE_ID,
+    { page_size: 2, filter: { property: "Event ID", rich_text: { equals: eventId } } },
+    EVENT_PROPERTIES,
+  )
+  if (result.pages.length > 1) {
+    throw new RowProblem(`Expected at most one Notion event with Event ID ${eventId}, found ${result.pages.length}`)
   }
+  return result.pages[0] ?? null
 }
 
 async function attendanceEvent(env: Env, page: NotionPage): Promise<AttendanceEvent> {
@@ -383,24 +363,49 @@ async function attendanceEvent(env: Env, page: NotionPage): Promise<AttendanceEv
   return { id: page.id, attendeePageIds: await relationIds("Attendees"), waiverPageIds: await relationIds("Waivers Signed") }
 }
 
-export async function findEventForDate(env: Env, date: string): Promise<AttendanceEvent | null> {
-  const page = await eventLookup(env, date)()
+export async function findAttendanceEvent(env: Env, eventId: string): Promise<AttendanceEvent | null> {
+  const page = await eventPageById(env, eventId)
   return page ? attendanceEvent(env, page) : null
 }
 
-export async function findOrCreateEventForDate(
+// Notion events made before check-ins named their event have only a date, from when there was one
+// event a night. The first event synced on that date takes over the page.
+async function claimDatedEvent(env: Env, event: { id: string; date: string }): Promise<NotionPage | null> {
+  const result = await queryPages(
+    env,
+    env.NOTION_EVENTS_DATA_SOURCE_ID,
+    {
+      page_size: 2,
+      filter: { and: [{ property: "Date", date: { equals: event.date } }, { property: "Event ID", rich_text: { is_empty: true } }] },
+    },
+    EVENT_PROPERTIES,
+  )
+  if (result.pages.length > 1) {
+    throw new RowProblem(`Expected at most one Notion event without an Event ID on ${event.date}, found ${result.pages.length}`)
+  }
+  const page = result.pages[0]
+  if (!page) return null
+  await notionRequest(env, `/pages/${encodeURIComponent(page.id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ properties: { "Event ID": { rich_text: [{ type: "text", text: { content: event.id } }] } } }),
+  })
+  return page
+}
+
+// event.id is the event's ID in /manage.
+export async function findOrCreateAttendanceEvent(
   env: Env,
-  date: string,
+  event: { id: string; date: string; name: string },
   storage: DurableObjectStorage,
 ): Promise<AttendanceEvent> {
-  const lookup = eventLookup(env, date)
-  const existing = await lookup()
+  const existing = await eventPageById(env, event.id) ?? await claimDatedEvent(env, event)
   if (existing) return attendanceEvent(env, existing)
-  const created = await createPageOnce(env, storage, `event:${date}`, lookup, {
+  const created = await createPageOnce(env, storage, `event:${event.id}`, () => eventPageById(env, event.id), {
     parent: { type: "data_source_id", data_source_id: env.NOTION_EVENTS_DATA_SOURCE_ID },
     properties: {
-      Name: { title: [{ type: "text", text: { content: date } }] },
-      Date: { date: { start: date } },
+      Name: { title: [{ type: "text", text: { content: event.name } }] },
+      Date: { date: { start: event.date } },
+      "Event ID": { rich_text: [{ type: "text", text: { content: event.id } }] },
     },
   })
   return created.recovered ? attendanceEvent(env, created.recovered) : { id: created.id, attendeePageIds: [], waiverPageIds: [] }
@@ -478,17 +483,14 @@ export async function syncMemberAttendance(
   eventId: string,
   storage: DurableObjectStorage,
 ): Promise<MemberRecord> {
-  const emailMatches = roster.byEmail.get(attendee.email) ?? []
-  let member = attendee.memberId ? roster.byId.get(attendee.memberId) ?? null : null
-  if (member) {
-    if (emailMatches.some((record) => record !== member)) {
-      throw new RowProblem("Check-in member ID and email refer to different Notion members")
-    }
-  } else {
-    // A new check-in gets a fresh Member ID before the person reaches Notion; email identifies them,
-    // as it does at the kiosk.
-    if (emailMatches.length > 1) throw new RowProblem("More than one Notion member has this email")
-    member = emailMatches[0] ?? null
+  // A new check-in gets a fresh Member ID before the person reaches Notion, so an unknown ID falls
+  // through to the email and name rules, as at the kiosk.
+  let member: MemberRecord | null
+  try {
+    member = matchMember(roster.records, attendee)
+  } catch (error) {
+    if (error instanceof MemberConflict) throw new RowProblem(error.message)
+    throw error
   }
   const memberId = member?.id ?? attendee.memberId
   if (memberId && roster.duplicateIds.has(memberId)) {
@@ -511,12 +513,10 @@ export async function syncMemberAttendance(
     member.phone !== details.phone
   ) {
     await updateMemberDetails(env, member.pageId, details)
-    removeEmailIndex(roster, member, member.email)
     member.name = details.name
     member.email = details.email
     member.affiliation = details.affiliation
     member.phone = details.phone
-    addEmailIndex(roster, member)
   }
   return member
 }

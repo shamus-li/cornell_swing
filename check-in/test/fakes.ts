@@ -34,14 +34,16 @@ export class FakeSheets {
 
   handlers() {
     return [
-      http.get(/https:\/\/sheets\.googleapis\.com\/v4\/spreadsheets\/[^/]+\/values:batchGet/, () => {
+      http.get(/https:\/\/sheets\.googleapis\.com\/v4\/spreadsheets\/[^/]+\/values:batchGet/, ({ request }) => {
         this.reads += 1
         if (this.transientFailures > 0) {
           this.transientFailures -= 1
           return new HttpResponse(null, { status: 503 })
         }
+        const columns = new URL(request.url).searchParams.getAll("ranges")
+          .map((range) => range.match(/!([A-Z])/)![1].charCodeAt(0) - "A".charCodeAt(0))
         return HttpResponse.json({
-          valueRanges: [0, 2, 5].map((column) => ({
+          valueRanges: columns.map((column) => ({
             values: this.rows.map((row) => row[column] == null ? [] : [row[column]]),
           })),
         })
@@ -128,6 +130,7 @@ export type FakeEvent = {
   pageId: string
   name: string
   date: string
+  eventId?: string
   attendees: string[]
   waivers?: string[]
 }
@@ -180,8 +183,9 @@ export class FakeNotion {
     return full
   }
 
-  addEvent(date: string): FakeEvent {
-    const event = { pageId: `event-page-${this.events.length + 1}`, name: date, date, attendees: [] }
+  // Events made before check-ins named their event have no Event ID.
+  addEvent(date: string, eventId?: string): FakeEvent {
+    const event = { pageId: `event-page-${this.events.length + 1}`, name: date, date, eventId, attendees: [] }
     this.events.push(event)
     return event
   }
@@ -194,8 +198,10 @@ export class FakeNotion {
         this.queries += 1
         const body = ((await request.json()) ?? {}) as Record<string, any>
         if (params.dataSourceId === env.NOTION_EVENTS_DATA_SOURCE_ID) {
-          const date = body.filter?.date?.equals
-          const matches = this.events.filter((event) => !date || event.date === date)
+          const filter = body.filter as Record<string, any> | undefined
+          const matches = this.events.filter((event) => filter?.property === "Event ID"
+            ? event.eventId === filter.rich_text.equals
+            : !filter || (event.date === filter.and[0].date.equals && !event.eventId))
           return HttpResponse.json({
             object: "list",
             has_more: false,
@@ -242,6 +248,7 @@ export class FakeNotion {
             pageId: `event-page-${this.events.length + 1}`,
             name: richText(properties.Name?.title),
             date: String(properties.Date?.date?.start ?? ""),
+            eventId: richText(properties["Event ID"]?.rich_text) || undefined,
             attendees: [],
           }
           this.events.push(event)
@@ -276,6 +283,7 @@ export class FakeNotion {
         const event = this.events.find((candidate) => candidate.pageId === params.pageId)
         if (event) {
           if (properties.Attendees?.relation?.length > 100) return new HttpResponse(null, { status: 400 })
+          if ("Event ID" in properties) event.eventId = richText(properties["Event ID"].rich_text)
           if ("Waivers Signed" in properties) {
             event.waivers = properties["Waivers Signed"].relation.map((item: { id: string }) => item.id)
           }
@@ -369,6 +377,7 @@ export class FakeNotion {
       properties: {
         Name: { title: [{ plain_text: event.name }] },
         Date: { date: { start: event.date } },
+        "Event ID": { rich_text: event.eventId ? [{ plain_text: event.eventId }] : [] },
         Attendees: {
           id: "VmW%7B",
           type: "relation",

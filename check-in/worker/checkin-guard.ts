@@ -1,11 +1,14 @@
 import { DurableObject } from "cloudflare:workers"
 
 import {
-  appendCheckin,
+  appendCheckins,
+  type CheckinEntry,
+  checkinId,
   createCachedGoogleAccessTokenProvider,
-  dateKeyInTimeZone,
-  readCheckinKeys,
+  getGoogleAccessToken,
+  readCheckinIds,
 } from "./google"
+import { sendAlert } from "../../src/events/alert-email"
 import { createMemberId } from "./member-id"
 
 type CheckinAttendee = {
@@ -16,117 +19,105 @@ type CheckinAttendee = {
   phone: string
 }
 
-// A returning member is matched by member ID (or the email of an older row without one); a new attendee by email.
-function duplicateKeys(attendee: CheckinAttendee): string[] {
-  return attendee.memberId ? [`id:${attendee.memberId}`, `legacy-email:${attendee.email}`] : [`email:${attendee.email}`]
+// How long to wait before copying check-ins to the Sheet again after a failure.
+const RETRY_MS = 60_000
+// How long copying can keep failing before an officer is emailed, once per outage.
+const ALERT_AFTER_MS = 30 * 60_000
+
+// A returning member is matched by member ID; a new attendee by email. Each event is checked into separately.
+function duplicateKeys(attendee: CheckinAttendee, eventId: string): string[] {
+  return [attendee.memberId ? `${eventId}|id:${attendee.memberId}` : `${eventId}|email:${attendee.email}`]
 }
 
+// One guard per night. It records each check-in in its own storage and confirms it right away, then
+// copies check-ins to the Sheet in the background, retrying until Google accepts them.
 export class CheckinGuard extends DurableObject<Env> {
-  private initialization: Promise<void> | null = null
-  private readonly getAccessToken = createCachedGoogleAccessTokenProvider()
+  private readonly getAccessToken = createCachedGoogleAccessTokenProvider(getGoogleAccessToken)
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS checkin_keys (key TEXT PRIMARY KEY)")
-    ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS guard_state (name TEXT PRIMARY KEY)")
-  }
-
-  private isInitialized(): boolean {
-    return Array.from(
-      this.ctx.storage.sql.exec("SELECT name FROM guard_state WHERE name = 'initialized'"),
-    ).length > 0
-  }
-
-  private async seed(dateKey: string, accessToken: string): Promise<void> {
-    const keys = await readCheckinKeys(this.env, accessToken, dateKey)
-    this.ctx.storage.transactionSync(() => {
-      for (const key of keys) {
-        this.ctx.storage.sql.exec("INSERT OR IGNORE INTO checkin_keys (key) VALUES (?)", key)
-      }
-      this.ctx.storage.sql.exec("INSERT OR IGNORE INTO guard_state (name) VALUES ('initialized')")
-    })
-  }
-
-  private async ensureInitialized(dateKey: string, accessToken: string): Promise<void> {
-    if (this.isInitialized()) return
-    this.initialization ??= this.seed(dateKey, accessToken).finally(() => {
-      this.initialization = null
-    })
-    await this.initialization
-  }
-
-  private reserve(checkKeys: string[], keys: string[]): string[] | null {
-    return this.ctx.storage.transactionSync(() => {
-      for (const key of checkKeys) {
-        const found = Array.from(
-          this.ctx.storage.sql.exec("SELECT key FROM checkin_keys WHERE key = ?", key),
-        ).length > 0
-        if (found) return null
-      }
-      const reservedKeys: string[] = []
-      for (const key of keys) {
-        const found = Array.from(
-          this.ctx.storage.sql.exec("SELECT key FROM checkin_keys WHERE key = ?", key),
-        ).length > 0
-        if (found) continue
-        this.ctx.storage.sql.exec("INSERT OR IGNORE INTO checkin_keys (key) VALUES (?)", key)
-        reservedKeys.push(key)
-      }
-      return reservedKeys
-    })
-  }
-
-  private release(keys: string[]): void {
-    this.ctx.storage.transactionSync(() => {
-      for (const key of keys) {
-        this.ctx.storage.sql.exec("DELETE FROM checkin_keys WHERE key = ?", key)
-      }
-    })
-  }
-
-  // Read-only: whether this attendee already checked in tonight. The kiosk asks before showing the
-  // participant waiver, so nobody signs a second waiver only to be told they're already checked in.
-  async isCheckedIn(attendee: CheckinAttendee, timestamp: number, accessToken?: string): Promise<boolean | "failed"> {
-    const dateKey = dateKeyInTimeZone(timestamp, this.env.TIME_ZONE)
-    try {
-      await this.ensureInitialized(dateKey, accessToken ?? await this.getAccessToken(this.env))
-    } catch (error) {
-      console.error(JSON.stringify({ message: "check-in guard initialization failed", error: String(error) }))
-      return "failed"
-    }
-    return duplicateKeys(attendee).some(key =>
-      Array.from(this.ctx.storage.sql.exec("SELECT key FROM checkin_keys WHERE key = ?", key)).length > 0,
+    // attempts counts appends sent; one that failed may still have reached the Sheet.
+    ctx.storage.sql.exec(
+      "CREATE TABLE IF NOT EXISTS pending (seq INTEGER PRIMARY KEY AUTOINCREMENT, entry TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0)",
     )
+    // Guards used to seed themselves from the Sheet; that state is no longer needed.
+    ctx.storage.sql.exec("DROP TABLE IF EXISTS guard_state")
   }
 
-  async checkin(
-    attendee: CheckinAttendee,
-    timestamp: number,
-    accessToken?: string,
-  ): Promise<"created" | "duplicate" | "failed"> {
-    const dateKey = dateKeyInTimeZone(timestamp, this.env.TIME_ZONE)
-    let token: string
-    try {
-      token = accessToken ?? await this.getAccessToken(this.env)
-      await this.ensureInitialized(dateKey, token)
-    } catch (error) {
-      console.error(JSON.stringify({ message: "check-in guard initialization failed", error: String(error) }))
-      return "failed"
-    }
+  private hasKey(key: string): boolean {
+    return Array.from(this.ctx.storage.sql.exec("SELECT key FROM checkin_keys WHERE key = ?", key)).length > 0
+  }
 
+  // Whether this attendee already checked into the event. The kiosk asks before showing the
+  // participant waiver, so nobody signs a second waiver only to be told they're already checked in.
+  async isCheckedIn(attendee: CheckinAttendee, eventId: string): Promise<boolean> {
+    return duplicateKeys(attendee, eventId).some((key) => this.hasKey(key))
+  }
+
+  async checkin(attendee: CheckinAttendee, eventId: string, timestamp: number): Promise<"created" | "duplicate"> {
     const memberId = attendee.memberId ?? createMemberId()
-    const emailKey = `email:${attendee.email}`
-    const memberKey = `id:${memberId}`
-    const reservedKeys = this.reserve(duplicateKeys(attendee), [memberKey, emailKey])
-    if (!reservedKeys) return "duplicate"
+    const entry: CheckinEntry = { ...attendee, memberId, eventId, timestamp }
+    const created = this.ctx.storage.transactionSync(() => {
+      if (duplicateKeys(attendee, eventId).some((key) => this.hasKey(key))) return false
+      for (const key of [`${eventId}|id:${memberId}`, `${eventId}|email:${attendee.email}`]) {
+        this.ctx.storage.sql.exec("INSERT OR IGNORE INTO checkin_keys (key) VALUES (?)", key)
+      }
+      this.ctx.storage.sql.exec("INSERT INTO pending (entry) VALUES (?)", JSON.stringify(entry))
+      return true
+    })
+    if (!created) return "duplicate"
+    await this.ctx.storage.setAlarm(Date.now())
+    return "created"
+  }
 
+  async alarm(): Promise<void> {
+    await this.flush()
+  }
+
+  // Copies pending check-ins to the Sheet. Tests pass an access token.
+  async flush(accessToken?: string): Promise<void> {
+    const pending = Array.from(this.ctx.storage.sql.exec<{ seq: number; entry: string; attempts: number }>(
+      "SELECT seq, entry, attempts FROM pending ORDER BY seq",
+    ))
+    if (!pending.length) return
+    const lastSeq = pending.at(-1)!.seq
     try {
-      await appendCheckin(this.env, token, { ...attendee, memberId }, timestamp)
-      return "created"
+      const token = accessToken ?? await this.getAccessToken(this.env)
+      let entries = pending.map(({ entry }) => JSON.parse(entry) as CheckinEntry)
+      if (pending.some(({ attempts }) => attempts > 0)) {
+        const present = await readCheckinIds(this.env, token)
+        entries = entries.filter((entry) => !present.has(checkinId(entry.timestamp, entry.memberId)))
+      }
+      if (entries.length) {
+        this.ctx.storage.sql.exec("UPDATE pending SET attempts = attempts + 1 WHERE seq <= ?", lastSeq)
+        await appendCheckins(this.env, token, entries)
+      }
+      this.ctx.storage.sql.exec("DELETE FROM pending WHERE seq <= ?", lastSeq)
+      await this.ctx.storage.delete(["failingSince", "alerted"])
     } catch (error) {
-      this.release(reservedKeys)
-      console.error(JSON.stringify({ message: "check-in append failed", error: String(error) }))
-      return "failed"
+      console.error(JSON.stringify({ message: "check-in copy to Sheet failed", pending: pending.length, error: String(error) }))
+      await this.ctx.storage.setAlarm(Date.now() + RETRY_MS)
+      const failingSince = await this.ctx.storage.get<number>("failingSince") ?? Date.now()
+      await this.ctx.storage.put("failingSince", failingSince)
+      if (Date.now() - failingSince >= ALERT_AFTER_MS && !await this.ctx.storage.get("alerted")) {
+        await this.alertStuck(pending.length, failingSince, error)
+      }
+    }
+  }
+
+  private async alertStuck(count: number, failingSince: number, error: unknown): Promise<void> {
+    const since = new Intl.DateTimeFormat("en-US", { timeZone: this.env.TIME_ZONE, hour: "numeric", minute: "2-digit" })
+      .format(failingSince)
+    try {
+      await sendAlert(this.env, "Check-ins aren't reaching the Google Sheet", [
+        `The kiosk is still accepting check-ins and keeps them until the Sheet takes them. Copying them has failed since ${since}, and ${count} ${count === 1 ? "check-in is" : "check-ins are"} waiting.`,
+        `Google's last error: ${String(error)}`,
+        `Check that the Sheet still exists and is shared with ${this.env.GOOGLE_SERVICE_ACCOUNT_EMAIL} as an editor. The kiosk tries again every minute.`,
+      ])
+      await this.ctx.storage.put("alerted", true)
+    } catch (alertError) {
+      console.error(JSON.stringify({ message: "stuck check-in alert failed", error: String(alertError) }))
     }
   }
 }

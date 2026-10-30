@@ -1,4 +1,4 @@
-import { getGoogleAccessToken } from '../../check-in/worker/google'
+import { createCachedGoogleAccessTokenProvider, getGoogleAccessToken } from '../../check-in/worker/google'
 import { validateRSVP, todayInNewYork, type EventRecord } from './model'
 
 type Connection = { spreadsheetId: string; sheetId: number; tabTitle: string; error: string | null }
@@ -11,15 +11,7 @@ export class SheetError extends Error {}
 // A request that conflicts with the event's current state; it says nothing about the sheet.
 export class EventConflict extends Error {}
 
-let googleToken: { email: string; key: string; token: string; expiresAt: number } | undefined
-async function sheetAccessToken(env: Env, signal: AbortSignal): Promise<string> {
-  if (googleToken && googleToken.email === env.GOOGLE_SERVICE_ACCOUNT_EMAIL && googleToken.key === env.GOOGLE_PRIVATE_KEY && googleToken.expiresAt > Date.now()) return googleToken.token
-  const requestedAt = Date.now()
-  const token = await getGoogleAccessToken(env, signal)
-  // Service-account tokens last one hour; refresh early and never share pending request I/O.
-  googleToken = { email: env.GOOGLE_SERVICE_ACCOUNT_EMAIL, key: env.GOOGLE_PRIVATE_KEY, token, expiresAt: requestedAt + 50 * 60 * 1000 }
-  return token
-}
+const sheetAccessToken = createCachedGoogleAccessTokenProvider(getGoogleAccessToken)
 
 async function connectionFor(env: Env): Promise<Connection | null> {
   return env.EVENTS_DB.prepare('SELECT spreadsheetId, sheetId, tabTitle, error FROM rsvp_sheet_connection WHERE id = 1').first<Connection>()

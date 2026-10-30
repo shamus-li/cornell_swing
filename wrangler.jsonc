@@ -113,11 +113,10 @@
       "head_sampling_rate": 0.01
     }
   },
-  // Alerts go only to this verified Email Routing address, which is free.
+  // Alerts go to the address set in /manage, which must be a verified Email Routing address.
   "send_email": [
     {
-      "name": "ALERT_EMAIL",
-      "destination_address": "wl757@cornell.edu"
+      "name": "ALERT_EMAIL"
     }
   ],
   "d1_databases": [

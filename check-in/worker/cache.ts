@@ -1,10 +1,10 @@
-import Fuse from "fuse.js"
-
 import { isAffiliation, type Member } from "../src/lib/checkin"
+import { searchMembers, type CheckinStats } from "../src/lib/member-search"
 import { listMembers } from "./notion"
 import { isRecord } from "./util"
 
 const MEMBER_CACHE_KEY = "members:v2"
+const CHECKIN_STATS_KEY = "checkin-stats:v1"
 
 type MemberSnapshot = {
   members: Member[]
@@ -44,25 +44,29 @@ async function currentMemberSnapshot(env: Env): Promise<MemberSnapshot> {
   return isMemberSnapshot(cached) ? cached : refreshMemberCache(env)
 }
 
-// Typo-tolerant name search; people type their name first, so emails aren't searched.
+function isCheckinStats(value: unknown): value is CheckinStats {
+  return isRecord(value) && Object.values(value).every((entry) =>
+    isRecord(entry) && typeof entry.nights === "number" && typeof entry.last === "string",
+  )
+}
+
+// Only the nightly sync writes the stats, so rebuilding the member list never clears them. They are
+// empty until the first sync after they are introduced.
+export async function storeCheckinStats(env: Env, stats: CheckinStats): Promise<void> {
+  await env.MEMBER_CACHE.put(CHECKIN_STATS_KEY, JSON.stringify(stats))
+}
+
 export async function searchCachedMembers(
   env: Env,
   query: string,
 ): Promise<Member[]> {
-  const snapshot = await currentMemberSnapshot(env)
-  return new Fuse(snapshot.members, { keys: ["name"], threshold: 0.3, ignoreDiacritics: true })
-    .search(query, { limit: 8 })
-    .map(({ item }) => item)
+  const [snapshot, stats] = await Promise.all([
+    currentMemberSnapshot(env),
+    env.MEMBER_CACHE.get(CHECKIN_STATS_KEY, "json"),
+  ])
+  return searchMembers(snapshot.members, query, isCheckinStats(stats) ? stats : {})
 }
 
 export async function cachedMembers(env: Env): Promise<Member[]> {
   return (await currentMemberSnapshot(env)).members
-}
-
-export async function findCachedMemberById(
-  env: Env,
-  memberId: string,
-): Promise<Member | null> {
-  const snapshot = await currentMemberSnapshot(env)
-  return snapshot.members.find((member) => member.id === memberId) ?? null
 }

@@ -3,9 +3,9 @@ import { exportPKCS8, generateKeyPair } from "jose"
 import { HttpResponse, http } from "msw"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import migration from "../../migrations/events/0001_events.sql?raw"
 import { checkWaiverForm, handleApiRequest } from "../worker"
 import { withoutEmoji } from "../worker/waiver"
+import { resetEventsDb } from "./events-db"
 import { FakeSheets } from "./fakes"
 import { network } from "./network"
 
@@ -46,9 +46,7 @@ function waiverRequest(init?: RequestInit): Request {
 
 beforeEach(async () => {
   for (const { name } of (await env.MEMBER_CACHE.list({ prefix: "waiver-form-alert:" })).keys) await env.MEMBER_CACHE.delete(name)
-  await env.EVENTS_DB.exec("DROP TABLE IF EXISTS rsvps")
-  await env.EVENTS_DB.exec("DROP TABLE IF EXISTS events")
-  await env.EVENTS_DB.exec(migration.replaceAll("\n", " "))
+  await resetEventsDb()
 })
 
 describe("participant waiver", () => {
@@ -93,7 +91,7 @@ describe("participant waiver", () => {
     }), { ...env, GOOGLE_PRIVATE_KEY: await exportPKCS8(privateKey) })
 
     expect(response.status).toBe(201)
-    expect(sheets.waivers).toEqual([[expect.any(Number), "Nora Murphy", "nora@example.com", "(607) 555-0100", "Fall Formal", "response-1"]])
+    expect(sheets.waivers).toEqual([[expect.any(Number), "Nora Murphy", "nora@example.com", "(607) 555-0100", "Fall Formal", "response-1", "e1"]])
     expect(submissions).toHaveLength(1)
     const [{ cookie, body }] = submissions
     expect(cookie).toContain("CG.SessionID=session")
@@ -132,9 +130,10 @@ describe("participant waiver", () => {
     expect(send).toHaveBeenCalledTimes(1)
   })
 
-  it("emails an officer each morning only while the form is missing a field", async () => {
+  it("emails the officer set in /manage each morning only while the form is missing a field", async () => {
     const send = vi.fn(async () => ({ messageId: "message" }))
     const alertEnv = { ...env, ALERT_EMAIL: { send } } as unknown as Env
+    await env.EVENTS_DB.exec("UPDATE settings SET alertEmail = 'officer@example.com'")
 
     useCampusGroups()
     await checkWaiverForm(alertEnv)
@@ -143,7 +142,7 @@ describe("participant waiver", () => {
     network.use(http.get("https://cornell.campusgroups.com/RMI/survey", () =>
       new HttpResponse(FORM_HTML.replace("free_text_919c0e74", "free_text_renamed"), { headers: { "Content-Type": "text/html" } })))
     await checkWaiverForm(alertEnv)
-    expect(send).toHaveBeenCalledWith(expect.objectContaining({ subject: "The CampusGroups waiver form changed" }))
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ to: "officer@example.com", subject: "The CampusGroups waiver form changed" }))
   })
 
   it("names special events without emoji", () => {

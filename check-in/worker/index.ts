@@ -12,7 +12,9 @@ import {
   type NextSteps,
   type Member,
 } from "../src/lib/checkin"
-import { cachedMembers, findCachedMemberById, searchCachedMembers, storeMemberCache } from "./cache"
+import type { CheckinStats } from "../src/lib/member-search"
+import { cachedMembers, searchCachedMembers, storeCheckinStats, storeMemberCache } from "./cache"
+import { eventAtSheetTimestamp, findCheckinEvent } from "./events"
 import {
   type CheckinRow,
   appendWaiver,
@@ -22,14 +24,18 @@ import {
   readCheckins,
   readWaivers,
   sortCheckins,
+  timestampForSheet,
   updateCheckinRow,
 } from "./google"
+import { sendAlert } from "../../src/events/alert-email"
 import { MEMBER_ID_PATTERN } from "./member-id"
+import { matchMember, MemberConflict } from "./member-match"
 import {
   type AttendanceEvent,
-  findEventForDate,
-  findOrCreateEventForDate,
+  findAttendanceEvent,
+  findOrCreateAttendanceEvent,
   loadMemberRoster,
+  type MemberRecord,
   type MemberRoster,
   setGeneralRiskWaiver,
   syncEventWaivers,
@@ -62,9 +68,9 @@ type Attendee = {
 
 type AccessTokenProvider = (env: Env) => Promise<string>
 
-// Phone is only included when present so rows from before the Phone column keep their fingerprints.
-function checkinFingerprint(row: CheckinRow): string {
-  return JSON.stringify([row.timestamp, row.name, row.email, row.affiliation, row.memberId, ...(row.phone ? [row.phone] : [])])
+// Includes the row's event, which for rows without an Event ID depends on the events in /manage.
+function checkinFingerprint(row: CheckinRow, eventId: string): string {
+  return JSON.stringify([row.timestamp, row.name, row.email, row.affiliation, row.memberId, row.phone, eventId])
 }
 
 // Missing, outdated, or unreadable state means every night is synced again, which is safe because
@@ -161,71 +167,49 @@ async function readCheckinAttendee(request: Request, env: Env): Promise<Attendee
   const attendee = validateAttendee(payload, true)
   if (!attendee) return json({ message: "Enter a valid name, email, phone number, and affiliation" }, 400)
 
-  if (attendee.memberId) {
-    const member = await findCachedMemberById(env, attendee.memberId)
-    if (!member) {
-      return json(
-        { message: "That member record is no longer available. Select “Not you?” and choose again." },
-        400,
-      )
-    }
-  } else {
-    const members = await cachedMembers(env)
-    const sameName = (member: Member) => member.name.toLocaleLowerCase() === attendee.name.toLocaleLowerCase()
-    const emailMatches = members.filter((member) => member.email === attendee.email)
-    const nameMatches = emailMatches.filter(sameName)
-    // Members added to Notion without an email are found by name in the dropdown, so typing the same
-    // name and affiliation links to them too.
-    const emaillessMatches = emailMatches.length
-      ? []
-      : members.filter(
-          (member) => !member.email && sameName(member) && member.affiliation === attendee.affiliation,
-        )
-    const member = emailMatches.length === 1
-      ? emailMatches[0]
-      : nameMatches.length === 1
-        ? nameMatches[0]
-        : emaillessMatches.length === 1
-          ? emaillessMatches[0]
-          : null
-    if (member) attendee.memberId = member.id
+  const members = await cachedMembers(env)
+  // A Member ID only comes from picking a name in the dropdown, so it must still be on the roster.
+  if (attendee.memberId && !members.some((member) => member.id === attendee.memberId)) {
+    return json(
+      { message: "That member record is no longer available. Select “Not you?” and choose again." },
+      400,
+    )
   }
-
+  try {
+    attendee.memberId = matchMember(members, attendee)?.id ?? null
+  } catch (error) {
+    if (error instanceof MemberConflict) return json({ message: error.message }, 400)
+    throw error
+  }
   return attendee
 }
 
-export async function handleCheckin(
-  request: Request,
-  env: Env,
-  getAccessToken?: AccessTokenProvider,
-  timestamp = Date.now(),
-): Promise<Response> {
+// The event a check-in at this moment belongs to, and the moment in Sheet form.
+async function eventNow(env: Env, timestamp: number): Promise<{ eventId: string; sheetTimestamp: number }> {
+  const sheetTimestamp = timestampForSheet(timestamp, env.TIME_ZONE)
+  return { eventId: (await eventAtSheetTimestamp(env, sheetTimestamp)).id, sheetTimestamp }
+}
+
+export async function handleCheckin(request: Request, env: Env, timestamp = Date.now()): Promise<Response> {
   const attendee = await readCheckinAttendee(request, env)
   if (attendee instanceof Response) return attendee
 
-  const accessToken = getAccessToken ? await getAccessToken(env) : undefined
-  const dateKey = dateKeyInTimeZone(timestamp, env.TIME_ZONE)
-  const result = await env.CHECKIN_GUARD.getByName(dateKey).checkin(attendee, timestamp, accessToken)
-  if (result === "failed") throw new Error("Check-in persistence failed")
+  const { eventId, sheetTimestamp } = await eventNow(env, timestamp)
+  const guard = env.CHECKIN_GUARD.getByName(dateKeyInTimeZone(timestamp, env.TIME_ZONE))
+  const result = await guard.checkin(attendee, eventId, sheetTimestamp)
   const next = await nextSteps(env, attendee)
   return result === "duplicate"
     ? json({ message: "Already checked in", next }, 409)
     : json({ message: "Checked in", next }, 201)
 }
 
-// Whether the attendee already checked in tonight, asked before the participant waiver.
-export async function handleCheckinStatus(
-  request: Request,
-  env: Env,
-  getAccessToken?: AccessTokenProvider,
-  timestamp = Date.now(),
-): Promise<Response> {
+// Whether the attendee already checked into tonight's event, asked before the participant waiver.
+export async function handleCheckinStatus(request: Request, env: Env, timestamp = Date.now()): Promise<Response> {
   const attendee = await readCheckinAttendee(request, env)
   if (attendee instanceof Response) return attendee
-  const accessToken = getAccessToken ? await getAccessToken(env) : undefined
-  const result = await env.CHECKIN_GUARD.getByName(dateKeyInTimeZone(timestamp, env.TIME_ZONE)).isCheckedIn(attendee, timestamp, accessToken)
-  if (result === "failed") throw new Error("Check-in status lookup failed")
-  return json({ checkedIn: result })
+  const { eventId } = await eventNow(env, timestamp)
+  const guard = env.CHECKIN_GUARD.getByName(dateKeyInTimeZone(timestamp, env.TIME_ZONE))
+  return json({ checkedIn: await guard.isCheckedIn(attendee, eventId) })
 }
 
 // What the attendee still needs to do after checking in, from the latest CampusGroups member upload.
@@ -256,22 +240,23 @@ async function handleWaiver(request: Request, env: Env): Promise<Response> {
     return json({ message: `Sign with your full name: ${name}` }, 400)
   }
   const timestamp = Date.now()
-  const eventName = await waiverEventName(env, timestamp)
+  const event = await eventAtSheetTimestamp(env, timestampForSheet(timestamp, env.TIME_ZONE))
+  const eventName = waiverEventName(event)
   const responseId = await submitWaiver({ name, phone, signature }, eventName)
   // CampusGroups holds the signed waiver, so a failed log entry shouldn't make the attendee sign again.
   try {
-    await appendWaiver(env, await getGoogleAccessToken(env), { name, email, phone, eventName, responseId }, timestamp)
+    await appendWaiver(env, await getGoogleAccessToken(env), { name, email, phone, eventName, responseId, eventId: event.id }, timestamp)
   } catch (error) {
     console.error(JSON.stringify({ message: "waiver log append failed", email, error: errorMessage(error) }))
   }
   return json({ message: "Waiver signed" }, 201)
 }
 
-// The date in a stored fingerprint, so a deleted row still marks its night as changed.
-function fingerprintDate(fingerprint: string): string | null {
+// The event in a stored fingerprint, so a deleted row still marks its event as changed.
+function fingerprintEvent(fingerprint: string): string | null {
   try {
-    const [timestamp] = JSON.parse(fingerprint) as unknown[]
-    return dateKeyForSheetTimestamp(typeof timestamp === "number" ? timestamp : null)
+    const eventId = (JSON.parse(fingerprint) as unknown[])[6]
+    return typeof eventId === "string" && eventId ? eventId : null
   } catch {
     return null
   }
@@ -312,6 +297,25 @@ function newestDetails(rows: CheckinRow[]): (attendee: Attendee) => Attendee {
   }
 }
 
+// How far back member search counts nights, about one semester.
+const RECENT_DAYS = 120
+
+// Uses the Member IDs the sync wrote back, so rows that failed to sync are left out until they sync.
+function checkinStats(rows: CheckinRow[], today: string): CheckinStats {
+  const cutoff = new Date(Date.parse(today) - RECENT_DAYS * 86_400_000).toISOString().slice(0, 10)
+  const recentNights = new Map<string, Set<string>>()
+  const last = new Map<string, string>()
+  for (const row of rows) {
+    const date = dateKeyForSheetTimestamp(row.timestamp)
+    if (!date || !row.memberId) continue
+    if (date >= cutoff) recentNights.set(row.memberId, (recentNights.get(row.memberId) ?? new Set()).add(date))
+    if (date > (last.get(row.memberId) ?? "")) last.set(row.memberId, date)
+  }
+  return Object.fromEntries(
+    [...last].map(([memberId, date]) => [memberId, { nights: recentNights.get(memberId)?.size ?? 0, last: date }]),
+  )
+}
+
 async function syncAttendance(env: Env, accessToken: string, storage: DurableObjectStorage): Promise<{
   synced: number
   failed: number
@@ -319,6 +323,7 @@ async function syncAttendance(env: Env, accessToken: string, storage: DurableObj
   previousFingerprints: Set<string> | null
   nextFingerprints: Set<string>
   members: Member[]
+  stats: CheckinStats
 }> {
   const rows = (await readCheckins(env, accessToken))
     .filter((row) => row.timestamp !== null && row.email)
@@ -327,42 +332,53 @@ async function syncAttendance(env: Env, accessToken: string, storage: DurableObj
   const roster = await loadMemberRoster(env, { assignMissingIds: true })
   const details = newestDetails(rows)
 
-  // A night needs syncing when any of its rows was added, edited, or deleted since the last run.
-  const currentFingerprints = new Set(rows.map(checkinFingerprint))
-  const changedDates = new Set<string>()
+  // Rows from before check-ins named their event, and rows officers add by hand, belong to the
+  // event at their time.
+  const eventIds = new Map<CheckinRow, string>()
   for (const row of rows) {
-    if (previousFingerprints?.has(checkinFingerprint(row))) continue
-    const date = dateKeyForSheetTimestamp(row.timestamp)
-    if (date) changedDates.add(date)
+    const assigned = !row.eventId && typeof row.timestamp === "number"
+    eventIds.set(row, assigned ? (await eventAtSheetTimestamp(env, row.timestamp as number)).id : row.eventId)
   }
-  for (const fingerprint of previousFingerprints ?? []) {
-    const date = currentFingerprints.has(fingerprint) ? null : fingerprintDate(fingerprint)
-    if (date) changedDates.add(date)
+  const fingerprint = (row: CheckinRow) => checkinFingerprint(row, eventIds.get(row)!)
+
+  // An event needs syncing when any of its rows was added, edited, or deleted since the last run.
+  const currentFingerprints = new Set(rows.map(fingerprint))
+  const changedEvents = new Set<string>()
+  for (const row of rows) {
+    if (!previousFingerprints?.has(fingerprint(row)) && eventIds.get(row)) changedEvents.add(eventIds.get(row)!)
+  }
+  for (const previous of previousFingerprints ?? []) {
+    const eventId = currentFingerprints.has(previous) ? null : fingerprintEvent(previous)
+    if (eventId) changedEvents.add(eventId)
   }
 
   const events = new Map<string, AttendanceEvent>()
   const attendees = new Map<string, Set<string>>()
-  const datesWithRows = new Set<string>()
+  const eventsWithRows = new Set<string>()
   const syncedRows: CheckinRow[] = []
-  // Nights with a temporary failure keep their previous state and sync again on the next run.
-  const retryDates = new Set<string>()
+  // Events with a temporary failure keep their previous state and sync again on the next run.
+  const retryEvents = new Set<string>()
   let failed = 0
   let attempted = 0
 
   for (const row of rows) {
-    const date = dateKeyForSheetTimestamp(row.timestamp)
-    if (!date || !changedDates.has(date)) continue
-    datesWithRows.add(date)
-    if (!previousFingerprints?.has(checkinFingerprint(row))) attempted += 1
+    const eventId = eventIds.get(row)!
+    if (!changedEvents.has(eventId)) continue
+    eventsWithRows.add(eventId)
+    if (!previousFingerprints?.has(fingerprint(row))) attempted += 1
     try {
       const attendee = rowAttendee(row)
-      let event = events.get(date)
+      const date = dateKeyForSheetTimestamp(row.timestamp)!
+      let event = events.get(eventId)
       if (!event) {
-        event = await findOrCreateEventForDate(env, date, storage)
-        events.set(date, event)
+        const record = await findCheckinEvent(env, eventId)
+        // The Notion event's name keeps the title from /manage even if the event is later deleted there.
+        const name = record ? `${record.date} ${record.title}` : date
+        event = await findOrCreateAttendanceEvent(env, { id: eventId, date: record?.date || date, name }, storage)
+        events.set(eventId, event)
       }
       const member = await syncMemberAttendance(env, roster, attendee, details(attendee), date, event.id, storage)
-      attendees.set(date, (attendees.get(date) ?? new Set()).add(member.pageId))
+      attendees.set(eventId, (attendees.get(eventId) ?? new Set()).add(member.pageId))
       // Write back only this row's own cleaned-up values and its Member ID.
       const values = { name: attendee.name, email: attendee.email, affiliation: attendee.affiliation, memberId: member.id, phone: attendee.phone }
       if (values.name !== row.name || values.email !== row.email || values.affiliation !== row.affiliation || values.memberId !== row.memberId || values.phone !== row.phone) {
@@ -372,7 +388,7 @@ async function syncAttendance(env: Env, accessToken: string, storage: DurableObj
       syncedRows.push(row)
     } catch (error) {
       failed += 1
-      if (!(error instanceof RowProblem)) retryDates.add(date)
+      if (!(error instanceof RowProblem)) retryEvents.add(eventId)
       console.error(
         JSON.stringify({
           message: "attendance row sync failed",
@@ -383,69 +399,77 @@ async function syncAttendance(env: Env, accessToken: string, storage: DurableObj
     }
   }
 
-  // Each changed night's attendees become exactly its synced rows. A night whose rows were all
+  // Each changed event's attendees become exactly its synced rows. An event whose rows were all
   // deleted is looked up so its attendees can be cleared.
-  for (const date of changedDates) {
-    if (retryDates.has(date)) continue
+  for (const eventId of changedEvents) {
+    if (retryEvents.has(eventId)) continue
     try {
-      const event = events.get(date) ?? (datesWithRows.has(date) ? null : await findEventForDate(env, date))
-      if (event) await syncEventAttendance(env, event, attendees.get(date) ?? [])
+      const event = events.get(eventId) ?? (eventsWithRows.has(eventId) ? null : await findAttendanceEvent(env, eventId))
+      if (event) await syncEventAttendance(env, event, attendees.get(eventId) ?? [])
     } catch (error) {
       failed += 1
-      retryDates.add(date)
-      console.error(JSON.stringify({ message: "event attendance sync failed", date, error: errorMessage(error) }))
+      retryEvents.add(eventId)
+      console.error(JSON.stringify({ message: "event attendance sync failed", eventId, error: errorMessage(error) }))
     }
   }
 
   const nextFingerprints = new Set<string>()
   for (const row of rows) {
-    const date = dateKeyForSheetTimestamp(row.timestamp)
-    if (date && !changedDates.has(date)) nextFingerprints.add(checkinFingerprint(row))
+    if (!changedEvents.has(eventIds.get(row)!)) nextFingerprints.add(fingerprint(row))
   }
   let synced = 0
   for (const row of syncedRows) {
-    const date = dateKeyForSheetTimestamp(row.timestamp)!
-    if (retryDates.has(date)) continue
-    if (!previousFingerprints?.has(checkinFingerprint(row))) synced += 1
-    nextFingerprints.add(checkinFingerprint(row))
+    if (retryEvents.has(eventIds.get(row)!)) continue
+    if (!previousFingerprints?.has(fingerprint(row))) synced += 1
+    nextFingerprints.add(fingerprint(row))
   }
-  for (const fingerprint of previousFingerprints ?? []) {
-    const date = fingerprintDate(fingerprint)
-    if (date && retryDates.has(date)) nextFingerprints.add(fingerprint)
+  for (const previous of previousFingerprints ?? []) {
+    const eventId = fingerprintEvent(previous)
+    if (eventId && retryEvents.has(eventId)) nextFingerprints.add(previous)
   }
 
   failed += await syncWaivers(env, accessToken, roster)
   failed += await syncGeneralRisk(env, roster)
 
-  return { synced, failed, attempted, previousFingerprints, nextFingerprints, members: rosterMembers(roster) }
+  return {
+    synced,
+    failed,
+    attempted,
+    previousFingerprints,
+    nextFingerprints,
+    members: rosterMembers(roster),
+    stats: checkinStats(rows, dateKeyInTimeZone(Date.now(), env.TIME_ZONE)),
+  }
 }
 
-// Lists each night's participant waiver signers on its Notion event. Returns how many items failed.
+// Lists each event's participant waiver signers on its Notion event. Returns how many items failed.
 async function syncWaivers(env: Env, accessToken: string, roster: MemberRoster): Promise<number> {
   const signers = new Map<string, Set<string>>()
   let failed = 0
   for (const row of await readWaivers(env, accessToken)) {
-    const date = dateKeyForSheetTimestamp(row.timestamp)
-    // Members who share an email are told apart by name, as at the kiosk.
-    const emailMatches = roster.byEmail.get(row.email) ?? []
-    const matches = emailMatches.length > 1
-      ? emailMatches.filter((member) => member.name.toLocaleLowerCase() === row.name.toLocaleLowerCase())
-      : emailMatches
-    if (!date || matches.length !== 1) {
+    let member: MemberRecord | null = null
+    try {
+      member = matchMember(roster.records, { memberId: null, email: row.email, name: row.name })
+    } catch (error) {
+      if (!(error instanceof MemberConflict)) throw error
+    }
+    if (typeof row.timestamp !== "number" || !member) {
       failed += 1
-      console.error(JSON.stringify({ message: "waiver row has no single matching member", email: row.email, date }))
+      console.error(JSON.stringify({ message: "waiver row has no single matching member", email: row.email }))
       continue
     }
-    signers.set(date, (signers.get(date) ?? new Set()).add(matches[0].pageId))
+    // Waivers from before they named their event belong to the event at their time.
+    const eventId = row.eventId || (await eventAtSheetTimestamp(env, row.timestamp)).id
+    signers.set(eventId, (signers.get(eventId) ?? new Set()).add(member.pageId))
   }
-  for (const [date, pageIds] of signers) {
+  for (const [eventId, pageIds] of signers) {
     try {
-      const event = await findEventForDate(env, date)
-      if (!event) throw new RowProblem(`No Notion event for ${date}`)
+      const event = await findAttendanceEvent(env, eventId)
+      if (!event) throw new RowProblem(`No Notion event for ${eventId}`)
       await syncEventWaivers(env, event, pageIds)
     } catch (error) {
       failed += 1
-      console.error(JSON.stringify({ message: "event waiver sync failed", date, error: errorMessage(error) }))
+      console.error(JSON.stringify({ message: "event waiver sync failed", eventId, error: errorMessage(error) }))
     }
   }
   return failed
@@ -496,11 +520,13 @@ async function performNightlySync(
   const {
     attempted,
     members,
+    stats,
     previousFingerprints,
     nextFingerprints,
     ...result
   } = await syncAttendance(env, accessToken, storage)
   await storeMemberCache(env, members)
+  await storeCheckinStats(env, stats)
   if (attempted > 0) {
     await sortCheckins(env, accessToken)
   }
@@ -577,16 +603,11 @@ export async function checkWaiverForm(env: Env): Promise<void> {
 async function alertWaiverFormChanged(env: Env): Promise<void> {
   const key = `waiver-form-alert:${dateKeyInTimeZone(Date.now(), env.TIME_ZONE)}`
   if (await env.MEMBER_CACHE.get(key)) return
-  await env.ALERT_EMAIL.send({
-    to: "wl757@cornell.edu",
-    from: { email: "check-in@swingsyndicate.club", name: "Swing Syndicate check-in" },
-    subject: "The CampusGroups waiver form changed",
-    text: [
-      "The check-in kiosk can't fill in the non-Cornell participant waiver anymore, so it skips the waiver for community members and alumni.",
-      `Form: ${WAIVER_FORM_URL}`,
-      "Update the field names in check-in/worker/waiver.ts to match the form.",
-    ].join("\n\n"),
-  })
+  await sendAlert(env, "The CampusGroups waiver form changed", [
+    "The check-in kiosk can't fill in the non-Cornell participant waiver anymore, so it skips the waiver for community members and alumni.",
+    `Form: ${WAIVER_FORM_URL}`,
+    "Update the field names in check-in/worker/waiver.ts to match the form.",
+  ])
   await env.MEMBER_CACHE.put(key, "sent", { expirationTtl: 2 * 24 * 60 * 60 })
 }
 

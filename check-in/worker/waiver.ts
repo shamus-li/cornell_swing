@@ -1,7 +1,8 @@
 import { decodeHTML, decodeHTMLAttribute } from "entities"
 
 import type { WaiverBlock } from "../src/lib/checkin"
-import { dateKeyInTimeZone } from "./google"
+import { eventAtSheetTimestamp, type CheckinEvent } from "./events"
+import { timestampForSheet } from "./google"
 import { isRecord } from "./util"
 
 // Cornell's non-Cornell participant waiver on CampusGroups. CampusGroups doesn't allow embedding its
@@ -137,18 +138,19 @@ export function withoutEmoji(title: string): string {
 }
 
 // One event per day: a special event uses its title, and a weekly lesson is "<date> Swing Dance".
-export async function waiverEventName(env: Env, timestamp = Date.now()): Promise<string> {
-  const date = dateKeyInTimeZone(timestamp, env.TIME_ZONE)
-  const event = await env.EVENTS_DB.prepare("SELECT kind, title FROM events WHERE date = ?").bind(date).first<{ kind: string; title: string }>()
-  if (event?.kind === "special") return withoutEmoji(event.title)
+export function waiverEventName(event: CheckinEvent): string {
+  if (event.kind === "special") return withoutEmoji(event.title)
   const day = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "long", day: "numeric", year: "numeric" })
-    .format(new Date(`${date}T00:00:00Z`))
+    .format(new Date(`${event.date}T00:00:00Z`))
   return `${day} Swing Dance`
 }
 
 export async function readWaiver(env: Env): Promise<{ blocks: WaiverBlock[]; eventName: string }> {
-  const [form, eventName] = await Promise.all([loadWaiverForm(), waiverEventName(env)])
-  return { blocks: form.blocks, eventName }
+  const [form, event] = await Promise.all([
+    loadWaiverForm(),
+    eventAtSheetTimestamp(env, timestampForSheet(Date.now(), env.TIME_ZONE)),
+  ])
+  return { blocks: form.blocks, eventName: waiverEventName(event) }
 }
 
 // Returns CampusGroups' ID for the saved response.

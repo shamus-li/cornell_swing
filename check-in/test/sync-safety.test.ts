@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest"
 import { AttendanceSync, runNightlySync } from "../worker"
 import { timestampForSheet } from "../worker/google"
 import { ATTENDANCE_SYNC_STATE_KEY, ATTENDANCE_SYNC_STATE_VERSION } from "../worker/sync-state"
+import { resetEventsDb } from "./events-db"
 import { FakeNotion, FakeSheets } from "./fakes"
 import { network } from "./network"
 
@@ -19,6 +20,7 @@ beforeEach(async () => {
     })
   }
   await env.MEMBER_CACHE.delete("members:v2")
+  await resetEventsDb()
   await env.MEMBER_CACHE.put(ATTENDANCE_SYNC_STATE_KEY, JSON.stringify({
     version: ATTENDANCE_SYNC_STATE_VERSION, fingerprints: [],
   }))
@@ -71,7 +73,8 @@ describe("attendance sync creation safety", () => {
       expect(await env.MEMBER_CACHE.get(ATTENDANCE_SYNC_STATE_KEY)).toBe(checkpoint)
 
       // Once queries have caught up, a page that is still missing was never created.
-      const key = `notion-creation:${kind === "member" ? `member:${MEMBER_ID}` : "event:2026-08-25"}`
+      const eventId = await env.EVENTS_DB.prepare("SELECT id FROM events WHERE date = '2026-08-25'").first<string>("id")
+      const key = `notion-creation:${kind === "member" ? `member:${MEMBER_ID}` : `event:${eventId}`}`
       await runInDurableObject(env.ATTENDANCE_SYNC.getByName("nightly"), async (_instance, state) => {
         await state.storage.put(key, Date.now() - 2 * 60 * 60 * 1000)
       })

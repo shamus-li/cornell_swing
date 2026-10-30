@@ -22,6 +22,7 @@ import {
   ATTENDANCE_SYNC_STATE_KEY,
   ATTENDANCE_SYNC_STATE_VERSION,
 } from "../worker/sync-state"
+import { resetEventsDb } from "./events-db"
 import { FakeNotion, FakeSheets } from "./fakes"
 import { network } from "./network"
 
@@ -42,18 +43,41 @@ beforeEach(async () => {
     })
   }
   for (const id of await listDurableObjectIds(env.CHECKIN_GUARD)) {
-    await runInDurableObject(env.CHECKIN_GUARD.get(id), (_instance, state) => {
+    await runInDurableObject(env.CHECKIN_GUARD.get(id), async (_instance, state) => {
       state.storage.sql.exec("DELETE FROM checkin_keys")
-      state.storage.sql.exec("DELETE FROM guard_state")
+      state.storage.sql.exec("DELETE FROM pending")
+      await state.storage.delete(["failingSince", "alerted"])
+      await state.storage.deleteAlarm()
     })
   }
+  await resetEventsDb()
   await env.MEMBER_CACHE.delete("members:v2")
+  await env.MEMBER_CACHE.delete("checkin-stats:v1")
   await env.MEMBER_CACHE.delete("campusgroups:v1")
   await env.MEMBER_CACHE.put(
     ATTENDANCE_SYNC_STATE_KEY,
     JSON.stringify({ version: ATTENDANCE_SYNC_STATE_VERSION, fingerprints: [] }),
   )
 })
+
+// Copies the night's pending check-ins to the Sheet, as the guard's alarm does.
+async function flush(timestamp = TEST_TIMESTAMP): Promise<void> {
+  await env.CHECKIN_GUARD.getByName(dateKeyInTimeZone(timestamp, env.TIME_ZONE)).flush("test-access-token")
+}
+
+async function pendingMemberId(timestamp = TEST_TIMESTAMP): Promise<string> {
+  return runInDurableObject(env.CHECKIN_GUARD.getByName(dateKeyInTimeZone(timestamp, env.TIME_ZONE)), (_instance, state) => {
+    const [{ entry }] = state.storage.sql.exec<{ entry: string }>("SELECT entry FROM pending").toArray()
+    return (JSON.parse(entry) as { memberId: string }).memberId
+  })
+}
+
+async function addEvent(id: string, startTime: string, endTime: string, date = "2026-08-25"): Promise<void> {
+  await env.EVENTS_DB
+    .prepare("INSERT INTO events (id, kind, title, date, startTime, endTime, updatedAt) VALUES (?, 'normal', ?, ?, ?, ?, '')")
+    .bind(id, id, date, startTime, endTime)
+    .run()
+}
 
 function useFakes() {
   const sheets = new FakeSheets()
@@ -118,7 +142,7 @@ describe("sheet timestamps", () => {
 })
 
 describe("Google access tokens", () => {
-  it("reuses a token and shares an in-flight refresh", async () => {
+  it("reuses a token until it expires", async () => {
     let currentTime = 0
     let refreshes = 0
     const provider = createCachedGoogleAccessTokenProvider(
@@ -126,7 +150,7 @@ describe("Google access tokens", () => {
       () => currentTime,
     )
 
-    expect(await Promise.all([provider(env), provider(env)])).toEqual(["token-1", "token-1"])
+    expect(await provider(env)).toBe("token-1")
     expect(await provider(env)).toBe("token-1")
     expect(refreshes).toBe(1)
 
@@ -215,6 +239,32 @@ describe("member search", () => {
     expect(await search("jpb6")).toEqual([])
   })
 
+  it("lists names that start with the typed words first, then regulars, then by first name", async () => {
+    const member = (id: string, name: string) => ({ id, name, email: "", phone: "", affiliation: "Staff" })
+    await env.MEMBER_CACHE.put("members:v2", JSON.stringify({
+      members: [
+        member("Zed_00000001", "Ana Zed"),
+        member("Able00000001", "Ana Able"),
+        member("Bell00000001", "Ana Bell"),
+        member("Cole00000001", "Ana Cole"),
+        member("Dana00000001", "Dana Regular"),
+      ],
+    }))
+    await env.MEMBER_CACHE.put("checkin-stats:v1", JSON.stringify({
+      Bell00000001: { nights: 2, last: "2026-10-01" },
+      Cole00000001: { nights: 2, last: "2026-10-29" },
+      Dana00000001: { nights: 12, last: "2026-10-29" },
+    }))
+
+    expect((await searchCachedMembers(env, "ana")).map(({ id }) => id)).toEqual([
+      "Cole00000001",
+      "Bell00000001",
+      "Able00000001",
+      "Zed_00000001",
+      "Dana00000001",
+    ])
+  })
+
   it("keys the rate limit by Access identity and returns 429 when it trips", async () => {
     const keys: string[] = []
     const limiter: Env["MEMBER_SEARCH_RATE_LIMITER"] = {
@@ -265,45 +315,142 @@ describe("check-in", () => {
     const statusRequest = (overrides: Record<string, unknown> = {}) =>
       new Request("https://example.com/check-in/api/checkins/status", { method: "POST", headers: { "Content-Type": "application/json" }, body: checkinRequestBody(overrides) })
     const status = async (overrides: Record<string, unknown> = {}) =>
-      (await (await handleCheckinStatus(statusRequest(overrides), env, token, TEST_TIMESTAMP)).json()) as { checkedIn: boolean }
+      (await (await handleCheckinStatus(statusRequest(overrides), env, TEST_TIMESTAMP)).json()) as { checkedIn: boolean }
 
     expect(await status()).toEqual({ checkedIn: false })
-    expect((await handleCheckin(checkinRequest(), env, token, TEST_TIMESTAMP)).status).toBe(201)
+    expect((await handleCheckin(checkinRequest(), env, TEST_TIMESTAMP)).status).toBe(201)
     expect(await status()).toEqual({ checkedIn: true })
 
     const newcomer = { memberId: null, name: "New Dancer", email: "new@example.com" }
     expect(await status(newcomer)).toEqual({ checkedIn: false })
-    expect((await handleCheckin(checkinRequest(newcomer), env, token, TEST_TIMESTAMP)).status).toBe(201)
+    expect((await handleCheckin(checkinRequest(newcomer), env, TEST_TIMESTAMP)).status).toBe(201)
     expect(await status(newcomer)).toEqual({ checkedIn: true })
   })
 
-  it("records a first-time attendee with a generated durable member ID", async () => {
+  it("records a first-time attendee with a generated durable member ID and tonight's event", async () => {
     const { sheets } = useFakes()
 
     const response = await handleCheckin(
       checkinRequest({ memberId: null, name: "New Dancer", email: "new@example.com" }),
       env,
-      token,
       TEST_TIMESTAMP,
     )
+    await flush()
 
     expect(response.status).toBe(201)
     expect(sheets.rows).toHaveLength(1)
-    const [timestamp, name, email, phone, affiliation, memberId] = sheets.rows[0]
+    const [timestamp, name, email, phone, affiliation, memberId, eventId] = sheets.rows[0]
     expect(timestamp).toBe(serialFor(TEST_TIMESTAMP))
     expect(name).toBe("New Dancer")
     expect(email).toBe("new@example.com")
     expect(phone).toBe("(607) 555-0100")
     expect(affiliation).toBe("Community Member")
     expect(String(memberId)).toMatch(MEMBER_ID_PATTERN)
+    // A night with no event in /manage gets an unpublished one.
+    expect(await env.EVENTS_DB.prepare("SELECT id, kind, title, date, published FROM events").all()).toMatchObject({
+      results: [{ id: eventId, kind: "normal", title: "Swing Dance", date: "2026-08-25", published: 0 }],
+    })
+  })
+
+  it("checks into the event happening at that time, and into each event of the night separately", async () => {
+    const { sheets } = useFakes()
+    await cacheMembers({ id: ADA_MEMBER_ID, name: "Ada Lovelace", email: "ada@example.com", affiliation: "Community Member" })
+    await addEvent("workshop", "17:00", "18:00")
+    await addEvent("social", "19:30", "22:00")
+
+    // 7:00 PM is between the two, closer to the social; 8:00 PM is during it; 6:00 PM ends the workshop.
+    expect((await handleCheckin(checkinRequest(), env, TEST_TIMESTAMP)).status).toBe(201)
+    expect((await handleCheckin(checkinRequest(), env, TEST_TIMESTAMP + HOUR)).status).toBe(409)
+    expect((await handleCheckin(checkinRequest(), env, TEST_TIMESTAMP - HOUR)).status).toBe(201)
+    await flush()
+
+    expect(sheets.rows.map((row) => row[6])).toEqual(["social", "workshop"])
+  })
+
+  it("confirms check-ins while Google Sheets is down and copies them once it is back", async () => {
+    const { sheets } = useFakes()
+    sheets.failAppends = true
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    try {
+      const first = await handleCheckin(checkinRequest({ memberId: null, name: "Ada Lovelace", email: "ada@example.com" }), env, TEST_TIMESTAMP)
+      await flush()
+      const second = await handleCheckin(checkinRequest({ memberId: null, name: "Grace Hopper", email: "grace@example.com" }), env, TEST_TIMESTAMP)
+      expect([first.status, second.status]).toEqual([201, 201])
+      expect(sheets.rows).toEqual([])
+
+      sheets.failAppends = false
+      await flush()
+      expect(sheets.rows.map((row) => row[2])).toEqual(["ada@example.com", "grace@example.com"])
+      await flush()
+      expect(sheets.rows).toHaveLength(2)
+    } finally {
+      consoleError.mockRestore()
+    }
+  })
+
+  it("emails the alert address once when check-ins can't reach the Sheet for 30 minutes", async () => {
+    const { sheets } = useFakes()
+    await env.EVENTS_DB.exec("UPDATE settings SET alertEmail = 'officer@example.com'")
+    const send = vi.fn(async () => ({ messageId: "message" }))
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    try {
+      await handleCheckin(checkinRequest({ memberId: null }), env, TEST_TIMESTAMP)
+      const guard = env.CHECKIN_GUARD.getByName(dateKeyInTimeZone(TEST_TIMESTAMP, env.TIME_ZONE))
+      await runInDurableObject(guard, async (instance, state) => {
+        const guardEnv = (instance as unknown as { env: Env }).env
+        Object.assign(instance, { env: { ...guardEnv, ALERT_EMAIL: { send } } })
+        // Without a token the guard signs in to Google, which fails in tests because the key is fake.
+        await instance.flush()
+        expect(send).not.toHaveBeenCalled()
+
+        await state.storage.put("failingSince", Date.now() - 31 * 60_000)
+        await instance.flush()
+        await instance.flush()
+        expect(send).toHaveBeenCalledTimes(1)
+        expect(send).toHaveBeenCalledWith(expect.objectContaining({
+          to: "officer@example.com",
+          subject: "Check-ins aren't reaching the Google Sheet",
+        }))
+
+        await instance.flush("test-access-token")
+        expect(sheets.rows).toHaveLength(1)
+        expect(await state.storage.get("failingSince")).toBeUndefined()
+        Object.assign(instance, { env: guardEnv })
+      })
+    } finally {
+      consoleError.mockRestore()
+    }
+  })
+
+  it("does not copy a check-in twice when a failed append reached the Sheet", async () => {
+    const { sheets } = useFakes()
+    sheets.failAppends = true
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    try {
+      await handleCheckin(checkinRequest({ memberId: null, name: "Ada Lovelace", email: "ada@example.com" }), env, TEST_TIMESTAMP)
+      await flush()
+      // The append committed even though Google answered with an error.
+      sheets.rows.push([serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "(607) 555-0100", "Community Member", await pendingMemberId(), ""])
+      await handleCheckin(checkinRequest({ memberId: null, name: "Grace Hopper", email: "grace@example.com" }), env, TEST_TIMESTAMP)
+
+      sheets.failAppends = false
+      await flush()
+      expect(sheets.rows.map((row) => row[2])).toEqual(["ada@example.com", "grace@example.com"])
+    } finally {
+      consoleError.mockRestore()
+    }
   })
 
   it("requires a full email and a phone number, and stores the phone formatted in the Phone column", async () => {
     const { sheets } = useFakes()
 
-    const missing = await handleCheckin(checkinRequest({ phone: "123" }), env, token, TEST_TIMESTAMP)
-    const noDomain = await handleCheckin(checkinRequest({ email: "ada@cornell" }), env, token, TEST_TIMESTAMP)
-    const valid = await handleCheckin(checkinRequest({ memberId: null, phone: "1 607.555.0100" }), env, token, TEST_TIMESTAMP)
+    const missing = await handleCheckin(checkinRequest({ phone: "123" }), env, TEST_TIMESTAMP)
+    const noDomain = await handleCheckin(checkinRequest({ email: "ada@cornell" }), env, TEST_TIMESTAMP)
+    const valid = await handleCheckin(checkinRequest({ memberId: null, phone: "1 607.555.0100" }), env, TEST_TIMESTAMP)
+    await flush()
 
     expect(missing.status).toBe(400)
     expect(noDomain.status).toBe(400)
@@ -321,7 +468,7 @@ describe("check-in", () => {
       },
     }))
     const nextFor = async (email: string, affiliation: string) => {
-      const response = await handleCheckin(checkinRequest({ memberId: null, email, affiliation }), env, token, TEST_TIMESTAMP)
+      const response = await handleCheckin(checkinRequest({ memberId: null, email, affiliation }), env, TEST_TIMESTAMP)
       return ((await response.json()) as { next: unknown }).next
     }
 
@@ -341,58 +488,15 @@ describe("check-in", () => {
       affiliation: "Community Member",
     })
 
-    expect((await handleCheckin(checkinRequest(), env, token, TEST_TIMESTAMP)).status).toBe(201)
-    expect(sheets.rows[0][5]).toBe(ADA_MEMBER_ID)
-
-    const sameNight = await handleCheckin(checkinRequest(), env, token, TEST_TIMESTAMP + HOUR)
+    expect((await handleCheckin(checkinRequest(), env, TEST_TIMESTAMP)).status).toBe(201)
+    const sameNight = await handleCheckin(checkinRequest(), env, TEST_TIMESTAMP + HOUR)
     expect(sameNight.status).toBe(409)
     expect(await sameNight.json()).toMatchObject({ message: "Already checked in" })
-    expect(sheets.rows).toHaveLength(1)
+    expect((await handleCheckin(checkinRequest(), env, TEST_TIMESTAMP + 24 * HOUR)).status).toBe(201)
+    await flush()
+    await flush(TEST_TIMESTAMP + 24 * HOUR)
 
-    const nextDay = await handleCheckin(checkinRequest(), env, token, TEST_TIMESTAMP + 24 * HOUR)
-    expect(nextDay.status).toBe(201)
-    expect(sheets.rows).toHaveLength(2)
-  })
-
-  it("seeds the date guard from key columns and does not reread them", async () => {
-    const { sheets } = useFakes()
-    sheets.rows.push([
-      serialFor(TEST_TIMESTAMP),
-      "Ada Lovelace",
-      "ada@example.com",
-      "",
-      "Community Member",
-      ADA_MEMBER_ID,
-    ])
-    await cacheMembers(
-      {
-        id: ADA_MEMBER_ID,
-        name: "Ada Lovelace",
-        email: "ada@example.com",
-        affiliation: "Community Member",
-      },
-      {
-        id: GRACE_MEMBER_ID,
-        name: "Grace Hopper",
-        email: "grace@example.com",
-        affiliation: "Staff",
-      },
-    )
-
-    expect((await handleCheckin(checkinRequest(), env, token, TEST_TIMESTAMP)).status).toBe(409)
-    expect((await handleCheckin(
-      checkinRequest({
-        memberId: GRACE_MEMBER_ID,
-        name: "Grace Hopper",
-        email: "grace@example.com",
-        affiliation: "Staff",
-      }),
-      env,
-      token,
-      TEST_TIMESTAMP,
-    )).status).toBe(201)
-    expect(sheets.reads).toBe(1)
-    expect(sheets.rows).toHaveLength(2)
+    expect(sheets.rows.map((row) => row[5])).toEqual([ADA_MEMBER_ID, ADA_MEMBER_ID])
   })
 
   it("recovers the durable member ID from an exact email when the client omits it", async () => {
@@ -412,33 +516,32 @@ describe("check-in", () => {
         affiliation: "Graduate/Professional Student",
       }),
       env,
-      token,
       TEST_TIMESTAMP,
     )
+    await flush()
 
     expect(response.status).toBe(201)
     expect(sheets.rows[0][5]).toBe(SHAMUS_MEMBER_ID)
   })
 
-  it("links a typed check-in to a same-name, same-affiliation member who has no email", async () => {
+  it("links a typed check-in to the one member with that name and no email", async () => {
     const { sheets } = useFakes()
     await cacheMembers({ id: ADA_MEMBER_ID, name: "Ada Lovelace", email: "", affiliation: "Community Member" })
 
     const typed = await handleCheckin(
-      checkinRequest({ memberId: null, name: "ada lovelace", email: "ada@example.com", affiliation: "Community Member" }),
+      checkinRequest({ memberId: null, name: "ada lovelace", email: "ada@example.com", affiliation: "Staff" }),
       env,
-      token,
       TEST_TIMESTAMP,
     )
-    const otherAffiliation = await handleCheckin(
-      checkinRequest({ memberId: null, name: "Ada Lovelace", email: "ada2@example.com", affiliation: "Staff" }),
+    const otherName = await handleCheckin(
+      checkinRequest({ memberId: null, name: "Ada Byron", email: "byron@example.com" }),
       env,
-      token,
       TEST_TIMESTAMP,
     )
+    await flush()
 
     expect(typed.status).toBe(201)
-    expect(otherAffiliation.status).toBe(201)
+    expect(otherName.status).toBe(201)
     expect(sheets.rows[0][5]).toBe(ADA_MEMBER_ID)
     expect(sheets.rows[1][5]).not.toBe(ADA_MEMBER_ID)
   })
@@ -460,42 +563,44 @@ describe("check-in", () => {
       },
     )
 
-    const ada = await handleCheckin(
-      checkinRequest({ email: "shared@example.com" }),
-      env,
-      token,
-      TEST_TIMESTAMP,
-    )
+    const ada = await handleCheckin(checkinRequest({ memberId: null, email: "shared@example.com" }), env, TEST_TIMESTAMP)
     const grace = await handleCheckin(
       checkinRequest({ memberId: GRACE_MEMBER_ID, name: "Grace Hopper", email: "shared@example.com" }),
       env,
-      token,
       TEST_TIMESTAMP + HOUR,
     )
+    await flush()
 
     expect(ada.status).toBe(201)
     expect(grace.status).toBe(201)
-    expect(sheets.reads).toBe(1)
     expect(sheets.rows.map((row) => row[5]).sort()).toEqual([ADA_MEMBER_ID, GRACE_MEMBER_ID])
+  })
+
+  it("asks attendees to pick their name when the email or name could mean more than one member", async () => {
+    useFakes()
+    await cacheMembers(
+      { id: ADA_MEMBER_ID, name: "Ada Lovelace", email: "shared@example.com", affiliation: "Community Member" },
+      { id: GRACE_MEMBER_ID, name: "Grace Hopper", email: "shared@example.com", affiliation: "Community Member" },
+      { id: SHAMUS_MEMBER_ID, name: "Shamus Li", email: "wl757@cornell.edu", affiliation: "Staff" },
+    )
+    const message = async (overrides: Record<string, unknown>) => {
+      const response = await handleCheckin(checkinRequest(overrides), env, TEST_TIMESTAMP)
+      return [response.status, ((await response.json()) as { message: string }).message]
+    }
+
+    expect(await message({ memberId: null, name: "Someone Else", email: "shared@example.com" }))
+      .toEqual([400, "More than one member uses that email. Pick your name from the list."])
+    expect(await message({ email: "wl757@cornell.edu" })).toEqual([400, "That email belongs to another member."])
   })
 
   it("handles concurrent check-ins without losing either", async () => {
     const { sheets } = useFakes()
 
     const [first, second] = await Promise.all([
-      handleCheckin(
-        checkinRequest({ memberId: null, name: "Ada Lovelace", email: "ada@example.com" }),
-        env,
-        token,
-        TEST_TIMESTAMP,
-      ),
-      handleCheckin(
-        checkinRequest({ memberId: null, name: "Grace Hopper", email: "grace@example.com" }),
-        env,
-        token,
-        TEST_TIMESTAMP,
-      ),
+      handleCheckin(checkinRequest({ memberId: null, name: "Ada Lovelace", email: "ada@example.com" }), env, TEST_TIMESTAMP),
+      handleCheckin(checkinRequest({ memberId: null, name: "Grace Hopper", email: "grace@example.com" }), env, TEST_TIMESTAMP),
     ])
+    await flush()
 
     expect(first.status).toBe(201)
     expect(second.status).toBe(201)
@@ -506,25 +611,16 @@ describe("check-in", () => {
     const { sheets } = useFakes()
 
     const responses = await Promise.all([
-      handleCheckin(
-        checkinRequest({ memberId: null, name: "New Dancer", email: "new@example.com" }),
-        env,
-        token,
-        TEST_TIMESTAMP,
-      ),
-      handleCheckin(
-        checkinRequest({ memberId: null, name: "New Dancer", email: "new@example.com" }),
-        env,
-        token,
-        TEST_TIMESTAMP,
-      ),
+      handleCheckin(checkinRequest({ memberId: null, name: "New Dancer", email: "new@example.com" }), env, TEST_TIMESTAMP),
+      handleCheckin(checkinRequest({ memberId: null, name: "New Dancer", email: "new@example.com" }), env, TEST_TIMESTAMP),
     ])
+    await flush()
 
     expect(responses.map((response) => response.status).sort()).toEqual([201, 409])
     expect(sheets.rows).toHaveLength(1)
   })
 
-  it("rejects malformed payloads without touching the sheet", async () => {
+  it("rejects malformed payloads without recording anything", async () => {
     const { sheets } = useFakes()
     const badPayloads = [
       { email: "not-an-email" },
@@ -537,7 +633,7 @@ describe("check-in", () => {
     ]
 
     for (const overrides of badPayloads) {
-      const response = await handleCheckin(checkinRequest(overrides), env, token, TEST_TIMESTAMP)
+      const response = await handleCheckin(checkinRequest(overrides), env, TEST_TIMESTAMP)
       expect(response.status).toBe(400)
       expect(await response.json()).toEqual({
         message: "Enter a valid name, email, phone number, and affiliation",
@@ -547,7 +643,6 @@ describe("check-in", () => {
     const notJson = await handleCheckin(
       new Request("https://example.com/check-in/api/checkins", { method: "POST", body: "not json" }),
       env,
-      token,
       TEST_TIMESTAMP,
     )
     expect(notJson.status).toBe(400)
@@ -559,11 +654,11 @@ describe("check-in", () => {
         body: "{}",
       }),
       env,
-      token,
       TEST_TIMESTAMP,
     )
     expect(oversized.status).toBe(413)
 
+    await flush()
     expect(sheets.appends).toBe(0)
   })
 
@@ -576,23 +671,18 @@ describe("check-in", () => {
       affiliation: "Community Member",
     })
 
-    const response = await handleCheckin(
-      checkinRequest({ memberId: MISSING_MEMBER_ID }),
-      env,
-      token,
-      TEST_TIMESTAMP,
-    )
+    const response = await handleCheckin(checkinRequest({ memberId: MISSING_MEMBER_ID }), env, TEST_TIMESTAMP)
+    await flush()
 
     expect(response.status).toBe(400)
     expect(await response.json()).toEqual({
       message: "That member record is no longer available. Select “Not you?” and choose again.",
     })
-    expect(sheets.reads).toBe(0)
     expect(sheets.appends).toBe(0)
   })
 
   it("uses a stale roster snapshot during submission instead of querying Notion", async () => {
-    const { sheets, notion } = useFakes()
+    const { notion } = useFakes()
     await env.MEMBER_CACHE.put(
       "members:v2",
       JSON.stringify({
@@ -607,67 +697,19 @@ describe("check-in", () => {
       }),
     )
 
-    const response = await handleCheckin(checkinRequest(), env, token, TEST_TIMESTAMP)
+    const response = await handleCheckin(checkinRequest(), env, TEST_TIMESTAMP)
 
     expect(response.status).toBe(201)
     expect(notion.queries).toBe(0)
-    expect(sheets.rows).toHaveLength(1)
-  })
-
-  it("releases a duplicate reservation after a failed Sheet append", async () => {
-    const { sheets } = useFakes()
-    sheets.failAppends = true
-
-    const guard = env.CHECKIN_GUARD.getByName(dateKeyInTimeZone(TEST_TIMESTAMP, env.TIME_ZONE))
-    await runInDurableObject(guard, async (instance) => {
-      await expect(instance.checkin(
-        {
-          memberId: null,
-          name: "New Dancer",
-          email: "new@example.com",
-          affiliation: "Community Member",
-          phone: "(607) 555-0100",
-        },
-        TEST_TIMESTAMP,
-        await token(),
-      )).resolves.toBe("failed")
-    })
-
-    sheets.failAppends = false
-    const retry = await handleCheckin(
-      checkinRequest({ memberId: null, name: "New Dancer", email: "new@example.com" }),
-      env,
-      token,
-      TEST_TIMESTAMP,
-    )
-    expect(retry.status).toBe(201)
-    expect(sheets.rows).toHaveLength(1)
-  })
-
-  it("retries transient Google Sheets failures", async () => {
-    const { sheets } = useFakes()
-    sheets.transientFailures = 2
-    await cacheMembers({
-      id: ADA_MEMBER_ID,
-      name: "Ada Lovelace",
-      email: "ada@example.com",
-      affiliation: "Community Member",
-    })
-
-    const response = await handleCheckin(checkinRequest(), env, token, TEST_TIMESTAMP)
-
-    expect(response.status).toBe(201)
-    expect(sheets.reads).toBe(3)
-    expect(sheets.rows).toHaveLength(1)
   })
 
   it("answers 503 with a generic message when a backend fails", async () => {
     useFakes()
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+    const brokenDb = { prepare() { throw new Error("D1 is unavailable") } } as unknown as D1Database
 
     try {
-      // The test environment has no real Google key, so the token exchange throws.
-      const response = await exports.default.fetch(checkinRequest({ memberId: null }))
+      const response = await handleApiRequest(checkinRequest({ memberId: null }), { ...env, EVENTS_DB: brokenDb })
       expect(response.status).toBe(503)
       expect(await response.json()).toEqual({ message: "Check-in failed" })
       expect(consoleError).toHaveBeenCalled()
@@ -716,7 +758,7 @@ describe("nightly sync", () => {
     expect(first).toEqual({ synced: 3, failed: 0 })
     // One event for the night, every attendee related to it.
     expect(notion.events).toHaveLength(1)
-    expect(notion.events[0]).toMatchObject({ date: "2026-08-25", name: "2026-08-25" })
+    expect(notion.events[0]).toMatchObject({ date: "2026-08-25", name: "2026-08-25 Swing Dance" })
     expect(notion.members).toHaveLength(3)
     for (const member of notion.members) {
       expect(member.events).toEqual([notion.events[0].pageId])
@@ -738,6 +780,25 @@ describe("nightly sync", () => {
     expect(notion.writes).toBe(notionWrites)
     expect(sheets.updates + sheets.appends).toBe(sheetWrites)
     expect(sheets.sorts).toBe(sheetSorts)
+  })
+
+  it("counts each member's nights in the last four months and their latest night", async () => {
+    const { sheets } = useFakes()
+    const DAY = 24 * HOUR
+    const now = Date.now()
+    sheets.rows.push(
+      [serialFor(now - 200 * DAY), "Ada Lovelace", "ada@example.com", "", "Community Member", ADA_MEMBER_ID],
+      [serialFor(now - 14 * DAY), "Ada Lovelace", "ada@example.com", "", "Community Member", ADA_MEMBER_ID],
+      [serialFor(now - 7 * DAY), "Ada Lovelace", "ada@example.com", "", "Community Member", ADA_MEMBER_ID],
+      [serialFor(now - 300 * DAY), "Grace Hopper", "grace@example.com", "", "Alumni", GRACE_MEMBER_ID],
+    )
+
+    await runNightlySync(env, token)
+
+    expect(await env.MEMBER_CACHE.get("checkin-stats:v1", "json")).toEqual({
+      [ADA_MEMBER_ID]: { nights: 2, last: dateKeyForSheetTimestamp(serialFor(now - 7 * DAY)) },
+      [GRACE_MEMBER_ID]: { nights: 0, last: dateKeyForSheetTimestamp(serialFor(now - 300 * DAY)) },
+    })
   })
 
   it("reconciles existing rows when it initializes incremental state", async () => {
@@ -951,6 +1012,27 @@ describe("nightly sync", () => {
     expect(sheets.rows[0][5]).toBe(ADA_MEMBER_ID)
   })
 
+  it("gives each event of a night its own Notion event, taking over the date-only page from before event IDs", async () => {
+    const { sheets, notion } = useFakes()
+    await addEvent("workshop", "17:00", "18:00")
+    await addEvent("social", "19:30", "22:00")
+    const datedPage = notion.addEvent("2026-08-25")
+    sheets.rows.push(
+      [serialFor(TEST_TIMESTAMP - 90 * 60_000), "Grace Hopper", "grace@example.com", "", "Alumni", GRACE_MEMBER_ID, "workshop"],
+      // A row added by hand has no Event ID, so it belongs to the event closest to its time.
+      [serialFor(TEST_TIMESTAMP), "Ada Lovelace", "ada@example.com", "", "Community Member", ADA_MEMBER_ID],
+    )
+
+    expect(await runNightlySync(env, token)).toEqual({ synced: 2, failed: 0 })
+
+    const grace = notion.members.find((member) => member.memberId === GRACE_MEMBER_ID)!
+    const ada = notion.members.find((member) => member.memberId === ADA_MEMBER_ID)!
+    expect(notion.events).toMatchObject([
+      { pageId: datedPage.pageId, eventId: "workshop", attendees: [grace.pageId] },
+      { name: "2026-08-25 social", date: "2026-08-25", eventId: "social", attendees: [ada.pageId] },
+    ])
+  })
+
   it("rejects an ID and email that point to different Notion members", async () => {
     const { sheets, notion } = useFakes()
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
@@ -979,7 +1061,7 @@ describe("nightly sync", () => {
       await expect(runNightlySync(env, token)).rejects.toThrow("0 synced, 1 failed")
       expect(notion.members).toHaveLength(2)
       expect(consoleError).toHaveBeenCalledWith(expect.stringContaining(
-        "Check-in member ID and email refer to different Notion members",
+        "That email belongs to another member.",
       ))
     } finally {
       consoleError.mockRestore()
@@ -1016,7 +1098,8 @@ describe("nightly sync", () => {
     }
 
     expect(await runNightlySync(env, token)).toEqual({ synced: 50, failed: 0 })
-    expect(notion.requests).toBe(18)
+    // One more than before event IDs: a new event is also looked for among events that have only a date.
+    expect(notion.requests).toBe(19)
     expect(notion.events[0].attendees).toHaveLength(50)
     expect(notion.members).toHaveLength(510)
 

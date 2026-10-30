@@ -1,6 +1,5 @@
-import Fuse from "fuse.js"
-
 import type { Member, NextSteps, WaiverBlock } from "@/lib/checkin"
+import { searchMembers } from "@/lib/member-search"
 
 // Dev-only stand-in for the check-in API, loaded by /check-in/?mock. Nothing reaches the Sheet,
 // Notion, or CampusGroups. Add &waiver=changed to see the kiosk skip the waiver when the form
@@ -80,7 +79,6 @@ const WAIVER_BLOCKS: WaiverBlock[] = [
 ]
 
 const checkedIn = new Set<string>()
-const fuse = new Fuse(MEMBERS, { keys: ["name"], threshold: 0.3, ignoreDiacritics: true })
 const waiverMode = new URLSearchParams(window.location.search).get("waiver")
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -97,7 +95,7 @@ async function respond(path: string, init: RequestInit = {}): Promise<Response> 
   const body = typeof init.body === "string" ? (JSON.parse(init.body) as Record<string, string>) : {}
   if (path.endsWith("api/members")) {
     await wait(150)
-    return json({ members: fuse.search(body.q, { limit: 8 }).map(({ item }) => item) })
+    return json({ members: searchMembers(MEMBERS, body.q, {}) })
   }
   if (path.endsWith("api/checkins/status")) {
     await wait(300)

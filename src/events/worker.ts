@@ -7,6 +7,8 @@ import { renderToString } from 'react-dom/server'
 import { EventSections, NextEvent } from '../site/components/Events'
 import { createRedirect, deleteRedirect, listRedirects, RedirectError, updateRedirect } from '../redirects/cloudflare'
 import { isRecord, parseRedirect } from '../redirects/redirect'
+import { alertEmailStatus, AlertEmailError, saveAlertEmail } from './alert-email'
+import { isValidEmail } from '../lib/email'
 import { buildCampusGroups, campusGroupsKey, summarizeCampusGroups, type CampusGroupsData } from './campusgroups'
 import { formatEventLocation, hasEventDetails, todayInNewYork, validateEvent, validateRSVP, type EventRecord, type ManagedEvent, type RSVP } from './model'
 
@@ -54,7 +56,6 @@ async function requireManager(request: Request, env: Env, path: string): Promise
 }
 
 const managerPage = (path: string) => ['/manage', '/redirects'].some(page => path === page || path.startsWith(`${page}/`))
-const dateTaken = 'Another event is already on that date.'
 
 async function redirectsApi(request: Request, env: Env, method: string): Promise<Response> {
   if (method === 'GET') return json(await listRedirects(env))
@@ -170,6 +171,14 @@ async function route(request: Request, env: Env): Promise<Response> {
     else if (method !== 'GET') throw new HttpError(405, 'Method not allowed.')
     return json(await getSheetStatus(env))
   }
+  if (path === '/manage/api/alert-email') {
+    if (method === 'GET') return json(await alertEmailStatus(env))
+    if (method !== 'PUT') throw new HttpError(405, 'Method not allowed.')
+    const body = await readBody(request) as { email?: unknown }
+    const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : ''
+    if (!isValidEmail(email)) throw new HttpError(400, 'Enter a valid email address.')
+    return json(await saveAlertEmail(env, email))
+  }
   if (path === '/manage/api/campusgroups') {
     if (method === 'GET') return json(summarizeCampusGroups(await env.MEMBER_CACHE.get<CampusGroupsData>(campusGroupsKey, 'json')))
     if (method !== 'PUT') throw new HttpError(405, 'Method not allowed.')
@@ -200,8 +209,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     const values = [input.kind, input.title, input.date, input.startTime, input.endTime, input.location, input.description, updatedAt, input.locationUrl || '', input.room || '', input.published ? 1 : 0, input.studentPrice, input.generalPrice]
     if (method === 'POST') {
       const create = async () => {
-      const result = await env.EVENTS_DB.prepare('INSERT INTO events (kind, title, date, startTime, endTime, location, description, updatedAt, locationUrl, room, published, studentPrice, generalPrice, id) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ?3 = \'\' OR NOT EXISTS (SELECT 1 FROM events WHERE date = ?3)').bind(...values, id).run()
-      if (!result.meta.changes) throw new EventConflict(dateTaken)
+      await env.EVENTS_DB.prepare('INSERT INTO events (kind, title, date, startTime, endTime, location, description, updatedAt, locationUrl, room, published, studentPrice, generalPrice, id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(...values, id).run()
       }
       if (input.kind === 'special') await createEventWithSheet(env, input.title, create)
       else await create()
@@ -213,9 +221,8 @@ async function route(request: Request, env: Env): Promise<Response> {
       const current = await env.EVENTS_DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first<EventRecord>()
       if (!current || current.updatedAt !== previous) throw new HttpError(409, 'Someone else saved this event after you opened it.', 'stale')
       const update = async () => {
-      const result = await env.EVENTS_DB.prepare('UPDATE events SET kind = ?, title = ?, date = ?, startTime = ?, endTime = ?, location = ?, description = ?, updatedAt = ?, locationUrl = ?, room = ?, published = ?, studentPrice = ?, generalPrice = ? WHERE id = ?14 AND updatedAt = ? AND (?1 = \'special\' OR NOT EXISTS (SELECT 1 FROM rsvps WHERE eventId = ?14)) AND (?3 = \'\' OR NOT EXISTS (SELECT 1 FROM events WHERE date = ?3 AND id != ?14))').bind(...values, id, previous).run()
+      const result = await env.EVENTS_DB.prepare('UPDATE events SET kind = ?, title = ?, date = ?, startTime = ?, endTime = ?, location = ?, description = ?, updatedAt = ?, locationUrl = ?, room = ?, published = ?, studentPrice = ?, generalPrice = ? WHERE id = ?14 AND updatedAt = ? AND (?1 = \'special\' OR NOT EXISTS (SELECT 1 FROM rsvps WHERE eventId = ?14))').bind(...values, id, previous).run()
       if (result.meta.changes) return
-      if (input.date && await env.EVENTS_DB.prepare('SELECT 1 FROM events WHERE date = ? AND id != ?').bind(input.date, id).first()) throw new EventConflict(dateTaken)
       throw new EventConflict('The event changed, or has RSVPs and cannot become a normal event. Refresh before saving.')
       }
       const sheetUnchanged = current.kind === input.kind && (input.kind === 'normal' || (current.title === input.title && current.date === input.date))
@@ -273,6 +280,7 @@ export default {
       }
       if (error instanceof EventConflict) error = new HttpError(409, error.message)
       if (error instanceof RedirectError) error = new HttpError(error.status, error.message)
+      if (error instanceof AlertEmailError) error = new HttpError(502, error.message)
       if (!(error instanceof HttpError)) logError('Events request failed', error)
       response = json({ error: error instanceof HttpError ? error.message : 'Something went wrong. Please try again.', ...(error instanceof HttpError && error.code && { code: error.code }) }, error instanceof HttpError ? error.status : 500)
     }

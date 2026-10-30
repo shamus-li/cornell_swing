@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { AttendanceSync, runNightlySync } from "../worker"
 import { timestampForSheet } from "../worker/google"
 import { ATTENDANCE_SYNC_STATE_KEY, ATTENDANCE_SYNC_STATE_VERSION } from "../worker/sync-state"
+import { resetEventsDb } from "./events-db"
 import { FakeNotion, FakeSheets } from "./fakes"
 import { network } from "./network"
 
@@ -23,6 +24,7 @@ beforeEach(async () => {
     })
   }
   await env.MEMBER_CACHE.delete("members:v2")
+  await resetEventsDb()
   await env.MEMBER_CACHE.put(ATTENDANCE_SYNC_STATE_KEY, JSON.stringify({
     version: ATTENDANCE_SYNC_STATE_VERSION, fingerprints: [],
   }))
