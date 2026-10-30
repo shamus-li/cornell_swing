@@ -55,6 +55,7 @@ async function requireManager(request: Request, env: Env, path: string): Promise
   } catch { throw new HttpError(401, signIn) }
 }
 
+const newsletterParts = ['practice', 'involved', 'signoff', 'footer']
 const managerPage = (path: string) => ['/manage', '/redirects'].some(page => path === page || path.startsWith(`${page}/`))
 
 async function redirectsApi(request: Request, env: Env, method: string): Promise<Response> {
@@ -170,6 +171,23 @@ async function route(request: Request, env: Env): Promise<Response> {
     } else if (method === 'DELETE') await disconnectSheet(env)
     else if (method !== 'GET') throw new HttpError(405, 'Method not allowed.')
     return json(await getSheetStatus(env))
+  }
+  // Saved edits to the newsletter parts that repeat every week. A part without a row uses the built-in text.
+  if (path === '/manage/api/newsletter-template') {
+    if (method === 'GET') {
+      const { results } = await env.EVENTS_DB.prepare('SELECT part, html FROM newsletter_template').all<{ part: string; html: string }>()
+      return json({ parts: Object.fromEntries(results.map(row => [row.part, row.html])) })
+    }
+    const body = await readBody(request) as { part?: unknown; html?: unknown }
+    if (typeof body?.part !== 'string' || !newsletterParts.includes(body.part)) throw new HttpError(400, 'Choose a part of the newsletter.')
+    if (method === 'DELETE') {
+      await env.EVENTS_DB.prepare('DELETE FROM newsletter_template WHERE part = ?').bind(body.part).run()
+      return json({ success: true })
+    }
+    if (method !== 'PUT') throw new HttpError(405, 'Method not allowed.')
+    if (typeof body.html !== 'string' || body.html.length > 20000) throw new HttpError(400, 'This part is too long to save.')
+    await env.EVENTS_DB.prepare('INSERT INTO newsletter_template (part, html, updatedAt) VALUES (?, ?, ?) ON CONFLICT (part) DO UPDATE SET html = excluded.html, updatedAt = excluded.updatedAt').bind(body.part, body.html, new Date().toISOString()).run()
+    return json({ success: true })
   }
   if (path === '/manage/api/alert-email') {
     if (method === 'GET') return json(await alertEmailStatus(env))

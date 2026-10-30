@@ -17,12 +17,13 @@ import { SiteBrand } from "../site/components/SiteBrand"
 import { DraftBadge, eventSummary } from "./EventDate"
 import { DateTile } from "../events/DateTile"
 import { Tabs } from "./Tabs"
+import { Newsletter } from "./Newsletter"
 import { AlertEmail } from "./AlertEmail"
 import { Person } from "../../check-in/src/components/ui/person"
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../../check-in/src/components/ui/input-group"
 
-type View = "special" | "lessons" | "settings"
-const views: { value: View; label: string }[] = [{ value: "special", label: "Special events" }, { value: "lessons", label: "Lessons" }, { value: "settings", label: "Settings" }]
+type View = "special" | "lessons" | "newsletter" | "settings"
+const views: { value: View; label: string }[] = [{ value: "special", label: "Special events" }, { value: "lessons", label: "Lessons" }, { value: "newsletter", label: "Newsletter" }, { value: "settings", label: "Settings" }]
 const byDate = (a: EventRecord, b: EventRecord) => (a.date || "9999").localeCompare(b.date || "9999") || a.startTime.localeCompare(b.startTime)
 const newEvent = (kind: EventRecord["kind"]): EventRecord => ({ id: "", kind, title: kind === "normal" ? "Monday swing" : "", date: todayInNewYork(), startTime: kind === "normal" ? "20:00" : "", endTime: kind === "normal" ? "22:00" : "", location: "", locationUrl: "", room: "", studentPrice: "", generalPrice: "", description: "", published: false, updatedAt: "" })
 const searchParam = (name: string) => new URLSearchParams(window.location.search).get(name)
@@ -32,6 +33,8 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
   const [loading, setLoading] = useState(initialEvents === undefined)
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
+  // The Newsletter tab puts its copy buttons here, beside the title.
+  const [titleActions, setTitleActions] = useState<HTMLDivElement | null>(null)
   const [view, setView] = useState<View>(() => views.find(item => item.value === searchParam("view"))?.value ?? "special")
   const [editingId, setEditingId] = useState<string | null>(() => searchParam("event"))
   const editing = editingId === "new" ? { ...newEvent("special"), rsvpCount: 0 } : events.find(event => event.id === editingId) ?? null
@@ -116,12 +119,13 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
           <h1>Events</h1>
           {view === "special" && <Button onClick={() => { void openEvent(() => openSpecial(newEvent("special"))) }}>New event</Button>}
           {view === "lessons" && <Button onClick={() => { if (activeNormal !== "") void openEvent(() => setActiveNormal("")) }}>Add lesson</Button>}
+          {view === "newsletter" && <div ref={setTitleActions} className="manage-title-actions" />}
         </div>
         <Tabs label="Event views" tabs={views} value={view} onChange={changeView} />
         {notice && <p role="status" className="manage-notice">{notice}</p>}
         {error && <p role="alert" className="event-error manage-notice">{error} <Button variant="link" size="sm" onClick={() => window.location.reload()}>Reload</Button></p>}
         <div role="tabpanel" className="manage-panel" aria-label={views.find(item => item.value === view)!.label}>
-          {view === "settings" ? <><SheetConnection onSync={load} /><CampusGroupsUpload /><AlertEmail /></> : loading ? <p role="status" className="event-muted manage-notice">Loading events…</p> : view === "special"
+          {view === "settings" ? <><SheetConnection onSync={load} /><CampusGroupsUpload /><AlertEmail /></> : loading ? <p role="status" className="event-muted manage-notice">Loading events…</p> : view === "newsletter" ? <Newsletter events={events} actions={titleActions} /> : view === "special"
             ? <EventGroups events={events.filter(event => event.kind === "special")} render={specialRow} empty="No special events yet." />
             : <EventGroups events={events.filter(event => event.kind === "normal")} render={lessonRow} empty="No weekly lessons yet." first={activeNormal === "" && <NormalEventRow ref={normalEditor} editing onEdit={() => {}} event={newEvent("normal")} onSave={saveNormal} onCancel={() => setActiveNormal(null)} />} />}
         </div>

@@ -26,11 +26,12 @@ html:has(.manage-page) { scroll-behavior: auto; }
 [data-slot="calendar"] button { border-style: solid; }
 
 /* Tabs */
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
+/* Tabs scroll sideways when they do not fit. The rule is a shadow, so the selected tab's underline stays inside the scroll area. */
+.tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; box-shadow: inset 0 -1px var(--border); }
 .tab { position: relative; flex: none; height: 40px; padding: 0 12px; border: 0; background: none; color: var(--muted-foreground); font: 500 var(--control-font-size) var(--sans); cursor: pointer; }
 .tab:hover { color: var(--foreground); }
 .tab[aria-selected="true"] { color: var(--foreground); }
-.tab[aria-selected="true"]::after { content: ""; position: absolute; inset: auto 12px -1px; height: 2px; background: var(--foreground); border-radius: 2px; }
+.tab[aria-selected="true"]::after { content: ""; position: absolute; inset: auto 12px 0; height: 2px; background: var(--foreground); border-radius: 2px; }
 .tab:first-child { padding-left: 0; }
 .tab:first-child[aria-selected="true"]::after { left: 0; }
 .tab:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; border-radius: var(--radius); }
@@ -109,6 +110,73 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .sheet-connection-form > p { flex-basis: 100%; }
 .sheet-connection-form label { display: grid; gap: 6px; flex: 1; min-width: 0; font-size: var(--small-font-size); font-weight: 500; }
 .sheet-connection-form input, .sheet-connection [data-slot="button"][data-variant="outline"] { background: var(--background); }
+
+/* Newsletter */
+.newsletter { display: grid; gap: 24px; }
+.manage-title-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.newsletter-controls { display: grid; gap: 16px; align-content: start; }
+.newsletter-group { display: grid; gap: 8px; }
+.newsletter-field { display: grid; gap: 6px; min-width: 0; margin: 0; padding: 0; border: 0; font-size: var(--small-font-size); font-weight: 500; }
+.newsletter-field > :is(span, legend) { padding: 0; color: var(--muted-foreground); }
+.newsletter-check { display: flex; align-items: center; gap: 8px; font-size: var(--body-font-size); }
+.newsletter-check input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--primary); }
+.newsletter-specials { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; font-weight: 400; }
+.newsletter-specials li { display: flex; align-items: center; gap: 8px; font-size: var(--body-font-size); }
+.newsletter-specials li > span { flex: 1; }
+.newsletter-specials [data-slot="select-trigger"] { flex: none; width: 112px; }
+.newsletter-status { margin: 0; font-size: var(--small-font-size); }
+.newsletter-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 16px; border-top: 1px solid var(--border); }
+.newsletter-compose { min-width: 0; border: 1px solid var(--border); border-radius: 12px; overflow: clip; }
+.newsletter-subject { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--background); font: 500 var(--body-font-size) var(--sans); }
+.newsletter-subject:focus-within { box-shadow: inset 0 -2px 0 var(--primary); }
+.newsletter-subject > span { flex: none; color: var(--muted-foreground); font-weight: 400; }
+.newsletter-subject input { flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: none; color: var(--foreground); font: inherit; }
+.newsletter-toolbar { position: sticky; top: 0; z-index: 1; display: flex; gap: 2px; padding: 4px 8px; border-bottom: 1px solid var(--border); background: var(--background); }
+/* The email shows only its own inline styles, as Gmail will, on the email's own page gray. It keeps its light colors in dark mode. */
+.newsletter-canvas { position: relative; background: #f9f8f6; overflow-x: auto; }
+/* The editor's own controls in the margins keep the manager's styles. */
+.newsletter-canvas :where(:not(.newsletter-chrome, .newsletter-chrome *)) { all: revert; }
+.newsletter-block { border-radius: 4px; outline: 1px dashed transparent; outline-offset: 4px; }
+.newsletter-canvas .newsletter-block:hover { outline-color: var(--input); }
+.newsletter-canvas .newsletter-block:focus { outline: 2px solid var(--primary); }
+/* Each section's tools sit in the margin to its left, shown on hover or focus: move and remove, and save or restore beside a repeating part.
+   Hidden tools take no clicks. The right padding bridges the gap to the card, so the pointer can reach them. */
+.newsletter-canvas :is(.newsletter-section, .newsletter-part) { position: relative; }
+.newsletter-canvas .newsletter-tools { position: absolute; top: 0; left: -40px; display: grid; gap: 2px; padding-right: 12px; opacity: 0; pointer-events: none; }
+.newsletter-canvas .newsletter-part > .newsletter-tools { left: -61px; }
+.newsletter-canvas .newsletter-section:hover:not(:has(> .newsletter-insert:hover)) .newsletter-tools, .newsletter-canvas .newsletter-tools:focus-within { opacity: 1; pointer-events: auto; }
+.newsletter-canvas .newsletter-tools [data-slot="button"] { color: var(--muted-foreground); }
+.newsletter-canvas .newsletter-tools [data-slot="button"]:hover { color: var(--foreground); }
+.newsletter-canvas .newsletter-handle { cursor: grab; touch-action: none; }
+.newsletter-canvas[data-dragging], .newsletter-canvas[data-dragging] * { cursor: grabbing; user-select: none; }
+.newsletter-canvas .newsletter-section[data-moving] { opacity: .4; }
+/* The gap below each section adds an announcement there; its button appears when the pointer reaches the gap. */
+.newsletter-canvas .newsletter-insert { position: absolute; top: 100%; inset-inline: 0; z-index: 1; display: flex; align-items: center; justify-content: center; height: 24px; }
+.newsletter-canvas .newsletter-greeting > .newsletter-insert { height: 16px; }
+.newsletter-canvas .newsletter-insert [data-slot="button"] { opacity: 0; pointer-events: none; }
+.newsletter-canvas .newsletter-insert:hover [data-slot="button"], .newsletter-canvas .newsletter-insert [data-slot="button"]:focus-visible { opacity: 1; pointer-events: auto; }
+/* Touch screens have no hover: the tools stay shown, and announcements are added from the sidebar. */
+@media (pointer: coarse) {
+  .newsletter-canvas .newsletter-tools { opacity: 1; pointer-events: auto; }
+  .newsletter-canvas .newsletter-insert { display: none; }
+}
+/* The bar under a clicked link opens it in a new tab, edits it, or removes it. */
+.newsletter-canvas .newsletter-link { position: absolute; z-index: 2; display: flex; align-items: center; gap: 4px; max-width: min(480px, calc(100% - 16px)); padding: 4px 4px 4px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--background); box-shadow: 0 4px 12px rgb(0 0 0 / .08); font: 400 var(--small-font-size) var(--sans); }
+.newsletter-canvas .newsletter-link a { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; color: var(--primary); text-overflow: ellipsis; white-space: nowrap; }
+.newsletter-canvas .newsletter-link svg { flex: none; width: 14px; height: 14px; }
+.newsletter-canvas .newsletter-section[data-drop="before"] { box-shadow: 0 -2px 0 var(--primary); }
+.newsletter-canvas .newsletter-section[data-drop="after"] { box-shadow: 0 2px 0 var(--primary); }
+/* Narrow screens: the email fills the width, so a margin on the left holds the tools. */
+@media (max-width: 760px) {
+  .newsletter-canvas { padding-left: 32px; }
+  .newsletter-canvas .newsletter-tools { left: -30px; padding-right: 2px; }
+  .newsletter-canvas .newsletter-part > .newsletter-tools { left: -51px; }
+}
+/* Wide screens: the editor reaches past the page width on both sides, so the header stays where the other tabs have it. */
+@media (min-width: 1100px) {
+  .newsletter { grid-template-columns: 260px minmax(0, 1fr); align-items: start; margin-inline: calc((866px - min(1100px, 100vw - 64px)) / 2); }
+  .newsletter-controls { position: sticky; top: 16px; }
+}
 
 @media (max-width: 620px) {
   .manage-main { padding-top: 16px; }

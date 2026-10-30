@@ -99,6 +99,9 @@
 
 /* Pages keep the same width whether or not they scroll. */
 html { scrollbar-gutter: stable; }
+/* Open menus and dialogs lock scrolling and pad the body by the scrollbar's width, which the gutter above already
+   reserves, so the page would shift sideways. */
+html body[data-scroll-locked] { margin-right: 0 !important; }
 
 /* Even line breaks: no lone words at the end of headings or paragraphs. */
 :is(h1, h2, h3) { text-wrap: balance; }
