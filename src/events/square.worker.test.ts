@@ -25,8 +25,9 @@ const network = setupNetwork()
 const origin = 'https://swingsyndicate.club'
 let managerToken = ''
 let ledger: { range: string; values: unknown[][] }[] = []
-// Column N of the fake Ledger, by row number; row 1 is the header.
-let ledgerIds: Record<number, string> = {}
+// The fake Transaction History's ID and source columns, by row number; row 1 is the header.
+type SheetRow = { id: string; source: string }
+let sheet: Record<number, SheetRow> = {}
 // The connected Square account's payments.
 let payments: Record<string, unknown>[] = []
 
@@ -34,9 +35,9 @@ const payment = (id: string, createdAt: string, cents: number, extra: Record<str
 const fee = (cents: number) => ({ processing_fee: [{ amount_money: { amount: cents, currency: 'USD' } }] })
 const manage = (path: string, method = 'GET') => worker.fetch(new Request(`${origin}/manage/api${path}`, { method, headers: { origin, 'Cf-Access-Jwt-Assertion': managerToken } }), env)
 const callback = (query: string, cookie: string) => worker.fetch(new Request(`${origin}/manage/square/callback?${query}`, { headers: { cookie, 'Cf-Access-Jwt-Assertion': managerToken } }), env)
-const ledgerRow = (id: string) => {
-  const row = Object.entries(ledgerIds).find(([, value]) => value === id)?.[0]
-  return ledger.filter(item => item.range === `'Ledger'!E${row}:J${row}`).at(-1)?.values[0]
+const ledgerRow = (id: string, source: string) => {
+  const row = Object.entries(sheet).find(([, value]) => value.id === id && value.source === source)?.[0]
+  return ledger.filter(item => item.range === `'Transaction History'!A${row}:F${row}`).at(-1)?.values[0]
 }
 
 beforeAll(async () => {
@@ -52,11 +53,20 @@ beforeAll(async () => {
       const begin = new URL(request.url).searchParams.get('begin_time')!
       return HttpResponse.json({ payments: payments.filter(item => String(item.created_at) >= begin) })
     }),
-    http.get('https://sheets.googleapis.com/v4/spreadsheets/:id/values:batchGet', () => HttpResponse.json({ valueRanges: [{ values: [['Date'], ['2026-09-01']] }, { values: Array.from({ length: Math.max(1, ...Object.keys(ledgerIds).map(Number)) }, (_, index) => [index ? ledgerIds[index + 1] ?? '' : 'Transaction ID']) }] })),
+    http.get('https://sheets.googleapis.com/v4/spreadsheets/:id/values:batchGet', () => {
+      const rows = Math.max(1, ...Object.keys(sheet).map(Number))
+      const column = (read: (row: SheetRow) => string, header: string) => ({ values: Array.from({ length: rows }, (_, index) => [index ? read(sheet[index + 1] ?? { id: '', source: '' }) : header]) })
+      return HttpResponse.json({ valueRanges: [column(() => '2026-09-01', 'Date'), column(row => row.source, 'Source'), column(row => row.id, 'Event ID')] })
+    }),
     http.post('https://sheets.googleapis.com/v4/spreadsheets/:id/values:batchUpdate', async ({ request }) => {
       const { data } = await request.json() as { data: { range: string; values: unknown[][] }[] }
       ledger.push(...data)
-      for (const item of data) if (item.range.includes('!N')) ledgerIds[Number(item.range.split('!N')[1])] = String(item.values[0][0])
+      for (const item of data) {
+        const at = Number(item.range.match(/\d+$/)![0])
+        sheet[at] ??= { id: '', source: '' }
+        if (item.range.includes('!A')) sheet[at].source = String(item.values[0][3])
+        else sheet[at].id = String(item.values[0][0])
+      }
       return HttpResponse.json({})
     }),
   )
@@ -68,10 +78,10 @@ beforeEach(async () => {
   // The night of the event.
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-10-18T03:00:00Z'))
-  ledger = []; ledgerIds = {}; payments = []
+  ledger = []; sheet = {}; payments = []
   await env.EVENTS_DB.exec('DELETE FROM square_payments; DELETE FROM events; DELETE FROM square_connection;')
   await env.EVENTS_DB.prepare("INSERT INTO square_connection (id, merchantId, name, accessToken, refreshToken, expiresAt, syncedAt) VALUES (1, 'club', 'Swing Syndicate', 'square-token', 'refresh', '2026-12-01T00:00:00Z', '2026-10-17T12:00:00Z')").run()
-  await env.EVENTS_DB.prepare("INSERT INTO events (id, kind, title, date, startTime, endTime, updatedAt) VALUES ('haunt', 'special', 'The Lindy Haunt', '2026-10-17', '18:15', '22:00', '2026-10-01T00:00:00Z')").run()
+  await env.EVENTS_DB.prepare("INSERT INTO events (id, kind, title, date, startTime, endTime, updatedAt) VALUES ('haunt', 'special', 'The Lindy Haunt 👻', '2026-10-17', '18:15', '22:00', '2026-10-01T00:00:00Z')").run()
 })
 
 describe('Square feed', () => {
@@ -85,7 +95,7 @@ describe('Square feed', () => {
     await manage('/square', 'DELETE')
     expect(await (await manage('/square')).json()).toMatchObject({ square: null })
   })
-  it('files door payments as card, cash and fee rows for the event', async () => {
+  it('files door payments as Square and cash rows for the event', async () => {
     payments.push(
       payment('card-1', '2026-10-17T22:30:00Z', 1000, fee(41)),
       payment('card-2', '2026-10-17T23:10:00Z', 500, fee(28)),
@@ -94,18 +104,28 @@ describe('Square feed', () => {
       payment('shirt', '2026-10-17T15:00:00Z', 2000, { ...fee(67), note: 'T-shirt' }),
     )
     await syncSquare(env)
-    expect(ledgerRow('square-card:haunt')).toEqual(['Income', 'Ticket sales', 'Door payments (Square)', 15, 'Square', 'Paid'])
-    expect(ledgerRow('square-cash:haunt')).toEqual(['Income', 'Ticket sales', 'Door payments (cash)', 10, 'Cash', 'Paid'])
-    expect(ledgerRow('square-fees:haunt')).toEqual(['Expense', 'Fees', 'Square fees', 0.69, 'Square', 'Paid'])
-    expect(ledgerRow('square:shirt')).toEqual(['Income', 'Other income', 'Square payment: T-shirt', 20, 'Square', 'Paid'])
-    expect(await (await manage('/square')).json()).toMatchObject({ payments: [{ id: 'cash-1', event: 'The Lindy Haunt', cash: true, amount: 1000 }, { id: 'card-2' }, { id: 'card-1' }, { id: 'shirt', event: null }] })
+    expect(ledgerRow('haunt', 'Square')).toEqual(['26-27', 46312, 14.31, 'Square', 'Y', 'Fall 26 The Lindy Haunt: Square Profits'])
+    expect(ledgerRow('haunt', 'Cash')).toEqual(['26-27', 46312, 10, 'Cash', 'Y', 'Fall 26 The Lindy Haunt: Cash Profits'])
+    expect(ledgerRow('shirt', 'Square')).toEqual(['26-27', 46312, 19.33, 'Square', 'Y', 'Square payment: T-shirt'])
+    expect(await (await manage('/square')).json()).toMatchObject({ payments: [{ id: 'cash-1', event: 'The Lindy Haunt 👻', cash: true, amount: 1000 }, { id: 'card-2' }, { id: 'card-1' }, { id: 'shirt', event: null }] })
 
     // A refund the next day updates the event's row in place.
     ledger = []
     payments[0] = payment('card-1', '2026-10-17T22:30:00Z', 1000, { ...fee(41), refunded_money: { amount: 1000, currency: 'USD' } })
     await syncSquare(env)
-    expect(ledger.filter(item => item.range.includes('!E'))).toHaveLength(3)
-    expect(ledgerRow('square-card:haunt')).toEqual(['Income', 'Ticket sales', 'Door payments (Square)', 5, 'Square', 'Paid'])
+    expect(ledger.filter(item => item.range.includes('!A'))).toHaveLength(2)
+    expect(ledgerRow('haunt', 'Square')).toEqual(['26-27', 46312, 4.31, 'Square', 'Y', 'Fall 26 The Lindy Haunt: Square Profits'])
+
+    // A full refund zeroes the row instead of leaving the old total behind.
+    payments[2] = payment('cash-1', '2026-10-17T23:15:00Z', 1000, { source_type: 'CASH', refunded_money: { amount: 1000, currency: 'USD' } })
+    await syncSquare(env)
+    expect(ledgerRow('haunt', 'Cash')?.[2]).toBe(0)
+  })
+  it('adds no row for a total of zero', async () => {
+    payments.push(payment('card-1', '2026-10-17T22:30:00Z', 1000, fee(41)))
+    await syncSquare(env)
+    expect(ledgerRow('haunt', 'Square')?.[2]).toBe(9.59)
+    expect(ledgerRow('haunt', 'Cash')).toBeUndefined()
   })
   it('asks to connect again once Square access is removed', async () => {
     network.use(http.get('https://connect.squareup.com/v2/payments', () => HttpResponse.json({ errors: [{ code: 'UNAUTHORIZED' }] }, { status: 401 })))

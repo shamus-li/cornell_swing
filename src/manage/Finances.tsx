@@ -6,7 +6,7 @@ import { api, errorMessage } from "./api"
 const when = (paidAt: string) => new Date(paidAt).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
 
 // Club money taken in Square. Once an officer connects the club's Square account, the site files its
-// payments on the finance sheet by itself; this tab shows the connection and recent payments.
+// payments on the Balance Sheet by itself; this tab shows the connection and recent payments.
 export function Finances() {
   const [data, setData] = useState<SquareFeed | null>(null)
   const [error, setError] = useState("")
@@ -31,7 +31,7 @@ export function Finances() {
   if (!data) return <p role="status" className="event-muted manage-notice">Loading Square payments…</p>
   if (!data.square) return <section className="manage-group" aria-labelledby="square-connect-title">
     <h2 id="square-connect-title">Square</h2>
-    <p>Connect the club's Square account. Payments taken during an event go to the finance sheet as that event's door sales, with card, cash and Square's fees on separate rows.</p>
+    <p>Connect the club's Square account. Payments taken during an event go to the Balance Sheet as that event's Square and cash profits, after Square's fees.</p>
     <Button asChild><a href="/manage/square/connect">Connect Square</a></Button>
   </section>
   return <>

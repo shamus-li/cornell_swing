@@ -5,11 +5,11 @@ import { logError } from './logging'
 import { nightSpan } from './model'
 
 // An officer connects the club's Square account from the Finances tab. The site then reads its payments
-// on SQUARE_CRON and files them on the finance sheet's Ledger.
+// on SQUARE_CRON and files them on the Balance Sheet.
 export const SQUARE_CRON = '*/10 * * * *'
 const SQUARE = 'https://connect.squareup.com'
 const VERSION = '2025-01-23'
-// Payments are listed again for this long, so refunds and fees that settle later still reach the Ledger.
+// Payments are listed again for this long, so refunds and fees that settle later still reach the Balance Sheet.
 const RELIST_MS = 3 * 86_400_000
 
 type Connection = { merchantId: string; accessToken: string; refreshToken: string; expiresAt: string; syncedAt: string }
@@ -110,25 +110,27 @@ export async function syncSquare(env: Env): Promise<void> {
 
 type Stored = { id: string; paidAt: string; amount: number; fee: number; cash: number; note: string; eventId: string | null }
 
-// Payments during an event become one card row, one cash row and one fee row for that event, recomputed
-// from every payment so the totals stay right however often it runs. Other payments get rows of their own.
+// "Fall 26 The Lindy Haunt", the way the Balance Sheet names an event.
+function eventLabel(title: string, date: string): string {
+  const name = title.replace(/\p{Extended_Pictographic}|\uFE0F/gu, '').trim()
+  return `${Number(date.slice(5, 7)) < 8 ? 'Spring' : 'Fall'} ${date.slice(2, 4)} ${name}`
+}
+
+// Payments during an event become one Square row, after Square's fees, and one cash row for that event,
+// recomputed from every payment so the totals stay right however often it runs. Other payments get rows of their own.
 async function syncLedger(env: Env): Promise<void> {
   const pending = (await env.EVENTS_DB.prepare('SELECT id, paidAt, amount, fee, cash, note, eventId FROM square_payments WHERE synced = 0').all<Stored>()).results
   if (!pending.length) return
   const rows: LedgerRow[] = []
-  const row = (id: string, date: string, eventDate: string, type: LedgerRow['type'], category: string, description: string, cents: number, account: string) =>
-    cents && rows.push({ id, date, eventDate, type, category, description, amount: cents / 100, account, status: 'Paid' })
   for (const eventId of new Set(pending.map(payment => payment.eventId).filter(id => id !== null))) {
-    const date = await env.EVENTS_DB.prepare('SELECT date FROM events WHERE id = ?').bind(eventId).first<string>('date') ?? ''
+    const event = (await env.EVENTS_DB.prepare('SELECT title, date FROM events WHERE id = ?').bind(eventId).first<{ title: string; date: string }>())!
     const totals = (await env.EVENTS_DB.prepare('SELECT SUM(amount * (1 - cash)) AS card, SUM(amount * cash) AS cash, SUM(fee) AS fees FROM square_payments WHERE eventId = ?').bind(eventId).first<{ card: number; cash: number; fees: number }>())!
-    row(`square-card:${eventId}`, date, date, 'Income', 'Ticket sales', 'Door payments (Square)', totals.card, 'Square')
-    row(`square-cash:${eventId}`, date, date, 'Income', 'Ticket sales', 'Door payments (cash)', totals.cash, 'Cash')
-    row(`square-fees:${eventId}`, date, date, 'Expense', 'Fees', 'Square fees', totals.fees, 'Square')
+    const label = eventLabel(event.title, event.date)
+    rows.push({ id: eventId, date: event.date, source: 'Square', description: `${label}: Square Profits`, amount: (totals.card - totals.fees) / 100 })
+    rows.push({ id: eventId, date: event.date, source: 'Cash', description: `${label}: Cash Profits`, amount: totals.cash / 100 })
   }
   for (const payment of pending.filter(payment => payment.eventId === null)) {
-    const date = dateKeyInTimeZone(Date.parse(payment.paidAt), env.TIME_ZONE)
-    row(`square:${payment.id}`, date, '', 'Income', 'Other income', `Square payment${payment.note ? `: ${payment.note}` : ''}`, payment.amount, payment.cash ? 'Cash' : 'Square')
-    row(`square-fee:${payment.id}`, date, '', 'Expense', 'Fees', 'Square fee', payment.fee, 'Square')
+    rows.push({ id: payment.id, date: dateKeyInTimeZone(Date.parse(payment.paidAt), env.TIME_ZONE), source: payment.cash ? 'Cash' : 'Square', description: `Square payment${payment.note ? `: ${payment.note}` : ''}`, amount: (payment.amount - payment.fee) / 100 })
   }
   await upsertLedgerRows(env, rows)
   await env.EVENTS_DB.batch(pending.map(payment => env.EVENTS_DB.prepare('UPDATE square_payments SET synced = 1 WHERE id = ?').bind(payment.id)))
