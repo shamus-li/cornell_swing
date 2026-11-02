@@ -85,7 +85,11 @@
     "ACCESS_AUD": "edff3a8c97b455c985deb5d34b4cfd6f81fc603b92aa4c3f0fe694434f556229",
     "CLOUDFLARE_ACCOUNT_ID": "826a8805e6c445803da24e740d6912e3",
     "REDIRECT_HOSTNAME": "swingsyndicate.club",
-    "REDIRECT_LIST_ID": "1d0b827660564acc937c13b954fc263e"
+    "REDIRECT_LIST_ID": "1d0b827660564acc937c13b954fc263e",
+    // The club finance sheet. The Square feed writes to its Ledger tab, so the service account needs edit access.
+    "FINANCE_SPREADSHEET_ID": "1dr9qYme0WLE_eJeTimI-AIOTM_xANwN2bZz3BEW-pqE",
+    // The Square app an officer authorizes to connect the club's Square account.
+    "SQUARE_APPLICATION_ID": "sq0idp-WTsAAemQr8eJ8XnHx4JIGg"
   },
   "secrets": {
     "required": [
@@ -93,13 +97,15 @@
       "GOOGLE_SERVICE_ACCOUNT_EMAIL",
       "GOOGLE_PRIVATE_KEY",
       "GOOGLE_PLACES_API_KEY",
-      "REDIRECT_API_TOKEN"
+      "REDIRECT_API_TOKEN",
+      "SQUARE_APPLICATION_SECRET"
     ]
   },
   "triggers": {
     "crons": [
       "0 9-12 * * *",
-      "30 11 * * *"
+      "30 11 * * *",
+      "*/10 * * * *"
     ]
   },
   "observability": {

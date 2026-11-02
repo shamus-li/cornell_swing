@@ -19,11 +19,12 @@ import { DateTile } from "../events/DateTile"
 import { Tabs } from "./Tabs"
 import { Newsletter } from "./Newsletter"
 import { AlertEmail } from "./AlertEmail"
+import { Finances } from "./Finances"
 import { Person } from "../../check-in/src/components/ui/person"
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../../check-in/src/components/ui/input-group"
 
-type View = "special" | "lessons" | "newsletter" | "settings"
-const views: { value: View; label: string }[] = [{ value: "special", label: "Special events" }, { value: "lessons", label: "Lessons" }, { value: "newsletter", label: "Newsletter" }, { value: "settings", label: "Settings" }]
+type View = "special" | "lessons" | "newsletter" | "finances" | "settings"
+const views: { value: View; label: string }[] = [{ value: "special", label: "Special events" }, { value: "lessons", label: "Lessons" }, { value: "newsletter", label: "Newsletter" }, { value: "finances", label: "Finances" }, { value: "settings", label: "Settings" }]
 const byDate = (a: EventRecord, b: EventRecord) => (a.date || "9999").localeCompare(b.date || "9999") || a.startTime.localeCompare(b.startTime)
 const newEvent = (kind: EventRecord["kind"]): EventRecord => ({ id: "", kind, title: kind === "normal" ? "Monday swing" : "", date: todayInNewYork(), startTime: kind === "normal" ? "20:00" : "", endTime: kind === "normal" ? "22:00" : "", location: "", locationUrl: "", room: "", studentPrice: "", generalPrice: "", description: "", published: false, updatedAt: "" })
 const searchParam = (name: string) => new URLSearchParams(window.location.search).get(name)
@@ -125,7 +126,7 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
         {notice && <p role="status" className="manage-notice">{notice}</p>}
         {error && <p role="alert" className="event-error manage-notice">{error} <Button variant="link" size="sm" onClick={() => window.location.reload()}>Reload</Button></p>}
         <div role="tabpanel" className="manage-panel" aria-label={views.find(item => item.value === view)!.label}>
-          {view === "settings" ? <><SheetConnection onSync={load} /><CampusGroupsUpload /><AlertEmail /></> : loading ? <p role="status" className="event-muted manage-notice">Loading events…</p> : view === "newsletter" ? <Newsletter events={events} actions={titleActions} /> : view === "special"
+          {view === "settings" ? <><SheetConnection onSync={load} /><CampusGroupsUpload /><AlertEmail /></> : view === "finances" ? <Finances /> : loading ? <p role="status" className="event-muted manage-notice">Loading events…</p> : view === "newsletter" ? <Newsletter events={events} actions={titleActions} /> : view === "special"
             ? <EventGroups events={events.filter(event => event.kind === "special")} render={specialRow} empty="No special events yet." />
             : <EventGroups events={events.filter(event => event.kind === "normal")} render={lessonRow} empty="No weekly lessons yet." first={activeNormal === "" && <NormalEventRow ref={normalEditor} editing onEdit={() => {}} event={newEvent("normal")} onSave={saveNormal} onCancel={() => setActiveNormal(null)} />} />}
         </div>

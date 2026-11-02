@@ -11,6 +11,7 @@ import { alertEmailStatus, AlertEmailError, saveAlertEmail } from './alert-email
 import { isValidEmail } from '../lib/email'
 import { buildCampusGroups, campusGroupsKey, summarizeCampusGroups, type CampusGroupsData } from './campusgroups'
 import { formatEventLocation, hasEventDetails, todayInNewYork, validateEvent, validateRSVP, type EventRecord, type ManagedEvent, type RSVP } from './model'
+import { connectSquare, disconnectSquare, squareConnectUrl, squareFeed } from './square'
 
 // `code` lets the manager tell specific failures apart, such as "stale" for an event saved elsewhere since it was opened.
 class HttpError extends Error {
@@ -196,6 +197,24 @@ async function route(request: Request, env: Env): Promise<Response> {
     const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : ''
     if (!isValidEmail(email)) throw new HttpError(400, 'Enter a valid email address.')
     return json(await saveAlertEmail(env, email))
+  }
+  // Square sends the officer back to the callback with a code for reading the account's payments.
+  if (path === '/manage/square/connect' && method === 'GET') {
+    const state = crypto.randomUUID()
+    return new Response(null, { status: 302, headers: { Location: squareConnectUrl(env, url.origin, state), 'Set-Cookie': `square_state=${state}; Path=/manage/square; Max-Age=600; HttpOnly; Secure; SameSite=Lax` } })
+  }
+  if (path === '/manage/square/callback' && method === 'GET') {
+    const state = request.headers.get('cookie')?.match(/(?:^|;\s*)square_state=([^;]+)/)?.[1]
+    if (!state || state !== url.searchParams.get('state')) throw new HttpError(400, 'Connect Square again from the Finances tab.')
+    const code = url.searchParams.get('code')
+    if (code) await connectSquare(env, url.origin, code)
+    return new Response(null, { status: 302, headers: { Location: '/manage?view=finances', 'Set-Cookie': 'square_state=; Path=/manage/square; Max-Age=0' } })
+  }
+  if (path === '/manage/api/square') {
+    if (method === 'GET') return json(await squareFeed(env))
+    if (method !== 'DELETE') throw new HttpError(405, 'Method not allowed.')
+    await disconnectSquare(env)
+    return json({ success: true })
   }
   if (path === '/manage/api/campusgroups') {
     if (method === 'GET') return json(summarizeCampusGroups(await env.MEMBER_CACHE.get<CampusGroupsData>(campusGroupsKey, 'json')))
