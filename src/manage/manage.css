@@ -111,7 +111,11 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .manage-filter { margin-top: 16px; }
 .editor-share { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; font-size: var(--small-font-size); overflow-wrap: anywhere; }
 .dance-feeds-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.sheet-connection .event-row-button { grid-template-columns: minmax(0, 1fr); background: var(--background); }
+/* Feeds read as one white list, with dividers between rows. */
+.sheet-connection .manage-list { overflow: hidden; border-radius: 8px; background: var(--background); }
+.sheet-connection .manage-list > * + * { border-top: 1px solid var(--border); }
+.sheet-connection .event-row-button { grid-template-columns: minmax(0, 1fr); padding-inline: 12px; border-radius: 0; }
+.sheet-connection .normal-event-edit { margin: 0; border-radius: 0; background: var(--background); }
 .sheet-connection-actions, .sheet-connection-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .sheet-connection-form { align-items: flex-end; }
 .sheet-connection-form > p { flex-basis: 100%; }
