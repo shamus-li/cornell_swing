@@ -260,16 +260,12 @@ async function route(request: Request, env: Env): Promise<Response> {
     return new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="apple-mobile-web-app-capable" content="yes"><title>Square test</title><style>body{font:18px system-ui;margin:16px}a{display:block;margin:12px 0;padding:16px;background:#111;color:#fff;border-radius:8px;text-decoration:none}pre{white-space:pre-wrap;word-break:break-all}</style><p id="mode"></p><a href="${charge('CARD_FROM_READER')}">A: Card from reader</a><a href="${charge('CREDIT_CARD')}">B: Credit card</a><a href="?auto=1">C: Card from reader, no tap</a><pre>${result}</pre><script>
 const mode = document.getElementById('mode'), out = document.querySelector('pre'), channel = new BroadcastChannel('door-test')
 mode.textContent = 'Tabs in history: ' + history.length
-channel.onmessage = ({ data }) => {
-  if (data.result) out.textContent = data.result
-  if (data.close) window.close()
-}
+channel.onmessage = ({ data }) => { out.textContent = data.result }
 if (out.textContent) {
   channel.postMessage({ result: out.textContent })
   setTimeout(() => {
     mode.textContent = 'Tried to close this tab'
     window.close()
-    setTimeout(() => { mode.textContent = 'Could not close this tab, closing older ones'; channel.postMessage({ close: true }) }, 500)
   }, 1500)
 }
 </script>${auto}`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
