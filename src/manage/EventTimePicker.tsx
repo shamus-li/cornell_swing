@@ -21,12 +21,13 @@ function parseTime(text: string): string | null {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
 }
 
-export function EventTimePicker({ value, onChange, label, disabled, required }: {
+export function EventTimePicker({ value, onChange, label, disabled, required, placeholder = "TBA" }: {
   value: string
   onChange: (value: string) => void
   label: string
   disabled?: boolean
   required?: boolean
+  placeholder?: string
 }) {
   const [text, setText] = useState(value ? timeLabel(value) : "")
   const input = useRef<HTMLInputElement>(null)
@@ -51,7 +52,7 @@ export function EventTimePicker({ value, onChange, label, disabled, required }: 
     itemToStringLabel={timeLabel}
     onInputValueChange={(next, details) => { if (details.reason === "input-change") edit(next) }}
     onValueChange={next => { if (next !== null) edit(next === "tba" ? "" : timeLabel(next)) }}>
-    <ComboboxInput ref={input} disabled={disabled} aria-label={label} placeholder="TBA" className="w-full" showTrigger={false}
+    <ComboboxInput ref={input} disabled={disabled} aria-label={label} placeholder={placeholder} className="w-full" showTrigger={false}
       onFocus={() => { focused.current = true }}
       onBlur={() => {
         focused.current = false

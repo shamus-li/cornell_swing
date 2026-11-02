@@ -1,7 +1,8 @@
+import { addDays, differenceInCalendarDays, format, parseISO } from "date-fns"
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react"
-import { CalendarIcon, Check, Copy, MapPinIcon, TicketIcon } from "lucide-react"
+import { CalendarIcon, Check, Copy, MapPinIcon, TicketIcon, XIcon } from "lucide-react"
 import { Button } from "../../check-in/src/components/ui/button"
-import { isValidPrice, todayInNewYork, type EventRecord, type ManagedEvent, type RSVP } from "../events/model"
+import { isUpcoming, isValidPrice, todayInNewYork, type EventDay, type EventRecord, type EventTicket, type ManagedEvent, type RSVP } from "../events/model"
 import { EventTimePicker } from "./EventTimePicker"
 import { LocationPicker } from "./LocationPicker"
 import { EventDatePicker } from "./EventDatePicker"
@@ -25,12 +26,13 @@ import { blankOutsideEvent, OutsideEventForm, outsideSummary } from "./OutsideEv
 import type { OutsideEvent } from "../events/outside"
 import { Person } from "../../check-in/src/components/ui/person"
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../../check-in/src/components/ui/input-group"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../check-in/src/components/ui/select"
 
 type ManagerTab = "special" | "lessons" | "newsletter" | "finances" | "settings"
 const managerTabs: { value: ManagerTab; label: string }[] = [{ value: "special", label: "Special events" }, { value: "lessons", label: "Lessons" }, { value: "newsletter", label: "Newsletter" }, { value: "finances", label: "Finances" }, { value: "settings", label: "Settings" }]
 const groupFilters = [{ value: "all", label: "All" }, { value: "ours", label: "Swing Syndicate" }, { value: "theirs", label: "Other groups" }] as const
 const byDate = (a: { date: string; startTime: string }, b: { date: string; startTime: string }) => (a.date || "9999").localeCompare(b.date || "9999") || a.startTime.localeCompare(b.startTime)
-const newEvent = (kind: EventRecord["kind"]): EventRecord => ({ id: "", kind, title: kind === "normal" ? "Monday Night Swing" : "", date: todayInNewYork(), startTime: kind === "normal" ? "20:00" : "", endTime: kind === "normal" ? "22:00" : "", lessonEndTime: kind === "normal" ? "21:00" : "", socialStartTime: kind === "normal" ? "21:00" : "", location: "", locationUrl: "", room: "", studentPrice: "", generalPrice: "", description: "", published: false, updatedAt: "" })
+const newEvent = (kind: EventRecord["kind"]): EventRecord => ({ id: "", kind, title: kind === "normal" ? "Monday Night Swing" : "", date: kind === "normal" ? todayInNewYork() : "", moreDays: [], startTime: kind === "normal" ? "20:00" : "", endTime: kind === "normal" ? "22:00" : "", lessonEndTime: kind === "normal" ? "21:00" : "", socialStartTime: kind === "normal" ? "21:00" : "", location: "", locationUrl: "", room: "", tickets: kind === "special" ? [{ id: "student", name: "Student", price: "", days: 1 }, { id: "general", name: "General", price: "", days: 1 }] : [], description: "", published: false, updatedAt: "" })
 const searchParam = (name: string) => new URLSearchParams(window.location.search).get(name)
 
 export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent[] }) {
@@ -174,8 +176,8 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
 // Upcoming events first, then past ones, which stay visible but muted.
 function EventGroups<T extends { date: string }>({ events, render, empty, first }: { events: T[]; render: (event: T) => ReactNode; empty: string; first?: ReactNode }) {
   const today = todayInNewYork()
-  const upcoming = events.filter(event => !event.date || event.date >= today)
-  const past = events.filter(event => event.date && event.date < today)
+  const upcoming = events.filter(event => isUpcoming(event, today))
+  const past = events.filter(event => !isUpcoming(event, today))
   if (!events.length && !first) return <p className="event-muted manage-notice">{empty}</p>
   return <>
     <section className="manage-group" aria-label="Upcoming"><h2>Upcoming</h2><div className="manage-list">{first}{upcoming.map(render)}</div>{!upcoming.length && !first && <p className="event-muted">Nothing scheduled yet.</p>}</section>
@@ -192,7 +194,7 @@ function EventEditor({ event, leaveGuard, onSave, onReplace, onDelete, onCancel,
   // Set when someone else saved the event after it was opened; the manager then keeps their own version or loads that one.
   const [conflict, setConflict] = useState(false)
   const [leaving, setLeaving] = useState(false)
-  const dirty = (["title", "date", "startTime", "endTime", "location", "locationUrl", "room", "studentPrice", "generalPrice", "description"] as const).some(key => draft[key] !== event[key])
+  const dirty = (["title", "date", "startTime", "endTime", "location", "locationUrl", "room", "description"] as const).some(key => draft[key] !== event[key]) || JSON.stringify([draft.tickets, draft.moreDays]) !== JSON.stringify([event.tickets, event.moreDays])
   useEffect(() => {
     if (!dirty) return
     const warn = (e: BeforeUnloadEvent) => e.preventDefault()
@@ -246,16 +248,10 @@ function EventEditor({ event, leaveGuard, onSave, onReplace, onDelete, onCancel,
         <TitleInput value={draft.title} disabled={busy} onChange={value => change("title", value)} />
       </div>
       {event.published && event.slug && <div className="editor-share"><a href={`/events/${event.slug}`} target="_blank" rel="noreferrer">swingsyndicate.club/events/{event.slug}</a><CopyButton text={`${window.location.origin}/events/${event.slug}`} label="Copy link" /></div>}
-      <div className="editor-card">
-        <div className="editor-field"><CalendarIcon aria-hidden="true" /><div className="editor-when">
-          <EventDatePicker allowTba icon={false} disabled={busy} value={draft.date} onChange={value => change("date", value)} />
-          <EventTimePicker label="Start time" disabled={busy} value={draft.startTime} onChange={value => change("startTime", value)} /><span aria-hidden="true">–</span><EventTimePicker label="End time" disabled={busy} value={draft.endTime} onChange={value => change("endTime", value)} />
-        </div></div>
+      <div className="editor-card editor-card-sections">
+        <div className="editor-field"><CalendarIcon aria-hidden="true" /><EventDays event={draft} disabled={busy} onChange={(days, tickets) => setDraft(current => ({ ...current, ...days, tickets }))} /></div>
         <div className="editor-field"><MapPinIcon aria-hidden="true" /><LocationPicker icon={false} value={draft.location} url={draft.locationUrl} room={draft.room} onRoomChange={room => change("room", room)} onChange={(location, locationUrl) => setDraft(current => ({ ...current, location, locationUrl }))} disabled={busy} /></div>
-        <div className="editor-field"><TicketIcon aria-hidden="true" /><div className="editor-prices">
-          <PriceInput label="Students" disabled={busy} value={draft.studentPrice} onChange={value => change("studentPrice", value)} />
-          <PriceInput label="General" disabled={busy} value={draft.generalPrice} onChange={value => change("generalPrice", value)} />
-        </div></div>
+        <div className="editor-field"><TicketIcon aria-hidden="true" /><TicketTypes tickets={draft.tickets ?? []} eventDays={(draft.moreDays?.length ?? 0) + 1} disabled={busy} onChange={tickets => setDraft(current => ({ ...current, tickets }))} /></div>
       </div>
       <MarkdownEditor markdown={draft.description} label="Description" onChange={value => change("description", value)} onError={setEditorError} readOnly={busy} />
       {editorError && <p role="alert" className="event-error">{editorError}</p>}
@@ -284,15 +280,67 @@ function TitleInput({ value, disabled, onChange }: { value: string; disabled: bo
     onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.form!.requestSubmit() } }} />
 }
 
+const shiftDate = (date: string, days: number) => format(addDays(parseISO(date), days), "yyyy-MM-dd")
+
+// The event's schedule: one date, start and end, with more rows only for an event running several days. A row
+// comes after the one above it, so moving a date moves the days below it by the same amount. Removing days
+// shortens any ticket that covered them.
+function EventDays({ event, disabled, onChange }: { event: EventRecord; disabled: boolean; onChange: (days: Pick<EventRecord, "date" | "startTime" | "endTime" | "moreDays">, tickets: EventTicket[]) => void }) {
+  const rows = useRef<HTMLDivElement>(null)
+  const days: EventDay[] = [{ date: event.date, startTime: event.startTime, endTime: event.endTime }, ...(event.moreDays ?? [])]
+  const several = days.length > 1
+  function set([first, ...rest]: EventDay[]) {
+    onChange({ ...first, moreDays: rest }, (event.tickets ?? []).map(ticket => ({ ...ticket, days: Math.min(ticket.days, rest.length + 1) })))
+  }
+  function moveDate(index: number, date: string) {
+    const previous = days[index].date
+    const moved = previous && date ? differenceInCalendarDays(parseISO(date), parseISO(previous)) : 0
+    set(days.map((day, at) => at === index ? { ...day, date } : at > index && moved ? { ...day, date: shiftDate(day.date, moved) } : day))
+  }
+  // Adding or removing a day swaps out the control that had focus, so focus moves to the last row's date.
+  function setAndFocus(next: EventDay[]) {
+    set(next)
+    requestAnimationFrame(() => [...(rows.current?.querySelectorAll<HTMLButtonElement>(".event-date-picker > button:first-child") ?? [])].at(-1)?.focus())
+  }
+  const update = (index: number, change: Partial<EventDay>) => set(days.map((day, at) => at === index ? { ...day, ...change } : day))
+  return <div className="editor-days" ref={rows}>
+    {days.map((day, index) => <div className={several ? "editor-day editor-day-removable" : "editor-day"} key={index}>
+      <EventDatePicker clearable={!several} icon={false} placeholder="Date TBA" label={several ? `Day ${index + 1} date` : "Date"} after={days[index - 1]?.date} disabled={disabled} value={day.date} onChange={date => moveDate(index, date)} />
+      <EventTimePicker label={several ? `Day ${index + 1} start time` : "Start time"} placeholder="Start" disabled={disabled} value={day.startTime} onChange={startTime => update(index, { startTime })} />
+      <span aria-hidden="true">–</span>
+      <EventTimePicker label={several ? `Day ${index + 1} end time` : "End time"} placeholder="End" disabled={disabled} value={day.endTime} onChange={endTime => update(index, { endTime })} />
+      {several && <Button type="button" variant="ghost" size="icon" className="editor-day-remove" disabled={disabled} aria-label={`Remove day ${index + 1}`} onClick={() => setAndFocus(days.filter((_, at) => at !== index))}><XIcon /></Button>}
+    </div>)}
+    {event.date && days.length < 14 && <Button type="button" variant="link" size="sm" className="editor-link" disabled={disabled} onClick={() => { const last = days.at(-1)!; setAndFocus([...days, { ...last, date: shiftDate(last.date, 1) }]) }}>Add another day</Button>}
+  </div>
+}
+
 // Keystrokes that would make an invalid price are ignored. Leaving the field writes cents in full, "12.5" as "12.50".
 function PriceInput({ label, value = "", disabled, onChange }: { label: string; value?: string; disabled: boolean; onChange: (value: string) => void }) {
   return <InputGroup>
-    <InputGroupAddon>{label}</InputGroupAddon>
     <InputGroupAddon>$</InputGroupAddon>
-    <InputGroupInput disabled={disabled} aria-label={`${label} ticket price`} inputMode="decimal" style={{ width: `calc(${Math.max(value.length, 1)}ch + 11px)` }} value={value}
+    <InputGroupInput disabled={disabled} aria-label={`${label} ticket price`} placeholder="TBA" inputMode="decimal" value={value}
       onChange={e => { if (isValidPrice(e.target.value.replace(/\.$/, ""))) onChange(e.target.value) }}
       onBlur={() => onChange(value.replace(/\.$/, "").replace(/\.(\d)$/, (_, digit) => `.${digit}0`))} />
   </InputGroup>
+}
+
+// The ticket types people choose from at check-in. Days only matters for an event with a last day.
+function TicketTypes({ tickets, eventDays, disabled, onChange }: { tickets: EventTicket[]; eventDays: number; disabled: boolean; onChange: (tickets: EventTicket[]) => void }) {
+  const addTicket = useRef<HTMLButtonElement>(null)
+  const update = (index: number, change: Partial<EventTicket>) => onChange(tickets.map((ticket, at) => at === index ? { ...ticket, ...change } : ticket))
+  return <div className="editor-tickets">
+    {tickets.map((ticket, index) => <div className={eventDays > 1 ? "editor-ticket editor-ticket-days" : "editor-ticket"} key={ticket.id}>
+      <InputGroup className="editor-ticket-name"><InputGroupInput disabled={disabled} aria-label="Ticket name" placeholder="Ticket name" maxLength={60} value={ticket.name} onChange={e => update(index, { name: e.target.value })} /></InputGroup>
+      <PriceInput label={ticket.name || "This"} disabled={disabled} value={ticket.price} onChange={price => update(index, { price })} />
+      {eventDays > 1 && <Select value={String(ticket.days)} disabled={disabled} onValueChange={days => update(index, { days: Number(days) })}>
+        <SelectTrigger className="editor-ticket-select" aria-label={`Days ${ticket.name || "this ticket"} covers`}><SelectValue /></SelectTrigger>
+        <SelectContent>{Array.from({ length: eventDays }, (_, day) => <SelectItem key={day} value={String(day + 1)}>{day + 1} {day ? "days" : "day"}</SelectItem>)}</SelectContent>
+      </Select>}
+      <Button type="button" variant="ghost" size="icon" className="editor-ticket-remove" disabled={disabled} aria-label={`Remove ${ticket.name || "ticket"}`} onClick={() => { onChange(tickets.filter((_, at) => at !== index)); addTicket.current?.focus() }}><XIcon /></Button>
+    </div>)}
+    <Button ref={addTicket} type="button" variant="link" size="sm" className="editor-link" disabled={disabled} onClick={() => onChange([...tickets, { id: crypto.randomUUID(), name: "", price: "", days: 1 }])}>Add ticket type</Button>
+  </div>
 }
 
 // Tab-separated rows paste into Google Sheets as Name and Email columns.

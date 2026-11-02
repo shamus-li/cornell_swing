@@ -12,6 +12,7 @@ import socialStartMigration from '../../migrations/events/0018_social_start.sql?
 import venmoMigration from '../../migrations/events/0008_venmo.sql?raw'
 import gmailMigration from '../../migrations/events/0012_gmail.sql?raw'
 import squareMigration from '../../migrations/events/0013_square.sql?raw'
+import doorMigration from '../../migrations/events/0020_door_charges.sql?raw'
 import worker from './worker'
 import { syncSquare } from './square'
 
@@ -71,7 +72,7 @@ beforeAll(async () => {
     }),
   )
   managerToken = await new SignJWT({}).setProtectedHeader({ alg: 'RS256', kid: 'test-key' }).setIssuer(`https://${env.ACCESS_TEAM_DOMAIN}`).setAudience(env.ACCESS_AUD).setExpirationTime('1h').sign(privateKey)
-  for (const sql of [eventsMigration, roomMigration, publishedMigration, pricesMigration, lessonEndMigration, socialStartMigration, venmoMigration, gmailMigration, squareMigration]) await env.EVENTS_DB.exec(sql.replace(/^--.*$/gm, '').replaceAll('\n', ' '))
+  for (const sql of [eventsMigration, roomMigration, publishedMigration, pricesMigration, lessonEndMigration, socialStartMigration, venmoMigration, gmailMigration, squareMigration, doorMigration]) await env.EVENTS_DB.exec(sql.replace(/^--.*$/gm, '').replaceAll('\n', ' '))
 })
 afterAll(() => { network.disable(); vi.useRealTimers() })
 beforeEach(async () => {

@@ -28,6 +28,17 @@ export const AFFILIATION_LABELS: Record<Affiliation, string> = {
   Student: "Cornell Student",
 }
 
+// A ticket type offered at the door; amount is in cents.
+export type DoorTicket = { id: string; name: string; amount: number; days: number }
+
+export type Attendee = {
+  memberId: string | null
+  name: string
+  email: string
+  phone: string
+  affiliation: Affiliation
+}
+
 export type Member = {
   id: string
   name: string

@@ -2,6 +2,11 @@ import { isValidEmail } from '../lib/email'
 
 type EventKind = 'normal' | 'special'
 
+export type EventDay = { date: string; startTime: string; endTime: string }
+
+// A ticket type: price is in dollars, like "5" or "7.50", and days is how many days of the event it covers.
+export type EventTicket = { id: string; name: string; price: string; days: number }
+
 export interface EventRecord {
   id: string
   // The event's address, /events/slug; set when the event is saved.
@@ -9,6 +14,10 @@ export interface EventRecord {
   kind: EventKind
   title: string
   date: string
+  // The rest of an event running several days. date, startTime and endTime stay the first day.
+  moreDays?: EventDay[]
+  // The last of moreDays, set when the event is saved; empty for one day.
+  lastDate?: string
   startTime: string
   endTime: string
   // Weekly lessons only: the lesson runs from startTime to lessonEndTime and the social dance from socialStartTime to endTime, and they may overlap.
@@ -18,9 +27,7 @@ export interface EventRecord {
   location: string
   locationUrl?: string
   room?: string
-  // Ticket prices in dollars, like "5" or "7.50"; empty when not announced.
-  studentPrice?: string
-  generalPrice?: string
+  tickets?: EventTicket[]
   description: string
   published: boolean
   updatedAt: string
@@ -54,6 +61,16 @@ export function lessonSchedule({ startTime, endTime, lessonEndTime, socialStartT
 }
 // ["Lesson 8:00–9:00 PM", "Social dance 9:00–10:00 PM"]
 export const formatLessonSchedule = (event: Parameters<typeof lessonSchedule>[0]) => lessonSchedule(event).map(part => part.text)
+// Whether any day of the event is still to come; an event without a date hasn't happened yet.
+export const isUpcoming = ({ date, lastDate }: Pick<EventRecord, 'date' | 'lastDate'>, today: string) => !date || (lastDate || date) >= today
+// "Fri, Nov 13 – Sun, Nov 15" for an event running several days.
+export function formatEventDayRange({ date, lastDate, moreDays = [] }: Pick<EventRecord, 'date' | 'lastDate' | 'moreDays'>): string {
+  const day = (value: string) => formatEventDate(value, { weekday: 'short', month: 'short', day: 'numeric' })
+  return `${day(date)} – ${day(lastDate || moreDays.at(-1)!.date)}`
+}
+// ["Fri, Nov 13 · 6:00–10:00 PM", "Sat, Nov 14 · 10:00 AM–5:00 PM"] for an event running several days.
+export const formatEventDays = ({ date, startTime, endTime, moreDays = [] }: Pick<EventRecord, 'date' | 'startTime' | 'endTime' | 'moreDays'>) =>
+  [{ date, startTime, endTime }, ...moreDays].map(day => `${formatEventDate(day.date, { weekday: 'short', month: 'short', day: 'numeric' })} · ${formatEventTime(day)}`)
 // A weekly night runs from whichever of the lesson and social dance starts first until whichever ends last.
 export function nightSpan({ startTime, endTime, lessonEndTime, socialStartTime }: Pick<EventRecord, 'startTime' | 'endTime' | 'lessonEndTime' | 'socialStartTime'>): Pick<EventRecord, 'startTime' | 'endTime'> {
   return {
@@ -80,11 +97,11 @@ export function formatEventLocation(event: Pick<EventRecord, 'location' | 'room'
   return [event.room, event.location].filter(Boolean).join(', ') || 'TBA'
 }
 
-const formatPrice = (price: string, who: string) => Number(price) === 0 ? `Free for ${who}` : `$${Number(price).toFixed(Number.isInteger(Number(price)) ? 0 : 2)} ${who}`
-// ["$5 students", "$10 general"], leaving out prices that are not set; ["Free"] when both are free.
-export function formatEventPrices({ studentPrice, generalPrice }: Pick<EventRecord, 'studentPrice' | 'generalPrice'>): string[] {
-  if (studentPrice && generalPrice && Number(studentPrice) === 0 && Number(generalPrice) === 0) return ['Free']
-  return [studentPrice && formatPrice(studentPrice, 'students'), generalPrice && formatPrice(generalPrice, 'general')].filter((price): price is string => !!price)
+const formatPrice = (price: string) => `$${Number(price).toFixed(Number.isInteger(Number(price)) ? 0 : 2)}`
+// ["Student $5", "General $10"]; ["Free"] when every ticket is free.
+export function formatEventPrices({ tickets = [] }: Pick<EventRecord, 'tickets'>): string[] {
+  if (tickets.length && tickets.every(ticket => Number(ticket.price) === 0)) return ['Free']
+  return tickets.map(ticket => `${ticket.name} ${Number(ticket.price) ? formatPrice(ticket.price) : 'free'}`)
 }
 // Up to $999.99, without leading zeros or more than two decimal places; empty when not announced.
 // A Google Maps search for a place in upstate New York.
@@ -94,6 +111,36 @@ export const isValidPrice = (price: string) => /^((0|[1-9]\d{0,2})(\.\d{1,2})?)?
 // A real YYYY-MM-DD date, and a 24-hour HH:MM time.
 export const isValidDate = (date: string) => /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(Date.parse(date)) && new Date(date).toISOString().slice(0, 10) === date
 export const isValidTime = (time: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(time)
+
+function validateMoreDays(value: unknown, date: string): EventDay[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value) || value.length > 13) throw new Error('An event can run up to 14 days.')
+  let previous = date
+  return (value as Record<string, unknown>[]).map(day => {
+    const [next, startTime, endTime] = [day?.date, day?.startTime ?? '', day?.endTime ?? ''].map(item => typeof item === 'string' ? item.trim() : '')
+    if (!previous || !isValidDate(next) || next <= previous) throw new Error('Each day must come after the one before it.')
+    if ((startTime && !isValidTime(startTime)) || (endTime && !isValidTime(endTime))) throw new Error('Enter a valid event time.')
+    if (endTime && (!startTime || endTime <= startTime)) throw new Error('The end time must be after the start time on the same day.')
+    previous = next
+    return { date: next, startTime, endTime }
+  })
+}
+
+// A ticket without a price isn't announced yet, so it isn't saved.
+function validateTickets(value: unknown, eventDays: number): EventTicket[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value) || value.length > 20) throw new Error('Add up to 20 ticket types.')
+  return (value as Record<string, unknown>[]).flatMap(ticket => {
+    const name = typeof ticket?.name === 'string' ? ticket.name.trim() : ''
+    const price = typeof ticket?.price === 'string' ? ticket.price.trim() : ''
+    if (!price) return []
+    if (!name || name.length > 60) throw new Error('Give each ticket a name up to 60 characters.')
+    if (!isValidPrice(price)) throw new Error('Enter ticket prices in dollars up to $999.99, like 5 or 7.50.')
+    const days = ticket.days === undefined ? 1 : ticket.days
+    if (!Number.isInteger(days) || (days as number) < 1 || (days as number) > eventDays) throw new Error(`A ticket can cover up to ${eventDays} ${eventDays === 1 ? 'day' : 'days'}.`)
+    return [{ id: typeof ticket.id === 'string' && ticket.id ? ticket.id : crypto.randomUUID(), name, price, days: days as number }]
+  })
+}
 
 export function validateEvent(value: unknown): EventInput {
   if (!value || typeof value !== 'object') throw new Error('Enter the event details.')
@@ -129,19 +176,15 @@ export function validateEvent(value: unknown): EventInput {
   }
   if (input.room !== undefined && (typeof input.room !== 'string' || input.room.length > 300)) throw new Error('Enter room details up to 300 characters.')
   const room = typeof input.room === 'string' ? input.room.trim() : ''
-  const prices = { studentPrice: '', generalPrice: '' }
-  for (const key of ['studentPrice', 'generalPrice'] as const) {
-    const price = input[key] ?? ''
-    if (typeof price !== 'string' || !isValidPrice(price.trim())) throw new Error('Enter ticket prices in dollars up to $999.99, like 5 or 7.50.')
-    prices[key] = price.trim()
-  }
+  const moreDays = input.kind === 'special' ? validateMoreDays(input.moreDays, fields.date) : []
+  const tickets = input.kind === 'special' ? validateTickets(input.tickets, moreDays.length + 1) : []
   const locationUrl = typeof input.locationUrl === 'string' ? input.locationUrl.trim() : ''
   if (locationUrl) {
     let url: URL
     try { url = new URL(locationUrl) } catch { throw new Error('Enter a valid Google Maps link.') }
     if (locationUrl.length > 2000 || url.protocol !== 'https:' || url.hostname !== 'www.google.com' || url.pathname !== '/maps/search/' || url.username || url.password || url.port) throw new Error('Enter a valid Google Maps link.')
   }
-  return { room, locationUrl, ...prices, lessonEndTime, socialStartTime, kind: input.kind, published: input.published, title: fields.title, date: fields.date, startTime: fields.startTime, endTime: fields.endTime, location: fields.location, description: fields.description }
+  return { room, locationUrl, tickets, moreDays, lastDate: moreDays.at(-1)?.date ?? '', lessonEndTime, socialStartTime, kind: input.kind, published: input.published, title: fields.title, date: fields.date, startTime: fields.startTime, endTime: fields.endTime, location: fields.location, description: fields.description }
 }
 
 export function validateRSVP(value: unknown): { name: string; email: string } {

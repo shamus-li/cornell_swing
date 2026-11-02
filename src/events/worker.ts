@@ -10,7 +10,7 @@ import { isRecord, parseRedirect } from '../redirects/redirect'
 import { alertEmailStatus, AlertEmailError, saveAlertEmail, sendAlert } from './alert-email'
 import { isValidEmail } from '../lib/email'
 import { buildCampusGroups, campusGroupsKey, summarizeCampusGroups, type CampusGroupsData } from './campusgroups'
-import { formatEventDate, formatEventLocation, formatEventTime, formatLessonSchedule, hasEventDetails, todayInNewYork, validateEvent, validateRSVP, type EventRecord, type ManagedEvent, type RSVP } from './model'
+import { formatEventDate, formatEventLocation, formatEventTime, formatLessonSchedule, hasEventDetails, isUpcoming, todayInNewYork, validateEvent, validateRSVP, type EventRecord, type ManagedEvent, type RSVP } from './model'
 import { connectSquare, disconnectSquare, squareConnectUrl, squareFeed } from './square'
 import { listGroupNames, listOutsideEvents, saveOutsideEvent, validateEventRequest, validateOutsideEvent } from './outside'
 import { listFeeds, readFeeds, validateFeed } from './feeds'
@@ -77,9 +77,9 @@ async function redirectsApi(request: Request, env: Env, method: string): Promise
   return json({ success: true })
 }
 
-// D1 stores booleans as 0 or 1.
-type Row<T> = Omit<T, 'published'> & { published: number }
-const fromRow = <T extends EventRecord>(row: Row<T>) => ({ ...row, published: row.published === 1 }) as T
+// D1 stores booleans as 0 or 1, and ticket types and extra days as JSON.
+type Row<T> = Omit<T, 'published' | 'tickets' | 'moreDays'> & { published: number; tickets: string; moreDays: string }
+const fromRow = <T extends EventRecord>(row: Row<T>) => ({ ...row, published: row.published === 1, tickets: JSON.parse(row.tickets), moreDays: JSON.parse(row.moreDays) }) as T
 
 async function listEvents(env: Env): Promise<EventRecord[]> {
   const result = await env.EVENTS_DB.prepare("SELECT * FROM events WHERE published = 1 ORDER BY date = '', date, startTime, title").all<Row<EventRecord>>()
@@ -108,13 +108,17 @@ async function cachedEvents(env: Env, url: URL): Promise<EventRecord[]> {
 
 function calendar(event: EventRecord, origin: string): string {
   const escape = (value: string) => value.replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/;/g, '\\;').replace(/,/g, '\\,')
-  const date = event.date.replaceAll('-', '')
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Cornell Swing//Events//EN', 'CALSCALE:GREGORIAN',
-    'BEGIN:VTIMEZONE', 'TZID:America/New_York', 'BEGIN:DAYLIGHT', 'DTSTART:20070311T020000', 'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU', 'TZOFFSETFROM:-0500', 'TZOFFSETTO:-0400', 'END:DAYLIGHT', 'BEGIN:STANDARD', 'DTSTART:20071104T020000', 'RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU', 'TZOFFSETFROM:-0400', 'TZOFFSETTO:-0500', 'END:STANDARD', 'END:VTIMEZONE',
-    'BEGIN:VEVENT', `UID:${escape(event.id)}@swingsyndicate.club`, `DTSTAMP:${new Date(event.updatedAt).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')}`,
-    event.startTime ? `DTSTART;TZID=America/New_York:${date}T${event.startTime.replace(':', '')}00` : `DTSTART;VALUE=DATE:${date}`]
-  if (event.endTime) lines.push(`DTEND;TZID=America/New_York:${date}T${event.endTime.replace(':', '')}00`)
-  lines.push(`SUMMARY:${escape(event.title)}`, `LOCATION:${escape(formatEventLocation(event))}`, `DESCRIPTION:${escape(event.description)}`, `URL:${origin}${event.slug ? `/events/${event.slug}` : '/#special-events'}`, 'END:VEVENT', 'END:VCALENDAR')
+    'BEGIN:VTIMEZONE', 'TZID:America/New_York', 'BEGIN:DAYLIGHT', 'DTSTART:20070311T020000', 'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU', 'TZOFFSETFROM:-0500', 'TZOFFSETTO:-0400', 'END:DAYLIGHT', 'BEGIN:STANDARD', 'DTSTART:20071104T020000', 'RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU', 'TZOFFSETFROM:-0400', 'TZOFFSETTO:-0500', 'END:STANDARD', 'END:VTIMEZONE']
+  // One calendar entry per day, because each day can have its own times. The first keeps the ID calendars already have.
+  for (const [index, day] of [{ date: event.date, startTime: event.startTime, endTime: event.endTime }, ...(event.moreDays ?? [])].entries()) {
+    const date = day.date.replaceAll('-', '')
+    lines.push('BEGIN:VEVENT', `UID:${escape(event.id)}${index ? `-${day.date}` : ''}@swingsyndicate.club`, `DTSTAMP:${new Date(event.updatedAt).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')}`,
+      day.startTime ? `DTSTART;TZID=America/New_York:${date}T${day.startTime.replace(':', '')}00` : `DTSTART;VALUE=DATE:${date}`)
+    if (day.endTime) lines.push(`DTEND;TZID=America/New_York:${date}T${day.endTime.replace(':', '')}00`)
+    lines.push(`SUMMARY:${escape(event.title)}`, `LOCATION:${escape(formatEventLocation(event))}`, `DESCRIPTION:${escape(event.description)}`, `URL:${origin}${event.slug ? `/events/${event.slug}` : '/#special-events'}`, 'END:VEVENT')
+  }
+  lines.push('END:VCALENDAR')
   // Fold by UTF-8 octets so non-ASCII event descriptions remain valid iCalendar.
   return lines.map(line => {
     let result = '', length = 0
@@ -192,12 +196,13 @@ async function route(request: Request, env: Env): Promise<Response> {
   const publicMatch = path.match(/^\/api\/events\/([^/]+)\/(rsvp|calendar)$/)
   if (publicMatch) {
     const [, id, action] = publicMatch
-    const event = await env.EVENTS_DB.prepare('SELECT * FROM events WHERE id = ? AND published = 1').bind(id).first<EventRecord>()
+    const row = await env.EVENTS_DB.prepare('SELECT * FROM events WHERE id = ? AND published = 1').bind(id).first<Row<EventRecord>>()
+    const event = row && fromRow(row)
     if (!event || event.kind !== 'special') throw new HttpError(404, 'Special event not found.')
     if (action === 'calendar' && !event.date) throw new HttpError(400, 'The event date has not been announced.')
     if (action === 'calendar' && method === 'GET') return new Response(calendar(event, url.origin), { headers: { 'Content-Type': 'text/calendar; charset=utf-8', 'Content-Disposition': 'attachment; filename="swing-event.ics"', 'Cache-Control': 'no-store' } })
     if (action === 'rsvp' && method === 'POST') {
-      if (event.date && event.date < todayInNewYork()) throw new HttpError(400, 'RSVPs are closed for this event.')
+      if (!isUpcoming(event, todayInNewYork())) throw new HttpError(400, 'RSVPs are closed for this event.')
       if (!hasEventDetails(event)) throw new HttpError(400, 'RSVPs open once the event time and location are announced.')
       const limit = await env.RSVP_RATE_LIMITER.limit({ key: request.headers.get('cf-connecting-ip') || 'local' })
       if (!limit.success) throw new HttpError(429, 'Please wait a minute before trying again.')
@@ -250,25 +255,6 @@ async function route(request: Request, env: Env): Promise<Response> {
     const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : ''
     if (!isValidEmail(email)) throw new HttpError(400, 'Enter a valid email address.')
     return json(await saveAlertEmail(env, email))
-  }
-  // Temporary: charges $1 through Square's app on a phone to prove the door flow. Remove after the test.
-  if (path === '/manage/square/test' && method === 'GET') {
-    const callback = `${url.origin}/manage/square/test`
-    const charge = (tender: string) => `square-commerce-v1://payment/create?data=${encodeURIComponent(JSON.stringify({ amount_money: { amount: 100, currency_code: 'USD' }, callback_url: callback, client_id: env.SQUARE_APPLICATION_ID, version: '1.3', notes: 'door-test', options: { supported_tender_types: [tender], auto_return: true, skip_receipt: true } }))}`
-    const result = (url.searchParams.get('data') ?? '').replace(/[&<>]/g, char => `&#${char.charCodeAt(0)};`)
-    const auto = url.searchParams.has('auto') ? `<script>setTimeout(() => { location.href = ${JSON.stringify(charge('CARD_FROM_READER'))} }, 1000)</script>` : ''
-    return new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="apple-mobile-web-app-capable" content="yes"><title>Square test</title><style>body{font:18px system-ui;margin:16px}a{display:block;margin:12px 0;padding:16px;background:#111;color:#fff;border-radius:8px;text-decoration:none}pre{white-space:pre-wrap;word-break:break-all}</style><p id="mode"></p><a href="${charge('CARD_FROM_READER')}">A: Card from reader</a><a href="${charge('CREDIT_CARD')}">B: Credit card</a><a href="?auto=1">C: Card from reader, no tap</a><pre>${result}</pre><script>
-const mode = document.getElementById('mode'), out = document.querySelector('pre'), channel = new BroadcastChannel('door-test')
-mode.textContent = 'Tabs in history: ' + history.length
-channel.onmessage = ({ data }) => { out.textContent = data.result }
-if (out.textContent) {
-  channel.postMessage({ result: out.textContent })
-  setTimeout(() => {
-    mode.textContent = 'Tried to close this tab'
-    window.close()
-  }, 1500)
-}
-</script>${auto}`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
   }
   // Square sends the officer back to the callback with a code for reading the account's payments.
   if (path === '/manage/square/connect' && method === 'GET') {
@@ -368,10 +354,10 @@ if (out.textContent) {
     try { input = validateEvent(body) } catch (error) { throw new HttpError(400, (error as Error).message) }
     const id = method === 'POST' ? crypto.randomUUID() : managerMatch![1]
     let updatedAt = new Date().toISOString()
-    const values = [input.kind, input.title, input.date, input.startTime, input.endTime, input.location, input.description, updatedAt, input.locationUrl || '', input.room || '', input.published ? 1 : 0, input.studentPrice, input.generalPrice, input.lessonEndTime, input.socialStartTime]
+    const values = [input.kind, input.title, input.date, input.startTime, input.endTime, input.location, input.description, updatedAt, input.locationUrl || '', input.room || '', input.published ? 1 : 0, JSON.stringify(input.tickets), input.lessonEndTime, input.socialStartTime, input.lastDate, JSON.stringify(input.moreDays)]
     if (method === 'POST') {
       const create = async () => {
-      await env.EVENTS_DB.prepare('INSERT INTO events (kind, title, date, startTime, endTime, location, description, updatedAt, locationUrl, room, published, studentPrice, generalPrice, lessonEndTime, socialStartTime, id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(...values, id).run()
+      await env.EVENTS_DB.prepare('INSERT INTO events (kind, title, date, startTime, endTime, location, description, updatedAt, locationUrl, room, published, tickets, lessonEndTime, socialStartTime, lastDate, moreDays, id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(...values, id).run()
       }
       if (input.kind === 'special') await createEventWithSheet(env, input.title, create)
       else await create()
@@ -383,7 +369,7 @@ if (out.textContent) {
       const current = await env.EVENTS_DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first<EventRecord>()
       if (!current || current.updatedAt !== previous) throw new HttpError(409, 'Someone else saved this event after you opened it.', 'stale')
       const update = async () => {
-      const result = await env.EVENTS_DB.prepare('UPDATE events SET kind = ?, title = ?, date = ?, startTime = ?, endTime = ?, location = ?, description = ?, updatedAt = ?, locationUrl = ?, room = ?, published = ?, studentPrice = ?, generalPrice = ?, lessonEndTime = ?, socialStartTime = ? WHERE id = ?16 AND updatedAt = ? AND (?1 = \'special\' OR NOT EXISTS (SELECT 1 FROM rsvps WHERE eventId = ?16))').bind(...values, id, previous).run()
+      const result = await env.EVENTS_DB.prepare('UPDATE events SET kind = ?, title = ?, date = ?, startTime = ?, endTime = ?, location = ?, description = ?, updatedAt = ?, locationUrl = ?, room = ?, published = ?, tickets = ?, lessonEndTime = ?, socialStartTime = ?, lastDate = ?, moreDays = ? WHERE id = ?17 AND updatedAt = ? AND (?1 = \'special\' OR NOT EXISTS (SELECT 1 FROM rsvps WHERE eventId = ?17))').bind(...values, id, previous).run()
       if (result.meta.changes) return
       throw new EventConflict(input.kind === 'normal' ? 'This night changed after you opened it. Refresh and try again.' : 'The event changed. Refresh before saving.')
       }
@@ -396,6 +382,8 @@ if (out.textContent) {
     return json({ event: { ...input, id, updatedAt, slug } }, method === 'POST' ? 201 : 200)
   }
   if (managerMatch && !managerMatch[2] && method === 'DELETE') {
+    // Money recorded against the event stays on the Balance Sheet under its name.
+    if (await env.EVENTS_DB.prepare("SELECT 1 FROM door_charges WHERE eventId = ?1 AND status != 'canceled' UNION SELECT 1 FROM square_payments WHERE eventId = ?1").bind(managerMatch[1]).first()) throw new HttpError(409, 'This event has payments, so it can\'t be deleted.')
     const current = await env.EVENTS_DB.prepare('SELECT * FROM events WHERE id = ?').bind(managerMatch[1]).first<EventRecord>()
     if (!current) throw new HttpError(404, 'Event not found.')
     const remove = async () => { await env.EVENTS_DB.prepare('DELETE FROM events WHERE id = ?').bind(current.id).run() }

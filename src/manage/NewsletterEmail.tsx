@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { formatEventDate, formatEventLocation, formatEventPrices, formatEventTime, nightSpan, todayInNewYork, type EventRecord } from "../events/model"
+import { formatEventDate, formatEventDayRange, formatEventDays, formatEventLocation, formatEventPrices, formatEventTime, nightSpan, todayInNewYork, type EventRecord } from "../events/model"
 import { parsePrograms } from "./NormalEventRow"
 
 // Inline styles only, since Gmail keeps nothing else from pasted HTML.
@@ -110,7 +110,8 @@ export function FeaturedBlock({ event }: { event: EventRecord }) {
   const prices = formatEventPrices(event)
   return <>
     <h2 style={{ margin: "0 0 8px", fontSize: 26, lineHeight: "32px", fontWeight: 700 }}>{event.title}</h2>
-    <p style={meta}>{fullDate(event.date)} · {time(event)}<br /><Place event={event} />{prices.length > 0 && <Prices prices={prices} />}</p>
+    <p style={meta}>{event.moreDays?.length ? formatEventDayRange(event) : <>{fullDate(event.date)} · {time(event)}</>}<br /><Place event={event} />{prices.length > 0 && <Prices prices={prices} />}</p>
+    {event.moreDays?.length ? <p style={meta}>{formatEventDays(event).map(day => <span key={day}>{day}<br /></span>)}</p> : null}
     {event.description && <EmailMarkdown>{event.description}</EmailMarkdown>}
     <EmailButton href={event.slug ? `${site}events/${event.slug}` : site}>RSVP</EmailButton>
   </>

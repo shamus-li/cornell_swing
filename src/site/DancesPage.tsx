@@ -1,7 +1,7 @@
 import { Fragment, useState, type ReactNode } from "react"
 import { ClockIcon, MapPinIcon } from "lucide-react"
 import { Button } from "../../check-in/src/components/ui/button"
-import { formatEventDate, formatEventLocation, formatEventPrices, formatEventTime, hasEventDetails, mapsSearchUrl, nightSpan, type EventRecord } from "../events/model"
+import { isUpcoming, formatEventDate, formatEventLocation, formatEventPrices, formatEventTime, hasEventDetails, mapsSearchUrl, nightSpan, type EventRecord } from "../events/model"
 import type { OutsideEvent } from "../events/outside"
 import { LessonTimes } from "../events/LessonTimes"
 import { DateTile } from "../events/DateTile"
@@ -24,7 +24,7 @@ function OutsidePlace({ event }: { event: OutsideEvent }) {
 }
 
 function listings({ events, outside, today }: DanceSnapshot): Listing[] {
-  const ours = events.filter(event => event.date >= today).map((event): Listing => ({
+  const ours = events.filter(event => event.date && isUpcoming(event, today)).map((event): Listing => ({
     key: event.id, date: event.date, startTime: nightSpan(event).startTime, title: event.title, group: "Swing Syndicate", styles: ["Swing"],
     time: formatEventTime(event), ...(event.kind === "normal" && { lesson: event }), place: <EventLocation event={event} />, hasPlace: formatEventLocation(event) !== "TBA", price: formatEventPrices(event).join(" · "),
     href: `/events/${event.slug}`, rsvp: event.kind === "special" && hasEventDetails(event), nearby: true, ours: true,

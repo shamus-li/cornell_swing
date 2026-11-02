@@ -8,13 +8,14 @@ import {
   normalizePhone,
   PARTICIPANT_WAIVER_AFFILIATIONS,
   signatureMatchesName,
-  type Affiliation,
+  type Attendee,
   type NextSteps,
   type Member,
 } from "../src/lib/checkin"
 import type { CheckinStats } from "../src/lib/member-search"
 import { cachedMembers, searchCachedMembers, storeCheckinStats, storeMemberCache } from "./cache"
-import { eventAtSheetTimestamp, findCheckinEvent } from "./events"
+import { cancelCharge, findCharge, findTicket, isVerifying, openCardCharge, queuedCharges, settleAtDoor, ticketsToOffer, useHeldTicket, volunteerTicket, type DoorCharge } from "./door"
+import { eventAtSheetTimestamp, findCheckinEvent, type EventSession } from "./events"
 import {
   type CheckinRow,
   appendWaiver,
@@ -48,6 +49,7 @@ import { ATTENDANCE_SYNC_STATE_KEY, ATTENDANCE_SYNC_STATE_VERSION } from "./sync
 import { isRecord } from "./util"
 import { loadWaiverForm, readWaiver, submitWaiver, WAIVER_FORM_URL, WaiverFormChanged, waiverEventName } from "./waiver"
 import { generalRiskTag } from "../../src/events/campusgroups"
+import { syncPayments } from "../../src/events/square"
 import { campusGroupsKey, type CampusGroupsData } from "../../src/events/campusgroups"
 
 export { CheckinGuard } from "./checkin-guard"
@@ -56,16 +58,9 @@ const MEMBER_SEARCH_PATH = "/check-in/api/members"
 const CHECKIN_PATH = "/check-in/api/checkins"
 const CHECKIN_STATUS_PATH = "/check-in/api/checkins/status"
 const WAIVER_PATH = "/check-in/api/waiver"
+const DOOR_PATH = "/check-in/api/door/"
 // The morning cron that checks the CampusGroups waiver form; the others run the attendance sync.
 const WAIVER_CHECK_CRON = "30 11 * * *"
-type Attendee = {
-  memberId: string | null
-  name: string
-  email: string
-  affiliation: Affiliation
-  phone: string
-}
-
 type AccessTokenProvider = (env: Env) => Promise<string>
 
 // Includes the row's event, which for rows without an Event ID depends on the events in /manage.
@@ -185,31 +180,122 @@ async function readCheckinAttendee(request: Request, env: Env): Promise<Attendee
 }
 
 // The event a check-in at this moment belongs to, and the moment in Sheet form.
-async function eventNow(env: Env, timestamp: number): Promise<{ eventId: string; sheetTimestamp: number }> {
+async function eventNow(env: Env, timestamp: number): Promise<{ event: EventSession; sheetTimestamp: number }> {
   const sheetTimestamp = timestampForSheet(timestamp, env.TIME_ZONE)
-  return { eventId: (await eventAtSheetTimestamp(env, sheetTimestamp)).id, sheetTimestamp }
+  return { event: await eventAtSheetTimestamp(env, sheetTimestamp), sheetTimestamp }
 }
 
 export async function handleCheckin(request: Request, env: Env, timestamp = Date.now()): Promise<Response> {
   const attendee = await readCheckinAttendee(request, env)
   if (attendee instanceof Response) return attendee
 
-  const { eventId, sheetTimestamp } = await eventNow(env, timestamp)
-  const guard = env.CHECKIN_GUARD.getByName(dateKeyInTimeZone(timestamp, env.TIME_ZONE))
-  const result = await guard.checkin(attendee, eventId, sheetTimestamp)
+  const { event, sheetTimestamp } = await eventNow(env, timestamp)
+  const guard = env.CHECKIN_GUARD.getByName(event.sessionDate)
+  if (!await guard.isCheckedIn(attendee, event.id)) {
+    const tickets = ticketsToOffer(event)
+    if (tickets.length && !await useHeldTicket(env, event, attendee.email)) return json({ message: "Choose a ticket", event: event.title, tickets }, 402)
+  }
+  const result = await guard.checkin(attendee, event.id, sheetTimestamp)
   const next = await nextSteps(env, attendee)
   return result === "duplicate"
     ? json({ message: "Already checked in", next }, 409)
     : json({ message: "Checked in", next }, 201)
 }
 
+const firstName = (charge: DoorCharge) => (JSON.parse(charge.attendee) as Attendee).name.split(/\s+/)[0]
+const isPaid = (charge: DoorCharge) => charge.status !== "pending" && charge.status !== "canceled"
+
+// "Ada L."
+function queueLabel(charge: DoorCharge): string {
+  const parts = (JSON.parse(charge.attendee) as Attendee).name.split(/\s+/)
+  return parts.length > 1 ? `${parts[0]} ${parts.at(-1)![0]}.` : parts[0]
+}
+
+async function syncSquareQuietly(env: Env): Promise<void> {
+  await syncPayments(env).catch((error: unknown) => console.error(JSON.stringify({ message: "Square sync failed", error: errorMessage(error) })))
+}
+
+// The iPhone asks every few seconds while someone is paying; Square only needs asking now and then.
+const SYNC_EVERY_MS = 15_000
+async function syncSquareIfStale(env: Env): Promise<void> {
+  const syncedAt = await env.EVENTS_DB.prepare("SELECT syncedAt FROM square_connection").first<string>("syncedAt")
+  if (syncedAt && Date.now() - Date.parse(syncedAt) >= SYNC_EVERY_MS) await syncSquareQuietly(env)
+}
+
+// The laptop's payment step and the iPhone's list. A card charge is settled when its payment shows up
+// in Square, whether the return from Square arrives or not.
+async function handleDoor(request: Request, env: Env, path: string, timestamp = Date.now()): Promise<Response> {
+  if (path === "queue" && request.method === "GET") {
+    let charges = await queuedCharges(env)
+    if (charges.some(isVerifying)) {
+      await syncSquareIfStale(env)
+      charges = await queuedCharges(env)
+    }
+    return json({
+      applicationId: env.SQUARE_APPLICATION_ID,
+      charges: charges.map((charge) => ({ id: charge.id, label: queueLabel(charge), ticketName: charge.ticketName, amount: charge.amount, verifying: isVerifying(charge) })),
+    })
+  }
+  if (path === "charges" && request.method === "POST") {
+    const { ticketId } = (await request.clone().json().catch(() => ({}))) as { ticketId?: unknown }
+    const attendee = await readCheckinAttendee(request, env)
+    if (attendee instanceof Response) return attendee
+    const { event } = await eventNow(env, timestamp)
+    const ticket = findTicket(event, ticketId)
+    if (!ticket?.amount) return json({ message: "Choose a ticket" }, 400)
+    const charge = await openCardCharge(env, event, attendee, ticket)
+    return json({ id: charge.id, amount: charge.amount }, 201)
+  }
+  if (path === "settle" && request.method === "POST") {
+    const { id, method, ticketId } = (await request.clone().json().catch(() => ({}))) as { id?: unknown; method?: unknown; ticketId?: unknown }
+    if (typeof id !== "string" || !id) return json({ message: "Invalid payment" }, 400)
+    if (method !== "cash" && method !== "free" && method !== "waived") return json({ message: "Choose how to pay" }, 400)
+    const attendee = await readCheckinAttendee(request, env)
+    if (attendee instanceof Response) return attendee
+    const { event } = await eventNow(env, timestamp)
+    const ticket = method === "waived" ? volunteerTicket(event) : findTicket(event, ticketId)
+    if (!ticket || (method === "cash") !== ticket.amount > 0) return json({ message: "Choose a ticket" }, 400)
+    await settleAtDoor(env, id, event, attendee, ticket, method, timestamp)
+    return json({ message: "Checked in", next: await nextSteps(env, attendee) }, 201)
+  }
+  const match = path.match(/^charges\/([^/]+)(?:\/(tap|return))?$/)
+  const charge = match && await findCharge(env, match[1])
+  if (!charge) return json({ message: "Not found" }, 404)
+  // Going to Square locks the name on the iPhone until Square answers, so a lost return can't charge twice by accident.
+  if (match[2] === "tap" && request.method === "POST") {
+    await env.EVENTS_DB.prepare("UPDATE door_charges SET tappedAt = ? WHERE id = ? AND status = 'pending'").bind(new Date(timestamp).toISOString(), charge.id).run()
+    return json({ success: true })
+  }
+  if (match[2] === "return" && request.method === "POST") {
+    const { ok } = (await request.json()) as { ok?: boolean }
+    if (ok) {
+      await env.EVENTS_DB.prepare("UPDATE door_charges SET callbackAt = ? WHERE id = ? AND status = 'pending'").bind(new Date(timestamp).toISOString(), charge.id).run()
+      await syncSquareQuietly(env)
+    } else {
+      await env.EVENTS_DB.prepare("UPDATE door_charges SET tappedAt = NULL, callbackAt = NULL WHERE id = ?").bind(charge.id).run()
+    }
+    const current = (await findCharge(env, charge.id))!
+    return json({ status: isPaid(current) ? "paid" : "pending", name: firstName(current) })
+  }
+  if (request.method === "GET") {
+    return json(isPaid(charge)
+      ? { status: "paid", next: await nextSteps(env, JSON.parse(charge.attendee) as Attendee) }
+      : { status: "pending" })
+  }
+  if (request.method === "DELETE") {
+    await cancelCharge(env, charge.id)
+    return json({ success: true })
+  }
+  return json({ message: "Method not allowed" }, 405)
+}
+
 // Whether the attendee already checked into tonight's event, asked before the participant waiver.
 export async function handleCheckinStatus(request: Request, env: Env, timestamp = Date.now()): Promise<Response> {
   const attendee = await readCheckinAttendee(request, env)
   if (attendee instanceof Response) return attendee
-  const { eventId } = await eventNow(env, timestamp)
-  const guard = env.CHECKIN_GUARD.getByName(dateKeyInTimeZone(timestamp, env.TIME_ZONE))
-  return json({ checkedIn: await guard.isCheckedIn(attendee, eventId) })
+  const { event } = await eventNow(env, timestamp)
+  const guard = env.CHECKIN_GUARD.getByName(event.sessionDate)
+  return json({ checkedIn: await guard.isCheckedIn(attendee, event.id) })
 }
 
 // What the attendee still needs to do after checking in, from the latest CampusGroups member upload.
@@ -560,6 +646,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
       if (request.method !== "POST") return json({ message: "Method not allowed" }, 405)
       return await handleCheckinStatus(request, env)
     }
+    if (pathname.startsWith(DOOR_PATH)) return await handleDoor(request, env, pathname.slice(DOOR_PATH.length))
     if (pathname === WAIVER_PATH) {
       try {
         return await handleWaiver(request, env)

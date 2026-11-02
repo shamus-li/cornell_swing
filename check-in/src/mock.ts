@@ -4,7 +4,7 @@ import { searchMembers } from "@/lib/member-search"
 // Dev-only stand-in for the check-in API, loaded by /check-in/?mock. Nothing reaches the Sheet,
 // Notion, or CampusGroups. Add &waiver=changed to see the kiosk skip the waiver when the form
 // changed, &waiver=down for the sign-on-your-phone fallback when CampusGroups is down, or
-// &waiver=refuses for that fallback after signing.
+// &waiver=refuses for that fallback after signing. Add &priced for an event with tickets to buy.
 
 const MEMBERS: Member[] = [
   { id: "mock-ada", name: "Ada Lovelace", email: "ada@cornell.edu", phone: "(607) 555-0101", affiliation: "Undergraduate Student" },
@@ -79,6 +79,15 @@ const WAIVER_BLOCKS: WaiverBlock[] = [
 ]
 
 const checkedIn = new Set<string>()
+const priced = new URLSearchParams(window.location.search).has("priced")
+const MOCK_TICKETS = [
+  { id: "student", name: "Student", amount: 1000, days: 1 },
+  { id: "general", name: "General", amount: 1500, days: 1 },
+]
+const doorCharges = new Map<string, { id: string; body: Record<string, string>; ticketName: string; amount: number; createdAt: string; verifying: boolean }>([
+  ["mock-a", { id: "mock-a", body: { name: "Maya R." }, ticketName: "Student", amount: 1000, createdAt: new Date().toISOString(), verifying: false }],
+  ["mock-b", { id: "mock-b", body: { name: "Ben K." }, ticketName: "General", amount: 1500, createdAt: new Date().toISOString(), verifying: false }],
+])
 const waiverMode = new URLSearchParams(window.location.search).get("waiver")
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -101,10 +110,35 @@ async function respond(path: string, init: RequestInit = {}): Promise<Response> 
     await wait(300)
     return json({ checkedIn: checkedIn.has(body.email) })
   }
+  if (path.endsWith("api/door/queue")) {
+    return json({ applicationId: "mock-app", charges: [...doorCharges.values()].map(({ id, body: person, ticketName, amount, verifying }) => ({ id, label: person.name, ticketName, amount, verifying })) })
+  }
+  if (path.endsWith("api/door/charges")) {
+    const id = `mock-${doorCharges.size + 1}`
+    const ticket = MOCK_TICKETS.find((option) => option.id === body.ticketId) ?? MOCK_TICKETS[0]
+    doorCharges.set(id, { id, body, ticketName: ticket.name, amount: ticket.amount, createdAt: new Date().toISOString(), verifying: false })
+    return json({ id, amount: ticket.amount }, 201)
+  }
+  if (path.endsWith("api/door/settle")) {
+    await wait(300)
+    checkedIn.add(body.email)
+    return json({ message: "Checked in", next: nextSteps(body.email, body.affiliation) }, 201)
+  }
+  const doorCharge = path.match(/api\/door\/charges\/([^/]+)/)?.[1]
+  if (doorCharge) {
+    if (init.method === "DELETE") doorCharges.delete(doorCharge)
+    if (path.endsWith("/tap")) doorCharges.get(doorCharge)!.verifying = true
+    if (path.endsWith("/return")) {
+      if (body.ok) doorCharges.delete(doorCharge)
+      return json({ status: body.ok ? "paid" : "pending", name: "Maya" })
+    }
+    return json({ status: "pending" })
+  }
   if (path.endsWith("api/checkins")) {
     await wait(400)
     const next = nextSteps(body.email, body.affiliation)
     if (checkedIn.has(body.email)) return json({ message: "Already checked in", next }, 409)
+    if (priced) return json({ message: "Choose a ticket", event: "Sweater Weather Swing", tickets: MOCK_TICKETS }, 402)
     checkedIn.add(body.email)
     return json({ message: "Checked in", next }, 201)
   }

@@ -1,10 +1,11 @@
+import { EventSchedule } from "../../events/EventSchedule"
 import { Fragment, useEffect, useRef, useState, type FormEvent } from "react"
 import { ClockIcon, MapPinIcon, TicketIcon, XIcon } from "lucide-react"
 import { Input } from "../../../check-in/src/components/ui/input"
 import { FloatingField, floatingInputClass } from "../../../check-in/src/components/ui/floating-field"
 import { Button } from "../../../check-in/src/components/ui/button"
 import { largeButtonClass } from "../../../check-in/src/lib/sizes"
-import { formatEventLocation, formatEventDate, formatEventPrices, formatEventTime, hasEventDetails, scheduleTitle, todayInNewYork, type EventRecord } from "../../events/model"
+import { formatEventDayRange, formatEventLocation, formatEventDate, formatEventPrices, isUpcoming, formatEventTime, hasEventDetails, scheduleTitle, todayInNewYork, type EventRecord } from "../../events/model"
 import { EventLocation } from "../../events/EventLocation"
 import { LessonTimes } from "../../events/LessonTimes"
 import { Markdown } from "../../events/Markdown"
@@ -14,7 +15,8 @@ import { DateTile } from "../../events/DateTile"
 export type EventSnapshot = { events: EventRecord[]; today: string; unavailable?: boolean }
 
 export function CalendarLinks({ event, scope = "page" }: { event: EventRecord; scope?: "page" | "rsvp" }) {
-  if (event.kind !== "special" || !event.date || !event.startTime || !event.endTime) return null
+  // The link makes one calendar entry, so an event running several days only offers the download.
+  if (event.kind !== "special" || !event.date || !event.startTime || !event.endTime || event.moreDays?.length) return null
   const stamp = (time: string) => `${event.date.replaceAll("-", "")}T${time.replace(":", "")}00`
   const query = new URLSearchParams({ action: "TEMPLATE", text: event.title, dates: `${stamp(event.startTime)}/${stamp(event.endTime)}`, ctz: "America/New_York", location: formatEventLocation(event), details: event.description })
   const id = `calendar-${scope}-${event.id}`
@@ -127,8 +129,8 @@ export function EventSections(snapshot: EventSnapshot) {
   const next = nextLesson(snapshot)
   const special = events.filter(event => event.kind === "special")
   // Undated special events count as upcoming; they are listed last.
-  const pastSpecial = special.filter(event => event.date && event.date < today)
-  const upcomingSpecial = special.filter(event => !event.date || event.date >= today)
+  const pastSpecial = special.filter(event => !isUpcoming(event, today))
+  const upcomingSpecial = special.filter(event => isUpcoming(event, today))
   const nextSpecial = upcomingSpecial.find(event => event.date)
   const lessons = events.filter(event => event.kind === "normal")
   const earlier = lessons.filter(event => event.date < today)
@@ -151,9 +153,10 @@ export function EventSections(snapshot: EventSnapshot) {
         <DateTile date={event.date} />
         <div className="event-content">
           <h3>{event.slug ? <a href={`/events/${event.slug}`}>{event.title}</a> : event.title}</h3>
-          {(event.location || event.room || event.startTime || prices.length > 0) && <div className="event-meta"><p className="icon-line"><ClockIcon aria-hidden="true" /><span>{formatEventTime(event)}</span></p><p className="icon-line"><MapPinIcon aria-hidden="true" /><span><EventLocation event={event} /></span></p>{prices.length > 0 && <p className="icon-line"><TicketIcon aria-hidden="true" /><span>{prices.map((price, index) => <Fragment key={price}>{index > 0 && " · "}<span className="price">{price}</span></Fragment>)}</span></p>}</div>}
+          {(event.location || event.room || event.startTime || prices.length > 0) && <div className="event-meta"><p className="icon-line"><ClockIcon aria-hidden="true" /><span>{event.moreDays?.length ? formatEventDayRange(event) : formatEventTime(event)}</span></p><p className="icon-line"><MapPinIcon aria-hidden="true" /><span><EventLocation event={event} /></span></p>{prices.length > 0 && <p className="icon-line"><TicketIcon aria-hidden="true" /><span>{prices.map((price, index) => <Fragment key={price}>{index > 0 && " · "}<span className="price">{price}</span></Fragment>)}</span></p>}</div>}
+          <EventSchedule event={event} />
           <Markdown>{event.description}</Markdown>
-          {(!event.date || event.date >= today) && <div className="event-actions">{hasEventDetails(event) && <Button onClick={() => setSelected(event)}>RSVP</Button>}<CalendarLinks event={event} /></div>}
+          {isUpcoming(event, today) && <div className="event-actions">{hasEventDetails(event) && <Button onClick={() => setSelected(event)}>RSVP</Button>}<CalendarLinks event={event} /></div>}
         </div>
       </article> })}</div>
       {!showPastSpecial && upcomingSpecial.length === 0 && <p className="event-muted">Events will be announced here.</p>}

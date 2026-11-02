@@ -69,6 +69,8 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .back-button { justify-self: start; margin-left: -12px; color: var(--muted-foreground); }
 .event-editor { display: grid; gap: 16px; padding-top: 8px; }
 .editor-title { display: flex; align-items: flex-start; gap: 16px; }
+/* An undated tile stays the height of a dated one, so setting the date moves nothing below it. */
+.editor-title .date-tile { flex: none; min-height: 52px; justify-content: center; }
 /* A textarea, so a long name wraps as it does on the homepage. */
 .event-name-input { display: block; flex: 1; min-width: 0; padding: 8px 0 0; border: 0; outline: 0; background: transparent; color: var(--foreground); font: 600 1.5rem/1.25 var(--sans); resize: none; overflow: hidden; }
 .event-name-input::placeholder { color: var(--placeholder); }
@@ -77,13 +79,53 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .editor-field { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 12px; align-items: start; padding: 8px 0; }
 .editor-field > svg { width: 16px; height: 16px; margin-top: 8px; color: var(--muted-foreground); }
 .editor-when { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 9rem) auto minmax(0, 9rem); align-items: center; gap: 8px; color: var(--muted-foreground); }
-.editor-prices { display: flex; flex-wrap: wrap; gap: 8px; }
-/* "Students $5": as wide as its text, with label, dollar sign and amount sharing one baseline. */
-/* Each part is one 20px line, centered by the field's padding, so nothing shifts vertically. */
-.editor-prices [data-slot="input-group"] { width: auto; align-items: baseline; padding-block: 5px; }
-.editor-prices [data-slot="input-group-addon"] { padding-block: 0; font-size: var(--input-font-size); font-weight: 400; line-height: 20px; }
-.editor-prices [data-slot="input-group-addon"] + [data-slot="input-group-addon"] { padding: 0 0 0 4px; color: var(--foreground); }
-.editor-prices input { flex: none; height: 20px; padding: 0 8px 0 1px; line-height: 20px; font-variant-numeric: tabular-nums; }
+.editor-card-sections .editor-field { padding: 12px 0; }
+.editor-card-sections .editor-field + .editor-field { border-top: 1px solid var(--border); }
+.editor-days { display: grid; justify-items: start; gap: 8px; min-width: 0; }
+/* Date, start, dash, end, and a remove button once there is more than one day. */
+.editor-day { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 9rem) auto minmax(0, 9rem); align-items: center; gap: 8px; width: 100%; color: var(--muted-foreground); }
+.editor-day-removable { grid-template-columns: minmax(0, 1fr) minmax(0, 9rem) auto minmax(0, 9rem) 32px; }
+.editor-day-remove { color: var(--muted-foreground); }
+.event-date-picker { position: relative; min-width: 0; }
+.event-date-clear { position: absolute; top: 4px; right: 4px; color: var(--muted-foreground); }
+.event-date-clear svg:not([class*='size-']) { width: 16px; height: 16px; }
+.editor-card .editor-link { height: auto; padding: 0; color: var(--primary); font-size: var(--small-font-size); }
+.editor-tickets { display: grid; justify-items: start; gap: 8px; min-width: 0; }
+/* Name, price and remove line up in every row, whatever is typed. */
+.editor-ticket { --remove-size: 32px; display: grid; grid-template-columns: minmax(0, 1fr) 6rem var(--remove-size); grid-auto-rows: 32px; align-items: center; gap: 8px; width: 100%; }
+.editor-ticket-days { grid-template-columns: minmax(0, 1fr) 6rem 6rem var(--remove-size); }
+.editor-ticket-select { width: 100%; height: 32px; background: var(--background); font-size: var(--input-font-size); }
+.editor-ticket-remove { width: var(--remove-size); height: var(--remove-size); color: var(--muted-foreground); }
+@media (pointer: coarse) {
+  /* A finger-sized remove button, and links that reach but do not cover the fields around them, in rows that stay the height of their fields. */
+  .editor-ticket { --remove-size: 44px; }
+  .editor-ticket-remove { margin-block: -6px; }
+  .event-date-clear { top: 0; right: 0; width: 32px; height: 32px; }
+  .editor-day-removable { grid-template-columns: minmax(0, 1fr) minmax(0, 9rem) auto minmax(0, 9rem) 44px; }
+  .editor-day-remove { width: 44px; height: 44px; margin-block: -6px; }
+  .editor-card .editor-link { position: relative; }
+  .editor-card .editor-link::after { content: ""; position: absolute; inset: -7px 0; }
+}
+/* The times move under the date, which keeps the row's remove button beside it. */
+@media (max-width: 760px) {
+  .editor-when, .editor-day { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+  .editor-when > :first-child, .editor-day > :first-child { grid-column: 1 / -1; }
+  .editor-day-removable { --remove-size: 32px; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) var(--remove-size); }
+  .editor-day-removable > :first-child { grid-column: 1 / 4; }
+  .editor-day-remove { grid-column: 4; grid-row: 1; }
+  /* Too narrow for a time and an X; a time is cleared by deleting its text. */
+  .editor-day-removable [data-slot="input-group-addon"] { display: none; }
+  .editor-days:has(.editor-day-removable) { gap: 16px; }
+}
+@media (max-width: 760px) and (pointer: coarse) {
+  .editor-day-removable { --remove-size: 44px; }
+}
+@media (max-width: 620px) {
+  .editor-tickets:has(.editor-ticket-days) { gap: 16px; }
+  .editor-ticket-days { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--remove-size); }
+  .editor-ticket-days .editor-ticket-name { grid-column: 1 / 3; }
+  .editor-ticket-days .editor-ticket-remove { grid-column: 3; grid-row: 1; }
+}
 .editor-delete { justify-self: start; padding-top: 8px; }
 /* Save stays in reach while a long description scrolls. */
 .editor-actions { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 12px 0; border-top: 1px solid var(--border); background: var(--background); }
@@ -191,8 +233,6 @@ html:has(.manage-page) { scroll-behavior: auto; }
   .tab { padding: 0 10px; }
   .event-name-input { font-size: 1.375rem; }
   /* The date takes its own line above the times. */
-  .editor-when { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
-  .editor-when > :first-child { grid-column: 1 / -1; }
   /* Lesson labels sit above their fields, so a start and end time fit side by side. */
   .normal-event-edit .editor-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .normal-event-edit .editor-row-top > span { padding-top: 0; }

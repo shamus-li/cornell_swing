@@ -12,7 +12,7 @@ function daysFromToday(days: number) {
 const nextMonday = (8 - new Date(`${todayInNewYork()}T00:00:00Z`).getUTCDay()) % 7
 const barn = { location: "Big Red Barn", locationUrl: "https://www.google.com/maps/search/?api=1&query=Big+Red+Barn&query_place_id=ChIJDR2olYqB0IkRr0G4Rv2qXek", room: "" }
 const straight = { location: "Willard Straight Hall", locationUrl: "https://www.google.com/maps/search/?api=1&query=Willard+Straight+Hall&query_place_id=ChIJjYXdZomB0IkRlRAhm3sQd9s" }
-const common = { published: true, updatedAt: new Date().toISOString(), rsvpCount: 0, studentPrice: "", generalPrice: "" }
+const common = { published: true, updatedAt: new Date().toISOString(), rsvpCount: 0, tickets: [], moreDays: [] }
 const lesson = (week: number, description: string, times = { startTime: "20:00", lessonEndTime: "21:00", socialStartTime: "21:00" }): ManagedEvent => ({ ...common, ...barn, id: `mock-lesson-${week}`, kind: "normal", title: "Monday Night Swing", date: daysFromToday(nextMonday + week * 7), endTime: "22:00", ...times, description })
 
 export const events: ManagedEvent[] = [
@@ -20,11 +20,15 @@ export const events: ManagedEvent[] = [
   lesson(1, "**Lesson:** Charleston for everyone", { startTime: "19:00", lessonEndTime: "20:00", socialStartTime: "19:00" }),
   lesson(3, "**Lesson:** Blues basics", { startTime: "21:00", lessonEndTime: "22:00", socialStartTime: "20:00" }),
   lesson(2, "Last week in the barn!", { startTime: "20:00", lessonEndTime: "", socialStartTime: "" }),
-  { ...common, ...straight, id: "mock-special-1", slug: "sweater-weather-swing", kind: "special", title: "Sweater Weather Swing", date: daysFromToday(nextMonday + 4), startTime: "18:15", endTime: "22:00", room: "Memorial Room", studentPrice: "10", generalPrice: "15", rsvpCount: 12,
+  { ...common, ...straight, id: "mock-special-1", slug: "sweater-weather-swing", kind: "special", title: "Sweater Weather Swing", date: daysFromToday(nextMonday + 4), startTime: "18:15", endTime: "22:00", room: "Memorial Room", tickets: [{ id: "student", name: "Student", price: "10", days: 1 }, { id: "general", name: "General", price: "15", days: 1 }], rsvpCount: 12,
     description: "## **🍁 Sweater Weather Swing is Back! 🍁**\n\nBundle up for an evening of live music with Aaron Ruiz. **No partner, no experience, and no worries required!**\n\n*Pay at the door (cash or Venmo)*" },
+  { ...common, ...straight, id: "mock-special-4", slug: "spring-workshop-weekend", kind: "special", title: "Spring Workshop Weekend", date: daysFromToday(nextMonday + 18), startTime: "19:00", endTime: "23:00", room: "Memorial Room",
+    moreDays: [{ date: daysFromToday(nextMonday + 19), startTime: "10:00", endTime: "17:00" }, { date: daysFromToday(nextMonday + 20), startTime: "11:00", endTime: "15:00" }], lastDate: daysFromToday(nextMonday + 20),
+    tickets: [{ id: "weekend", name: "Weekend pass", price: "60", days: 3 }, { id: "day", name: "One day", price: "25", days: 1 }],
+    description: "Three days of classes with a Friday night dance." },
   { ...common, ...barn, id: "mock-special-3", kind: "special", title: "Blues Night", date: daysFromToday(nextMonday + 12), startTime: "20:00", endTime: "23:00",
     description: "A slower social with a blues DJ." },
-  { ...common, ...straight, id: "mock-special-2", kind: "special", title: "Winter Ball", date: daysFromToday(nextMonday + 25), startTime: "19:00", endTime: "23:00", room: "Memorial Room", studentPrice: "5", generalPrice: "10",
+  { ...common, ...straight, id: "mock-special-2", kind: "special", title: "Winter Ball", date: daysFromToday(nextMonday + 25), startTime: "19:00", endTime: "23:00", room: "Memorial Room", tickets: [{ id: "student", name: "Student", price: "5", days: 1 }, { id: "general", name: "General", price: "10", days: 1 }],
     description: "Dress up and dance the semester out with a live big band." },
 ]
 

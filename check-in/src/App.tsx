@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input"
 import { Person } from "@/components/ui/person"
 import { QrCallout } from "@/components/ui/qr-callout"
 import PhoneInput from "react-phone-number-input/input"
+import { Payment } from "@/Payment"
 import { forgetWaiver, NonCornellWaiver, preloadWaiver } from "@/Waiver"
 import {
   Select,
@@ -39,6 +40,8 @@ import {
   PARTICIPANT_WAIVER_AFFILIATIONS,
   REQUEST_TIMEOUT_MS,
   type Affiliation,
+  type Attendee,
+  type DoorTicket,
   type Member,
   type NextSteps,
 } from "@/lib/checkin"
@@ -52,14 +55,6 @@ const MEMBER_SEARCH_CACHE_LIMIT = 12
 const CONFIRMATION_TIMEOUT_MS = 30_000
 const IDLE_RESET_MS = 90_000
 const NO_RESULTS = { key: "", members: [], failed: false }
-
-type Attendee = {
-  memberId: string | null
-  name: string
-  email: string
-  phone: string
-  affiliation: Affiliation
-}
 
 function memberSearchKey(query: string): string {
   return query.toLocaleLowerCase()
@@ -104,6 +99,7 @@ export default function App() {
   )
   const [next, setNext] = useState<NextSteps | null>(null)
   const [waiverAttendee, setWaiverAttendee] = useState<Attendee | null>(null)
+  const [payment, setPayment] = useState<{ attendee: Attendee; event: string; tickets: DoorTicket[] } | null>(null)
   const memberSearchCache = useRef(new Map<string, Member[]>())
 
   useEffect(() => {
@@ -274,7 +270,12 @@ export default function App() {
         body: JSON.stringify(attendee),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       })
-      const payload = (await response.json().catch(() => ({}))) as { message?: string; next?: NextSteps }
+      const payload = (await response.json().catch(() => ({}))) as { message?: string; next?: NextSteps; event?: string; tickets?: DoorTicket[] }
+      if (response.status === 402) {
+        setWaiverAttendee(null)
+        setPayment({ attendee, event: payload.event!, tickets: payload.tickets! })
+        return null
+      }
       if (!response.ok && response.status !== 409) {
         throw new Error(payload.message || "Check-in failed")
       }
@@ -300,17 +301,25 @@ export default function App() {
     }
   }
 
+  function confirmPayment(attendee: Attendee, steps: NextSteps | null) {
+    const firstName = attendee.name.split(/\s+/)[0]
+    setPayment(null)
+    setNext(steps)
+    setConfirmation(firstName ? `Checked in, ${firstName}!` : "Checked in!")
+  }
+
   function resetForm() {
     forgetWaiver()
     clearSelectedMember()
     setWaiverAttendee(null)
+    setPayment(null)
     setConfirmation(null)
     setNext(null)
   }
 
   // A half-filled form or an open waiver clears itself after 90 seconds without a touch, keypress, or
   // scroll, so the next person at the kiosk never sees it.
-  const hasEntry = !!(name || email || phone || affiliation || waiverAttendee)
+  const hasEntry = !!(name || email || phone || affiliation || waiverAttendee || payment)
   useEffect(() => {
     if (confirmation || !hasEntry) return
     const events = ["pointerdown", "keydown", "input", "scroll"]
@@ -361,6 +370,18 @@ export default function App() {
           <span className="relative">Check in another person</span>
         </Button>
       </main>
+    )
+  }
+
+  if (payment) {
+    return (
+      <Payment
+        attendee={payment.attendee}
+        event={payment.event}
+        tickets={payment.tickets}
+        onPaid={(steps) => confirmPayment(payment.attendee, steps)}
+        onLeave={resetForm}
+      />
     )
   }
 

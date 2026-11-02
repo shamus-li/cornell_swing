@@ -6,7 +6,6 @@ import { $getRoot, getNearestEditorFromDOMNode } from "lexical"
 import { afterEach, expect, it, vi } from "vitest"
 import Manage from "./Manage"
 import type { ManagedEvent } from "../events/model"
-import { todayInNewYork } from "../events/model"
 import { Markdown } from "../events/Markdown"
 
 const base = { date: "2099-10-17", startTime: "18:15", endTime: "22:00", location: "Dance hall", description: "**Live music**", published: true, updatedAt: "2026-09-20T12:00:00.000Z", rsvpCount: 0 }
@@ -130,10 +129,10 @@ it("creates a special event as a draft with unconfirmed times, opens its private
   await submit(container)
   const request = fetcher.mock.calls.find(([, init]) => init?.method === "POST")!
   expect(request[0]).toBe("/manage/api/events")
-  expect(JSON.parse(request[1]!.body as string)).toMatchObject({ kind: "special", title: "Winter dance", date: todayInNewYork(), startTime: "", endTime: "", published: false })
+  expect(JSON.parse(request[1]!.body as string)).toMatchObject({ kind: "special", title: "Winter dance", date: "", startTime: "", endTime: "", published: false })
   expect(container.textContent).toContain("Winter dance")
   expect(container.querySelector(".status-badge")?.textContent).toBe("Draft")
-  await act(async () => container.querySelector<HTMLButtonElement>(".event-row-button")!.click())
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>(".event-row-button")].find(row => row.textContent?.includes("Winter dance"))!.click())
   await clickButton(container, "Guests")
   expect(fetcher).toHaveBeenLastCalledWith("/manage/api/events/new-special/rsvps", expect.anything())
   expect(container.querySelector(".guest-list")?.textContent).toContain("Test Dancer")

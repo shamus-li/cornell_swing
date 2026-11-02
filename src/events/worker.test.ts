@@ -13,6 +13,10 @@ import alertEmailMigration from '../../migrations/events/0007_alert_email.sql?ra
 import lessonEndMigration from '../../migrations/events/0010_lesson_end.sql?raw'
 import socialStartMigration from '../../migrations/events/0018_social_start.sql?raw'
 import slugsMigration from '../../migrations/events/0019_event_slugs.sql?raw'
+import venmoMigration from '../../migrations/events/0008_venmo.sql?raw'
+import gmailMigration from '../../migrations/events/0012_gmail.sql?raw'
+import squareMigration from '../../migrations/events/0013_square.sql?raw'
+import doorMigration from '../../migrations/events/0020_door_charges.sql?raw'
 import worker from './worker'
 import siteWorker from '../worker'
 import { changeEventWithSheet } from './sheets'
@@ -60,6 +64,7 @@ beforeAll(async () => {
   await env.EVENTS_DB.exec(lessonEndMigration.replace(/^--.*$/gm, '').replaceAll('\n', ' '))
   await env.EVENTS_DB.exec(socialStartMigration.replace(/^--.*$/gm, '').replaceAll('\n', ' '))
   await env.EVENTS_DB.exec(slugsMigration.replace(/^--.*$/gm, '').replaceAll('\n', ' '))
+  for (const sql of [venmoMigration, gmailMigration, squareMigration, doorMigration]) await env.EVENTS_DB.exec(sql.replace(/^--.*$/gm, '').replaceAll('\n', ' '))
 })
 afterAll(() => network.disable())
 beforeEach(async () => { await env.EVENTS_DB.exec('DELETE FROM rsvp_sheet_connection; DELETE FROM rsvps; DELETE FROM events;') })
@@ -165,12 +170,24 @@ describe('event storage and RSVPs', () => {
     expect((await call(`/manage/api/events/${draft.id}`, 'PUT', { ...draft, published: true }, true)).status).toBe(200)
     expect(JSON.stringify(await (await call('/api/events')).json())).toContain(draft.id)
   })
+  it('refuses to delete an event with payments, which stay on the Balance Sheet under its name', async () => {
+    const created = await create({})
+    await env.EVENTS_DB.prepare("INSERT INTO square_payments (id, paidAt, amount, fee, cash, note, eventId) VALUES ('paid', '2026-10-17T22:30:00Z', 1000, 0, 1, '', ?)").bind(created.id).run()
+    expect((await call(`/manage/api/events/${created.id}`, 'DELETE', undefined, true)).status).toBe(409)
+    await env.EVENTS_DB.exec('DELETE FROM square_payments')
+    expect((await call(`/manage/api/events/${created.id}`, 'DELETE', undefined, true)).status).toBe(200)
+  })
   it('stores ticket prices on create and update, and rejects amounts that are not dollars', async () => {
-    const created = await create({ studentPrice: '5', generalPrice: '' })
-    expect((await call(`/manage/api/events/${created.id}`, 'PUT', { ...created, studentPrice: '7.50', generalPrice: '10' }, true)).status).toBe(200)
-    const { events } = await (await call('/api/events')).json() as { events: import('./model').EventRecord[] }
-    expect(events[0]).toMatchObject({ id: created.id, studentPrice: '7.50', generalPrice: '10' })
-    expect((await call('/manage/api/events', 'POST', { ...event, date: '2099-11-11', studentPrice: '$5' }, true)).status).toBe(400)
+    const student = { id: 'student', name: 'Student', price: '5', days: 1 }
+    const created = await create({ tickets: [student, { id: 'blank', name: 'Not announced', price: '', days: 1 }] })
+    expect((created as unknown as { tickets: unknown }).tickets).toEqual([student])
+    const tickets = [{ ...student, price: '7.50' }, { id: 'general', name: 'General', price: '10', days: 1 }]
+    expect((await call(`/manage/api/events/${created.id}`, 'PUT', { ...created, tickets }, true)).status).toBe(200)
+    const { events } = await (await call('/manage/api/events', 'GET', undefined, true)).json() as { events: unknown[] }
+    expect(events[0]).toMatchObject({ id: created.id, tickets })
+    expect((await call('/manage/api/events', 'POST', { ...event, date: '2099-11-11', tickets: [{ name: 'Student', price: '$5' }] }, true)).status).toBe(400)
+    expect((await call('/manage/api/events', 'POST', { ...event, date: '2099-11-11', tickets: [{ name: 'Pass', price: '20', days: 2 }] }, true)).status).toBe(400)
+    expect((await call('/manage/api/events', 'POST', { ...event, title: 'Long weekend', date: '2099-11-11', moreDays: [{ date: '2099-11-12', startTime: '10:00', endTime: '17:00' }], tickets: [{ name: 'Pass', price: '20', days: 2 }] }, true)).status).toBe(201)
   })
   it('produces escaped timezone-aware calendar downloads', async () => {
     const created = await create({ room: 'Garden Room', location: 'Willard Straight Hall' })

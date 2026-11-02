@@ -1,3 +1,6 @@
+import { findCharge, settleCardCharge } from '../../check-in/worker/door'
+import { findSession } from '../../check-in/worker/events'
+import { sendAlert } from './alert-email'
 import { dateKeyInTimeZone, timestampForSheet } from '../../check-in/worker/google'
 import type { SquareFeed, SquarePayment } from './finance'
 import { upsertLedgerRows, type LedgerRow } from './ledger'
@@ -57,28 +60,28 @@ export async function disconnectSquare(env: Env): Promise<void> {
   if (merchantId) await fetch(`${SQUARE}/oauth2/revoke`, { method: 'POST', headers: { Authorization: `Client ${env.SQUARE_APPLICATION_SECRET}`, 'Content-Type': 'application/json', 'Square-Version': VERSION }, body: JSON.stringify({ client_id: env.SQUARE_APPLICATION_ID, merchant_id: merchantId }) })
 }
 
-const minutesOf = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3))
-
-// The event a payment was taken at: one that day whose times, widened for early and late payers, include it.
-async function eventAt(env: Env, paidAt: string): Promise<string | null> {
-  const ms = Date.parse(paidAt)
-  const serial = timestampForSheet(ms, env.TIME_ZONE)
-  const minutes = (serial - Math.floor(serial)) * 24 * 60
-  const events = (await env.EVENTS_DB.prepare('SELECT id, date, startTime, endTime, lessonEndTime, socialStartTime FROM events WHERE date = ? ORDER BY startTime').bind(dateKeyInTimeZone(ms, env.TIME_ZONE)).all<Event>()).results
-  return events.find(event => {
-    const { startTime, endTime } = nightSpan(event)
-    return (!startTime || minutes >= minutesOf(startTime) - 120) && (!endTime || minutes <= minutesOf(endTime) + 180)
-  })?.id ?? null
-}
-
 async function savePayment(env: Env, payment: Payment): Promise<void> {
   const amount = payment.amount_money.amount - (payment.refunded_money?.amount ?? 0)
   const fee = (payment.processing_fee ?? []).reduce((sum, item) => sum + item.amount_money.amount, 0)
+  // The door queue puts its charge's ID in the note, which ties the payment to that person and event.
+  const chargeId = payment.note?.match(/door:(\S+)/)?.[1]
+  const charge = chargeId ? await findCharge(env, chargeId) : null
+  const known = await env.EVENTS_DB.prepare('SELECT 1 FROM square_payments WHERE id = ?').bind(payment.id).first()
+  const paidAt = Date.parse(payment.created_at)
+  const eventId = charge?.eventId ?? (await findSession(env, timestampForSheet(paidAt, env.TIME_ZONE)))?.id ?? null
   await env.EVENTS_DB.prepare('INSERT INTO square_payments (id, paidAt, amount, fee, cash, note, eventId) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET amount = excluded.amount, fee = excluded.fee, synced = 0 WHERE amount != excluded.amount OR fee != excluded.fee')
-    .bind(payment.id, payment.created_at, amount, fee, payment.source_type === 'CASH' ? 1 : 0, payment.note ?? '', await eventAt(env, payment.created_at)).run()
+    .bind(payment.id, payment.created_at, amount, fee, payment.source_type === 'CASH' ? 1 : 0, payment.note ?? '', eventId).run()
+  if (!charge) return
+  if (charge.status === 'pending' && payment.amount_money.amount === charge.amount) return settleCardCharge(env, charge, payment.id, paidAt)
+  // Money came in that doesn't match what the person owes, or they had already paid another way.
+  if (!known) await sendAlert(env, 'A door payment needs checking', [
+    `Square took $${(payment.amount_money.amount / 100).toFixed(2)} for ${charge.email}, whose ${charge.ticketName} ticket costs $${(charge.amount / 100).toFixed(2)} and was ${charge.status === 'pending' ? 'still waiting for payment' : `already marked ${charge.status}`}.`,
+    'They may need a refund in Square, or to be checked in by hand.',
+  ]).catch((error: unknown) => logError('Door payment alert failed', error))
 }
 
-export async function syncSquare(env: Env): Promise<void> {
+// Reads new payments from Square, which settles any door charge they pay for.
+export async function syncPayments(env: Env): Promise<void> {
   const connection = await env.EVENTS_DB.prepare('SELECT merchantId, accessToken, refreshToken, expiresAt, syncedAt FROM square_connection').first<Connection>()
   if (!connection) return
   const startedAt = new Date().toISOString()
@@ -105,6 +108,11 @@ export async function syncSquare(env: Env): Promise<void> {
     return
   }
   await env.EVENTS_DB.prepare('UPDATE square_connection SET syncedAt = ? WHERE id = 1').bind(startedAt).run()
+}
+
+// Only the cron and connecting run this, because two writers at once could claim the same new row on the sheet.
+export async function syncSquare(env: Env): Promise<void> {
+  await syncPayments(env)
   await syncLedger(env)
 }
 
@@ -149,5 +157,5 @@ export async function squareFeed(env: Env): Promise<SquareFeed> {
     env.EVENTS_DB.prepare('SELECT name FROM square_connection').first<string>('name'),
     env.EVENTS_DB.prepare('SELECT p.id, p.paidAt, p.amount, p.cash, p.note, e.title AS event FROM square_payments p LEFT JOIN events e ON e.id = p.eventId ORDER BY p.paidAt DESC LIMIT 50').all<Omit<SquarePayment, 'cash'> & { cash: number }>(),
   ])
-  return { square, payments: payments.results.map(payment => ({ ...payment, cash: payment.cash === 1 })) }
+  return { square, payments: payments.results.map(payment => ({ ...payment, cash: payment.cash === 1, note: payment.note.replace(/door:\S+\s*/, '') })) }
 }

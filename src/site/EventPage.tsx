@@ -1,7 +1,8 @@
+import { EventSchedule } from "../events/EventSchedule"
 import { useState } from "react"
 import { ClockIcon, MapPinIcon, TicketIcon } from "lucide-react"
 import { Button } from "../../check-in/src/components/ui/button"
-import { formatEventDate, formatEventPrices, formatEventTime, hasEventDetails, type EventRecord } from "../events/model"
+import { formatEventDate, formatEventDayRange, formatEventPrices, formatEventTime, hasEventDetails, isUpcoming, type EventRecord } from "../events/model"
 import { LessonTimes } from "../events/LessonTimes"
 import { EventLocation } from "../events/EventLocation"
 import { Markdown } from "../events/Markdown"
@@ -25,18 +26,21 @@ function ShareButton({ title }: { title: string }) {
 export function EventPage({ event, today }: EventPageData) {
   const [rsvping, setRsvping] = useState(false)
   const prices = formatEventPrices(event)
-  const upcoming = !event.date || event.date >= today
+  const upcoming = isUpcoming(event, today)
   return <>
     <article className="event-row event-page-event">
       <DateTile date={event.date} />
       <div className="event-content">
         <h1>{event.title}</h1>
         <div className="event-meta">
-          <p className="icon-line"><ClockIcon aria-hidden="true" /><span>{event.date && formatEventDate(event.date, { weekday: "long", month: "long", day: "numeric" })}{event.kind !== "normal" && `${event.date ? " · " : ""}${formatEventTime(event)}`}</span></p>
+          {event.moreDays?.length
+            ? <p className="icon-line"><ClockIcon aria-hidden="true" /><span>{formatEventDayRange(event)}</span></p>
+            : <p className="icon-line"><ClockIcon aria-hidden="true" /><span>{event.date && formatEventDate(event.date, { weekday: "long", month: "long", day: "numeric" })}{event.kind !== "normal" && `${event.date ? " · " : ""}${formatEventTime(event)}`}</span></p>}
           {event.kind === "normal" && <LessonTimes event={event} />}
           {(event.location || event.room) && <p className="icon-line"><MapPinIcon aria-hidden="true" /><span><EventLocation event={event} /></span></p>}
           {prices.length > 0 && <p className="icon-line"><TicketIcon aria-hidden="true" /><span>{prices.join(" · ")}</span></p>}
         </div>
+        <EventSchedule event={event} />
         <Markdown>{event.description}</Markdown>
         {!upcoming && <p className="event-muted">This event has passed.</p>}
         <div className="event-actions">
