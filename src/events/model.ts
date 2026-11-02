@@ -4,6 +4,8 @@ type EventKind = 'normal' | 'special'
 
 export interface EventRecord {
   id: string
+  // The event's address, /events/slug; set when the event is saved.
+  slug?: string | null
   kind: EventKind
   title: string
   date: string

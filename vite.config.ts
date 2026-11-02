@@ -27,6 +27,7 @@ export default defineConfig({
         checkin: fileURLToPath(new URL("./check-in/index.html", import.meta.url)),
         redirects: fileURLToPath(new URL("./redirects/index.html", import.meta.url)),
         dances: fileURLToPath(new URL("./events/index.html", import.meta.url)),
+        event: fileURLToPath(new URL("./events/event/index.html", import.meta.url)),
       },
     },
   },

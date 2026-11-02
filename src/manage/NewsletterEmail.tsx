@@ -112,7 +112,7 @@ export function FeaturedBlock({ event }: { event: EventRecord }) {
     <h2 style={{ margin: "0 0 8px", fontSize: 26, lineHeight: "32px", fontWeight: 700 }}>{event.title}</h2>
     <p style={meta}>{fullDate(event.date)} · {time(event)}<br /><Place event={event} />{prices.length > 0 && <Prices prices={prices} />}</p>
     {event.description && <EmailMarkdown>{event.description}</EmailMarkdown>}
-    <EmailButton href={site}>RSVP</EmailButton>
+    <EmailButton href={event.slug ? `${site}events/${event.slug}` : site}>RSVP</EmailButton>
   </>
 }
 

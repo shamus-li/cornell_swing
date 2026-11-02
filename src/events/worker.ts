@@ -10,10 +10,12 @@ import { isRecord, parseRedirect } from '../redirects/redirect'
 import { alertEmailStatus, AlertEmailError, saveAlertEmail, sendAlert } from './alert-email'
 import { isValidEmail } from '../lib/email'
 import { buildCampusGroups, campusGroupsKey, summarizeCampusGroups, type CampusGroupsData } from './campusgroups'
-import { formatEventLocation, hasEventDetails, todayInNewYork, validateEvent, validateRSVP, type EventRecord, type ManagedEvent, type RSVP } from './model'
+import { formatEventDate, formatEventLocation, formatEventTime, formatLessonSchedule, hasEventDetails, todayInNewYork, validateEvent, validateRSVP, type EventRecord, type ManagedEvent, type RSVP } from './model'
 import { connectSquare, disconnectSquare, squareConnectUrl, squareFeed } from './square'
 import { listGroupNames, listOutsideEvents, saveOutsideEvent, validateEventRequest, validateOutsideEvent } from './outside'
 import { listFeeds, readFeeds, validateFeed } from './feeds'
+import { assignSlug } from './slugs'
+import { EventPage } from '../site/EventPage'
 import { DancesPage, type DanceSnapshot } from '../site/DancesPage'
 
 // `code` lets the manager tell specific failures apart, such as "stale" for an event saved elsewhere since it was opened.
@@ -112,7 +114,7 @@ function calendar(event: EventRecord, origin: string): string {
     'BEGIN:VEVENT', `UID:${escape(event.id)}@swingsyndicate.club`, `DTSTAMP:${new Date(event.updatedAt).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')}`,
     event.startTime ? `DTSTART;TZID=America/New_York:${date}T${event.startTime.replace(':', '')}00` : `DTSTART;VALUE=DATE:${date}`]
   if (event.endTime) lines.push(`DTEND;TZID=America/New_York:${date}T${event.endTime.replace(':', '')}00`)
-  lines.push(`SUMMARY:${escape(event.title)}`, `LOCATION:${escape(formatEventLocation(event))}`, `DESCRIPTION:${escape(event.description)}`, `URL:${origin}/#special-events`, 'END:VEVENT', 'END:VCALENDAR')
+  lines.push(`SUMMARY:${escape(event.title)}`, `LOCATION:${escape(formatEventLocation(event))}`, `DESCRIPTION:${escape(event.description)}`, `URL:${origin}${event.slug ? `/events/${event.slug}` : '/#special-events'}`, 'END:VEVENT', 'END:VCALENDAR')
   // Fold by UTF-8 octets so non-ASCII event descriptions remain valid iCalendar.
   return lines.map(line => {
     let result = '', length = 0
@@ -123,6 +125,38 @@ function calendar(event: EventRecord, origin: string): string {
     }
     return result
   }).join('\r\n') + '\r\n'
+}
+
+// One event's shareable page, with its details in the tags social sites read for link previews. A slug the event
+// used to have redirects to its current one, so links already shared keep working.
+async function eventPage(request: Request, env: Env, url: URL, slug: string): Promise<Response> {
+  const row = await env.EVENTS_DB.prepare('SELECT events.* FROM event_slugs JOIN events ON events.id = eventId WHERE event_slugs.slug = ? AND published = 1').bind(slug).first<Row<EventRecord>>()
+  if (!row) return Response.redirect(new URL('/events', url), 302)
+  const event = fromRow(row)
+  if (event.slug !== slug) return Response.redirect(new URL(`/events/${event.slug}`, url), 301)
+  const assetRequest = new Request(new URL('/events/event/', url), request)
+  assetRequest.headers.delete('If-None-Match')
+  assetRequest.headers.delete('If-Modified-Since')
+  const response = await env.ASSETS.fetch(assetRequest)
+  if (!response.ok) return response
+  const today = todayInNewYork()
+  const when = event.date ? formatEventDate(event.date, { weekday: 'long', month: 'long', day: 'numeric' }) : ''
+  const summary = [when, event.kind === 'normal' ? formatLessonSchedule(event).join(', ') : event.startTime && formatEventTime(event), formatEventLocation(event)].filter(Boolean).join(' · ')
+  const address = new URL(`/events/${event.slug}`, url).href
+  const absolute = { element: (element: Element) => { element.setAttribute('content', new URL(element.getAttribute('content') ?? '', url).href) } }
+  const content = (value: string) => ({ element: (element: Element) => { element.setAttribute('content', value) } })
+  return new HTMLRewriter()
+    .on('title', { element: element => { element.setInnerContent(`${event.title} · Swing Syndicate at Cornell`) } })
+    .on('meta[name="description"]', content(summary))
+    .on('meta[property="og:title"]', content(event.title))
+    .on('meta[property="og:description"]', content(summary))
+    .on('meta[property="og:url"]', content(address))
+    .on('meta[property="og:image"]', absolute)
+    .on('meta[name="twitter:image"]', absolute)
+    .on('link[rel="canonical"]', { element: element => { element.setAttribute('href', address) } })
+    .on('#root', { element: element => { element.setInnerContent(renderToString(createElement(EventPage, { event, today })), { html: true }) } })
+    .on('#event-data', { element: element => { element.setInnerContent(JSON.stringify({ event, today }).replaceAll('<', '\\u003c'), { html: true }) } })
+    .transform(response)
 }
 
 async function route(request: Request, env: Env): Promise<Response> {
@@ -338,8 +372,9 @@ async function route(request: Request, env: Env): Promise<Response> {
       if (sheetUnchanged) await update()
       else await changeEventWithSheet(env, current, input.title, update, input.kind)
     }
+    const slug = await assignSlug(env.EVENTS_DB, id, input)
     await clearEventsCache(url)
-    return json({ event: { ...input, id, updatedAt } }, method === 'POST' ? 201 : 200)
+    return json({ event: { ...input, id, updatedAt, slug } }, method === 'POST' ? 201 : 200)
   }
   if (managerMatch && !managerMatch[2] && method === 'DELETE') {
     const current = await env.EVENTS_DB.prepare('SELECT * FROM events WHERE id = ?').bind(managerMatch[1]).first<EventRecord>()
@@ -374,6 +409,8 @@ async function route(request: Request, env: Env): Promise<Response> {
     const snapshot = JSON.stringify(listings).replaceAll('<', '\\u003c')
     return new HTMLRewriter().on('#root', { element: element => { element.setInnerContent(html, { html: true }) } }).on('#dances-data', { element: element => { element.setInnerContent(snapshot, { html: true }) } }).transform(response)
   }
+  const slugMatch = path.match(/^\/events\/([^/]+)$/)
+  if (slugMatch && method === 'GET') return eventPage(request, env, url, slugMatch[1])
   if (path !== '/' || method !== 'GET') return env.ASSETS.fetch(request)
   const assetRequest = new Request(request)
   assetRequest.headers.delete('If-None-Match')
@@ -409,7 +446,7 @@ export default {
     const pathname = new URL(request.url).pathname
     if (managerPage(pathname)) response.headers.set('X-Robots-Tag', 'noindex, nofollow')
     response.headers.set('X-Content-Type-Options', 'nosniff')
-    if (managerPage(pathname) || ['/', '/events', '/events/'].includes(pathname)) {
+    if (managerPage(pathname) || pathname === '/' || pathname === '/events' || pathname.startsWith('/events/')) {
       response.headers.set('Cache-Control', 'no-store')
       response.headers.delete('ETag')
       response.headers.delete('Last-Modified')

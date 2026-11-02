@@ -16,7 +16,7 @@ function listings({ events, outside, today }: DanceSnapshot): Listing[] {
   const ours = events.filter(event => event.date >= today).map((event): Listing => ({
     key: event.id, date: event.date, startTime: nightSpan(event).startTime, title: event.title, group: "Swing Syndicate", styles: ["Swing"],
     time: formatEventTime(event), ...(event.kind === "normal" && { lesson: event }), venue: formatEventLocation(event), price: formatEventPrices(event).join(" · "),
-    href: `/#event-${event.id}`, action: event.kind === "special" && hasEventDetails(event) ? "RSVP" : "Details", ours: true,
+    href: `/events/${event.slug}`, action: event.kind === "special" && hasEventDetails(event) ? "RSVP" : "Details", ours: true,
   }))
   const theirs = outside.filter(event => event.date >= today).map((event): Listing => ({
     key: event.id, date: event.date, startTime: event.startTime, title: event.title, group: event.groupName, styles: event.styles,

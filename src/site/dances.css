@@ -13,6 +13,11 @@
 .request-times { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .dances h2.dances-month { padding-bottom: 8px; border-bottom: 1px solid var(--border); font-size: 1.375rem; }
 
+/* /events/slug: one event, with the same row layout as the lists. */
+.event-page { padding: 40px 0 0; }
+.event-page-event { border-bottom: 0; }
+.event-page h1:not([data-slot]) { margin-bottom: 12px; font-size: clamp(2rem, 4vw, 2.5rem); }
+
 .dance-row:last-child { border-bottom: 0; }
 .dance-row.is-ours { border-bottom-color: transparent; border-radius: 12px; background: color-mix(in srgb, var(--primary) 6%, var(--background)); }
 .dance-row .event-content h3 { font-size: 1.125rem; }

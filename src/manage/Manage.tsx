@@ -245,6 +245,7 @@ function EventEditor({ event, leaveGuard, onSave, onReplace, onDelete, onCancel,
         <DateTile date={draft.date} />
         <TitleInput value={draft.title} disabled={busy} onChange={value => change("title", value)} />
       </div>
+      {event.published && event.slug && <div className="editor-share"><a href={`/events/${event.slug}`} target="_blank" rel="noreferrer">swingsyndicate.club/events/{event.slug}</a><CopyButton text={`${window.location.origin}/events/${event.slug}`} label="Copy link" /></div>}
       <div className="editor-card">
         <div className="editor-field"><CalendarIcon aria-hidden="true" /><div className="editor-when">
           <EventDatePicker allowTba icon={false} disabled={busy} value={draft.date} onChange={value => change("date", value)} />
@@ -295,14 +296,14 @@ function PriceInput({ label, value = "", disabled, onChange }: { label: string; 
 }
 
 // Tab-separated rows paste into Google Sheets as Name and Email columns.
-function CopyGuestsButton({ rsvps }: { rsvps: RSVP[] }) {
+function CopyButton({ text, label }: { text: string; label: string }) {
   const [copied, setCopied] = useState(false)
   async function copy() {
-    await navigator.clipboard.writeText(rsvps.map(rsvp => `${rsvp.name}\t${rsvp.email}`).join("\n"))
+    await navigator.clipboard.writeText(text)
     setCopied(true)
     window.setTimeout(() => setCopied(false), 2000)
   }
-  return <Button variant="outline" size="sm" onClick={() => void copy()}>{copied ? <Check /> : <Copy />}Copy names and emails<span className="sr-only" aria-live="polite">{copied ? "Copied" : ""}</span></Button>
+  return <Button type="button" variant="outline" size="sm" onClick={() => void copy()}>{copied ? <Check /> : <Copy />}{label}<span className="sr-only" aria-live="polite">{copied ? "Copied" : ""}</span></Button>
 }
 
 const rsvpDate = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "America/New_York" })
@@ -321,7 +322,7 @@ function GuestList({ event, onChange }: { event: EventRecord; onChange: () => vo
   return <>
     {error && <p role="alert" className="event-error manage-notice">{error}</p>}
     {rsvps === null ? !error && <p role="status" className="event-muted manage-notice">Loading guests…</p> : rsvps.length ? <>
-      <div className="guest-summary"><span className="event-muted">{rsvps.length} guest{rsvps.length === 1 ? "" : "s"}</span><CopyGuestsButton rsvps={rsvps} /></div>
+      <div className="guest-summary"><span className="event-muted">{rsvps.length} guest{rsvps.length === 1 ? "" : "s"}</span><CopyButton text={rsvps.map(rsvp => `${rsvp.name}\t${rsvp.email}`).join("\n")} label="Copy names and emails" /></div>
       <ul className="guest-list">
       {rsvps.map(rsvp => <li className="guest-row" key={rsvp.email}>
         <Person name={rsvp.name} detail={rsvp.email} />

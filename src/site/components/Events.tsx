@@ -13,7 +13,7 @@ import { DateTile } from "../../events/DateTile"
 // `unavailable` is set when the server could not read the events, so the page says so instead of "no events".
 export type EventSnapshot = { events: EventRecord[]; today: string; unavailable?: boolean }
 
-function CalendarLinks({ event, scope = "page" }: { event: EventRecord; scope?: "page" | "rsvp" }) {
+export function CalendarLinks({ event, scope = "page" }: { event: EventRecord; scope?: "page" | "rsvp" }) {
   if (event.kind !== "special" || !event.date || !event.startTime || !event.endTime) return null
   const stamp = (time: string) => `${event.date.replaceAll("-", "")}T${time.replace(":", "")}00`
   const query = new URLSearchParams({ action: "TEMPLATE", text: event.title, dates: `${stamp(event.startTime)}/${stamp(event.endTime)}`, ctz: "America/New_York", location: formatEventLocation(event), details: event.description })
@@ -27,7 +27,7 @@ function CalendarLinks({ event, scope = "page" }: { event: EventRecord; scope?: 
   </>
 }
 
-function RsvpDialog({ event, onClose }: { event: EventRecord; onClose: () => void }) {
+export function RsvpDialog({ event, onClose }: { event: EventRecord; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const [state, setState] = useState<"idle" | "saving" | "done">("idle")
   const [error, setError] = useState("")
@@ -150,7 +150,7 @@ export function EventSections(snapshot: EventSnapshot) {
       <div className="event-list">{(showPastSpecial ? [...pastSpecial].reverse() : upcomingSpecial).map(event => { const prices = formatEventPrices(event); return <article key={event.id} id={`event-${event.id}`} className={`event-row${event === nextSpecial ? " is-next" : ""}`}>
         <DateTile date={event.date} />
         <div className="event-content">
-          <h3>{event.title}</h3>
+          <h3>{event.slug ? <a href={`/events/${event.slug}`}>{event.title}</a> : event.title}</h3>
           {(event.location || event.room || event.startTime || prices.length > 0) && <div className="event-meta"><p className="icon-line"><ClockIcon aria-hidden="true" /><span>{formatEventTime(event)}</span></p><p className="icon-line"><MapPinIcon aria-hidden="true" /><span><EventLocation event={event} /></span></p>{prices.length > 0 && <p className="icon-line"><TicketIcon aria-hidden="true" /><span>{prices.map((price, index) => <Fragment key={price}>{index > 0 && " · "}<span className="price">{price}</span></Fragment>)}</span></p>}</div>}
           <Markdown>{event.description}</Markdown>
           {(!event.date || event.date >= today) && <div className="event-actions">{hasEventDetails(event) && <Button onClick={() => setSelected(event)}>RSVP</Button>}<CalendarLinks event={event} /></div>}
