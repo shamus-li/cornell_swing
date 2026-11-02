@@ -117,7 +117,7 @@ function eventLabel(title: string, date: string): string {
 }
 
 // Payments during an event become one Square row, after Square's fees, and one cash row for that event,
-// recomputed from every payment so the totals stay right however often it runs. Other payments get rows of their own.
+// recomputed from every payment so the totals stay right however often it runs. Other payments are batched by day the same way.
 async function syncLedger(env: Env): Promise<void> {
   const pending = (await env.EVENTS_DB.prepare('SELECT id, paidAt, amount, fee, cash, note, eventId FROM square_payments WHERE synced = 0').all<Stored>()).results
   if (!pending.length) return
@@ -129,8 +129,16 @@ async function syncLedger(env: Env): Promise<void> {
     rows.push({ id: eventId, date: event.date, source: 'Square', description: `${label}: Square Profits`, amount: (totals.card - totals.fees) / 100 })
     rows.push({ id: eventId, date: event.date, source: 'Cash', description: `${label}: Cash Profits`, amount: totals.cash / 100 })
   }
-  for (const payment of pending.filter(payment => payment.eventId === null)) {
-    rows.push({ id: payment.id, date: dateKeyInTimeZone(Date.parse(payment.paidAt), env.TIME_ZONE), source: payment.cash ? 'Cash' : 'Square', description: `Square payment${payment.note ? `: ${payment.note}` : ''}`, amount: (payment.amount - payment.fee) / 100 })
+  const dayOf = (payment: Stored) => dateKeyInTimeZone(Date.parse(payment.paidAt), env.TIME_ZONE)
+  const days = new Set(pending.filter(payment => payment.eventId === null).map(dayOf))
+  if (days.size) {
+    const others = (await env.EVENTS_DB.prepare('SELECT id, paidAt, amount, fee, cash, note, eventId FROM square_payments WHERE eventId IS NULL').all<Stored>()).results
+    for (const date of days) {
+      const day = others.filter(payment => dayOf(payment) === date)
+      const net = (cash: number) => day.filter(payment => payment.cash === cash).reduce((sum, payment) => sum + payment.amount - payment.fee, 0) / 100
+      rows.push({ id: `payments-${date}`, date, source: 'Square', description: 'Square payments', amount: net(0) })
+      rows.push({ id: `payments-${date}`, date, source: 'Cash', description: 'Cash payments', amount: net(1) })
+    }
   }
   await upsertLedgerRows(env, rows)
   await env.EVENTS_DB.batch(pending.map(payment => env.EVENTS_DB.prepare('UPDATE square_payments SET synced = 1 WHERE id = ?').bind(payment.id)))

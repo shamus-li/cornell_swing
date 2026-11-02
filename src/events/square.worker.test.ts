@@ -106,7 +106,7 @@ describe('Square feed', () => {
     await syncSquare(env)
     expect(ledgerRow('haunt', 'Square')).toEqual(['26-27', 46312, 14.31, 'Square', 'Y', 'Fall 26 The Lindy Haunt: Square Profits'])
     expect(ledgerRow('haunt', 'Cash')).toEqual(['26-27', 46312, 10, 'Cash', 'Y', 'Fall 26 The Lindy Haunt: Cash Profits'])
-    expect(ledgerRow('shirt', 'Square')).toEqual(['26-27', 46312, 19.33, 'Square', 'Y', 'Square payment: T-shirt'])
+    expect(ledgerRow('payments-2026-10-17', 'Square')).toEqual(['26-27', 46312, 19.33, 'Square', 'Y', 'Square payments'])
     expect(await (await manage('/square')).json()).toMatchObject({ payments: [{ id: 'cash-1', event: 'The Lindy Haunt 👻', cash: true, amount: 1000 }, { id: 'card-2' }, { id: 'card-1' }, { id: 'shirt', event: null }] })
 
     // A refund the next day updates the event's row in place.
@@ -120,6 +120,14 @@ describe('Square feed', () => {
     payments[2] = payment('cash-1', '2026-10-17T23:15:00Z', 1000, { source_type: 'CASH', refunded_money: { amount: 1000, currency: 'USD' } })
     await syncSquare(env)
     expect(ledgerRow('haunt', 'Cash')?.[2]).toBe(0)
+  })
+  it('batches a day of payments outside an event into one row', async () => {
+    payments.push(payment('shirt', '2026-10-17T15:00:00Z', 2000, fee(67)))
+    await syncSquare(env)
+    payments.push(payment('hat', '2026-10-17T15:30:00Z', 1000, fee(41)))
+    await syncSquare(env)
+    expect(Object.values(sheet)).toEqual([{ id: 'payments-2026-10-17', source: 'Square' }])
+    expect(ledgerRow('payments-2026-10-17', 'Square')?.[2]).toBe(28.92)
   })
   it('adds no row for a total of zero', async () => {
     payments.push(payment('card-1', '2026-10-17T22:30:00Z', 1000, fee(41)))

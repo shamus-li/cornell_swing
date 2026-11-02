@@ -1,7 +1,7 @@
 import { getGoogleAccessToken } from '../../check-in/worker/google'
 
 // Rows the site owns on the Balance Sheet's Transaction History tab. Hidden column H holds the event's ID, or
-// the Square payment's ID for a payment outside an event. An ID and source together name one row, so writing
+// payments-<date> for a day's payments outside an event. An ID and source together name one row, so writing
 // them again updates that row wherever it now sits, even after the treasurer sorts the tab.
 export type LedgerRow = {
   id: string
