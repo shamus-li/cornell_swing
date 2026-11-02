@@ -39,12 +39,17 @@ export function DancesPage(snapshot: DanceSnapshot) {
     months.set(month, [...months.get(month) ?? [], listing])
   }
   return <>
-    <div className="dances-title"><h1>Community Dance Events</h1><RequestEvent /></div>
-    {snapshot.unavailable ? <p className="event-muted" role="status">Events couldn't be loaded. Refresh the page to try again.</p> : <>
-      {styles.length > 1 && <div className="filter-chips" role="group" aria-label="Dance styles">
+    <div className="dances-heading">
+      <h1>Community Dance Events</h1>
+      <div className="dances-toolbar">
+        {!snapshot.unavailable && styles.length > 1 && <div className="filter-chips" role="group" aria-label="Dance styles">
         <button type="button" aria-pressed={!Object.keys(filters).length} onClick={() => setFilters({})}>All</button>
         {styles.map(name => <button key={name} type="button" aria-pressed={filters[name] === "only"} data-hidden={filters[name] === "hide" || undefined} aria-label={filters[name] === "hide" ? `${name}, hidden` : undefined} onClick={() => cycle(name)}>{filters[name] === "hide" && <EyeOffIcon aria-hidden="true" />}{name}</button>)}
-      </div>}
+        </div>}
+        <RequestEvent />
+      </div>
+    </div>
+    {snapshot.unavailable ? <p className="event-muted" role="status">Events couldn't be loaded. Refresh the page to try again.</p> : <>
       {[...months].map(([month, items]) => <section key={month} aria-label={month}>
         <h2 className="dances-month">{month}</h2>
         {items.map(listing => <article key={listing.key} className={`event-row dance-row${listing.ours ? " is-ours" : ""}`}>
