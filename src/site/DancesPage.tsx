@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { ClockIcon, EyeOffIcon, MapPinIcon, TicketIcon } from "lucide-react"
+import { ClockIcon, MapPinIcon, TicketIcon } from "lucide-react"
 import { Button } from "../../check-in/src/components/ui/button"
 import { formatEventDate, formatEventLocation, formatEventPrices, formatEventTime, formatLessonSchedule, hasEventDetails, type EventRecord } from "../events/model"
 import type { OutsideEvent } from "../events/outside"
@@ -25,14 +25,11 @@ function listings({ events, outside, today }: DanceSnapshot): Listing[] {
 }
 
 export function DancesPage(snapshot: DanceSnapshot) {
-  // Clicking a style shows only the chosen styles, clicking it again hides that style, and a third click clears it.
-  const [filters, setFilters] = useState<Record<string, "only" | "hide">>({})
+  // Nothing chosen shows every dance; an event with several styles shows when any of them is chosen.
+  const [chosen, setChosen] = useState<string[]>([])
   const all = listings(snapshot)
   const styles = [...new Set(all.flatMap(listing => listing.styles))]
-  const only = styles.filter(name => filters[name] === "only")
-  // An event with several styles shows while any of them is chosen, or not hidden when nothing is chosen.
-  const shown = all.filter(listing => listing.styles.some(style => filters[style] !== "hide" && (!only.length || only.includes(style))))
-  const cycle = (name: string) => setFilters(({ [name]: current, ...rest }) => current === "hide" ? rest : { ...rest, [name]: current === "only" ? "hide" : "only" })
+  const shown = all.filter(listing => !chosen.length || listing.styles.some(style => chosen.includes(style)))
   const months = new Map<string, Listing[]>()
   for (const listing of shown) {
     const month = formatEventDate(listing.date, { month: "long", year: "numeric" })
@@ -43,8 +40,8 @@ export function DancesPage(snapshot: DanceSnapshot) {
       <h1>Community Dance Events</h1>
       <div className="dances-toolbar">
         {!snapshot.unavailable && styles.length > 1 && <div className="filter-chips" role="group" aria-label="Dance styles">
-        <button type="button" aria-pressed={!Object.keys(filters).length} onClick={() => setFilters({})}>All</button>
-        {styles.map(name => <button key={name} type="button" aria-pressed={filters[name] === "only"} data-hidden={filters[name] === "hide" || undefined} aria-label={filters[name] === "hide" ? `${name}, hidden` : undefined} onClick={() => cycle(name)}>{filters[name] === "hide" && <EyeOffIcon aria-hidden="true" />}{name}</button>)}
+        <button type="button" aria-pressed={!chosen.length} onClick={() => setChosen([])}>All</button>
+        {styles.map(name => <button key={name} type="button" aria-pressed={chosen.includes(name)} onClick={() => setChosen(current => current.includes(name) ? current.filter(item => item !== name) : [...current, name])}>{name}</button>)}
         </div>}
         <RequestEvent />
       </div>
@@ -66,7 +63,7 @@ export function DancesPage(snapshot: DanceSnapshot) {
           </div>
         </article>)}
       </section>)}
-      {!shown.length && <p className="event-muted">No upcoming dances are listed{Object.keys(filters).length ? " for these styles" : ""}.</p>}
+      {!shown.length && <p className="event-muted">No upcoming dances are listed{chosen.length ? " for these styles" : ""}.</p>}
     </>}
   </>
 }

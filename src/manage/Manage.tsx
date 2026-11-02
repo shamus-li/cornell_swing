@@ -48,7 +48,7 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
   const [outside, setOutside] = useState<OutsideEvent[]>([])
   const [groups, setGroups] = useState<string[]>([])
   const [editingOutside, setEditingOutside] = useState<string | null>(null)
-  const [groupFilter, setGroupFilter] = useState<"all" | "ours" | "theirs">("all")
+  const [groupFilter, setGroupFilter] = useState<"all" | "ours" | "theirs">("ours")
   const normalEditor = useRef<NormalEventHandle>(null)
   const switching = useRef(false)
   // Set by the event editor while it has unsaved edits; Back and Forward then ask before leaving.
@@ -129,9 +129,10 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
     <span className="event-row-text"><span className="event-row-title"><strong>{event.title}</strong>{!event.published && <DraftBadge />}</span><span className="event-muted">{eventSummary(event)}</span></span>
     <span className="guest-count event-muted">{event.rsvpCount} RSVP{event.rsvpCount === 1 ? "" : "s"}</span>
   </Button>
-  // Upcoming events read from email, which an organizer publishes or deletes.
+  // Upcoming requested or imported events, which an organizer publishes or deletes.
+  const waiting = outside.filter(event => event.status === "review" && event.date >= todayInNewYork())
   const shownOutside = groupFilter === "ours" ? [] : outside
-  const review = shownOutside.filter(event => event.status === "review" && event.date >= todayInNewYork())
+  const review = groupFilter === "ours" ? [] : waiting
   const outsideRow = (event: OutsideEvent) => editingOutside === event.id
     ? <OutsideEventForm key={event.id} event={event} groups={groups} onSave={acceptOutside} onCancel={() => setEditingOutside(null)} onDelete={() => { setOutside(current => current.filter(item => item.id !== event.id)); setEditingOutside(null) }} />
     : <Button key={event.id} variant="ghost" className="event-row-button" disabled={editingOutside !== null} onClick={() => setEditingOutside(event.id)}>
@@ -154,7 +155,7 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
         </div>
         <Tabs label="Event views" tabs={views} value={view} onChange={changeView} />
         {view === "special" && <div className="filter-chips manage-filter" role="group" aria-label="Groups">
-          {groupFilters.map(({ value, label }) => <button key={value} type="button" aria-pressed={groupFilter === value} onClick={() => setGroupFilter(value)}>{label}</button>)}
+          {groupFilters.map(({ value, label }) => <button key={value} type="button" aria-pressed={groupFilter === value} onClick={() => setGroupFilter(value)}>{label}{value === "theirs" && waiting.length > 0 && ` (${waiting.length} to review)`}</button>)}
         </div>}
         {notice && <p role="status" className="manage-notice">{notice}</p>}
         {error && <p role="alert" className="event-error manage-notice">{error} <Button variant="link" size="sm" onClick={() => window.location.reload()}>Reload</Button></p>}

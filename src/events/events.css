@@ -100,12 +100,10 @@ time { font-variant-numeric: tabular-nums; }
   [data-slot="popover-content"] { border: 0 solid var(--border); outline: none; }
 }
 
-/* Toggle buttons that filter a list, wrapping when there are many. A hidden choice is dashed and struck through. */
+/* Toggle buttons that filter a list, wrapping when there are many. */
 .filter-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .filter-chips button { padding: 4px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--background); color: var(--foreground); font: 500 var(--small-font-size)/1.5 var(--sans); cursor: pointer; }
 .filter-chips button:hover { background: var(--muted); }
 .filter-chips button[aria-pressed="true"] { border-color: var(--foreground); background: var(--foreground); color: var(--background); }
-.filter-chips button[data-hidden] { display: inline-flex; align-items: center; gap: 4px; border-style: dashed; color: var(--muted-foreground); text-decoration: line-through; }
-.filter-chips button svg { width: 14px; height: 14px; }
 .filter-chips button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 @media (pointer: coarse) { .filter-chips button { min-height: 40px; padding-inline: 16px; } }
