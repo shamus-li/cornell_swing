@@ -112,3 +112,7 @@ time { font-variant-numeric: tabular-nums; }
 /* An event's title links to its page, underlined only on hover. */
 .event-list h3 a { text-decoration: none; }
 .event-list h3 a:hover { text-decoration: underline; }
+
+/* Location links stay clickable without competing with the text around them. */
+.icon-line a { text-decoration-color: color-mix(in srgb, currentColor 30%, transparent); }
+.icon-line a:hover { text-decoration-color: currentColor; }

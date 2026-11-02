@@ -312,11 +312,11 @@ if (out.textContent) {
     if ((!id && method === 'POST') || (id && method === 'PUT')) {
       let input
       try { input = validateFeed(await readBody(request)) } catch (error) { if (error instanceof HttpError) throw error; throw new HttpError(400, (error as Error).message) }
-      const values = [input.name, input.style, input.feedUrl, input.skipTitles]
+      const values = [input.name, input.style, input.city, input.siteUrl, input.feedUrl, input.skipTitles]
       // A new feed joins the group with the same name if one exists, such as a group whose events were typed in.
       const saved = await (id
-        ? env.EVENTS_DB.prepare('UPDATE dance_groups SET name = ?, style = ?, feedUrl = ?, skipTitles = ? WHERE id = ? RETURNING id').bind(...values, id)
-        : env.EVENTS_DB.prepare('INSERT INTO dance_groups (name, style, feedUrl, skipTitles, id) VALUES (?, ?, ?, ?, ?) ON CONFLICT (name) DO UPDATE SET style = excluded.style, feedUrl = excluded.feedUrl, skipTitles = excluded.skipTitles RETURNING id').bind(...values, crypto.randomUUID())
+        ? env.EVENTS_DB.prepare('UPDATE dance_groups SET name = ?, style = ?, city = ?, siteUrl = ?, feedUrl = ?, skipTitles = ? WHERE id = ? RETURNING id').bind(...values, id)
+        : env.EVENTS_DB.prepare('INSERT INTO dance_groups (name, style, city, siteUrl, feedUrl, skipTitles, id) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (name) DO UPDATE SET style = excluded.style, city = excluded.city, siteUrl = excluded.siteUrl, feedUrl = excluded.feedUrl, skipTitles = excluded.skipTitles RETURNING id').bind(...values, crypto.randomUUID())
       ).first<{ id: string }>().catch((error: unknown) => {
         if (String(error).includes('UNIQUE')) throw new HttpError(409, 'Another group already has this name.')
         throw error

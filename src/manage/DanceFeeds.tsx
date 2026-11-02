@@ -7,7 +7,7 @@ import type { DanceFeed } from "../events/feeds"
 import { ConfirmButton } from "./ConfirmButton"
 import { api, errorMessage } from "./api"
 
-const blank: DanceFeed = { id: "", name: "", style: "Contra", feedUrl: "", skipTitles: "", checkedAt: null, feedError: null }
+const blank: DanceFeed = { id: "", name: "", style: "Contra", city: "Ithaca", siteUrl: "", feedUrl: "", skipTitles: "", checkedAt: null, feedError: null }
 const checked = (feed: DanceFeed) => feed.checkedAt ? `Checked ${new Date(feed.checkedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "Not checked yet"
 
 // Other groups' calendars, read every six hours into the Special events list.
@@ -63,7 +63,9 @@ function FeedForm({ feed, onSave, onCancel, onRemove }: { feed: DanceFeed; onSav
         <SelectTrigger aria-label="Dance style"><SelectValue /></SelectTrigger>
         <SelectContent>{danceStyles.map(style => <SelectItem key={style} value={style}>{style}</SelectItem>)}</SelectContent>
       </Select></div>
+      <label className="editor-row"><span>City</span><Input maxLength={80} value={draft.city} onChange={e => change("city", e.target.value)} disabled={busy} /></label>
       <label className="editor-row"><span>Calendar</span><Input type="url" required maxLength={2000} placeholder="Calendar (.ics) link or CampusGroups club page" value={draft.feedUrl} onChange={e => change("feedUrl", e.target.value)} disabled={busy} /></label>
+      <label className="editor-row"><span>Website</span><Input type="url" maxLength={2000} placeholder="https://" value={draft.siteUrl} onChange={e => change("siteUrl", e.target.value)} disabled={busy} /></label>
       <label className="editor-row"><span>Skip</span><Input maxLength={300} placeholder="Words that leave an event out, such as Practice, Class" value={draft.skipTitles} onChange={e => change("skipTitles", e.target.value)} disabled={busy} /></label>
     </div>
     {error && <p role="alert" className="event-error">{error}</p>}

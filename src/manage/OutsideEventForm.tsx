@@ -9,8 +9,8 @@ import { EventTimePicker } from "./EventTimePicker"
 import { DeleteEventButton } from "./DeleteEventButton"
 import { api, errorMessage } from "./api"
 
-export const blankOutsideEvent = (): OutsideEvent => ({ id: "", groupName: "", title: "", date: todayInNewYork(), startTime: "", endTime: "", venue: "", styles: [], price: "", url: "", status: "hidden", updatedAt: "", fromFeed: false, sourceNote: "" })
-export const outsideSummary = (event: OutsideEvent) => [event.groupName, event.styles.join(", "), formatEventDate(event.date, { weekday: "short" }), event.startTime && formatEventTime(event), event.venue].filter(Boolean).join(" · ")
+export const blankOutsideEvent = (): OutsideEvent => ({ id: "", groupName: "", title: "", date: todayInNewYork(), startTime: "", endTime: "", venue: "", city: "Ithaca", styles: [], price: "", url: "", status: "hidden", updatedAt: "", fromFeed: false, sourceNote: "" })
+export const outsideSummary = (event: OutsideEvent) => [event.groupName, event.styles.join(", "), formatEventDate(event.date, { weekday: "short" }), event.startTime && formatEventTime(event), event.venue, event.city !== "Ithaca" && event.city].filter(Boolean).join(" · ")
 
 // Another group's dance, edited in place in the Special events list. Published ones show on /events.
 export function OutsideEventForm({ event, groups, onSave, onCancel, onDelete }: { event: OutsideEvent; groups: string[]; onSave: (event: OutsideEvent) => void; onCancel: () => void; onDelete?: () => void }) {
@@ -41,6 +41,7 @@ export function OutsideEventForm({ event, groups, onSave, onCancel, onDelete }: 
         <EventTimePicker label="Start time" disabled={busy} value={draft.startTime} onChange={value => change("startTime", value)} /><span aria-hidden="true">–</span><EventTimePicker label="End time" disabled={busy} value={draft.endTime} onChange={value => change("endTime", value)} />
       </div></div>
       <label className="editor-row"><span>Place</span><Input maxLength={300} placeholder="Memorial Room, Willard Straight Hall" value={draft.venue} onChange={e => change("venue", e.target.value)} disabled={busy} /></label>
+      <label className="editor-row"><span>City</span><Input maxLength={80} value={draft.city} onChange={e => change("city", e.target.value)} disabled={busy} /></label>
       <label className="editor-row"><span>Price</span><Input maxLength={100} placeholder="Students free · $15" value={draft.price} onChange={e => change("price", e.target.value)} disabled={busy} /></label>
       <label className="editor-row"><span>Link</span><Input type="url" maxLength={2000} placeholder="https://" value={draft.url} onChange={e => change("url", e.target.value)} disabled={busy} /></label>
     </div>

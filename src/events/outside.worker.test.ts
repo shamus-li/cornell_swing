@@ -11,6 +11,7 @@ import outsideMigration from '../../migrations/events/0011_outside_events.sql?ra
 import feedsMigration from '../../migrations/events/0014_dance_feeds.sql?raw'
 import sourceNoteMigration from '../../migrations/events/0015_outside_source_note.sql?raw'
 import stylesMigration from '../../migrations/events/0016_outside_styles.sql?raw'
+import cityMigration from '../../migrations/events/0021_outside_city.sql?raw'
 import worker from './worker'
 import type { OutsideEvent } from './outside'
 
@@ -27,7 +28,7 @@ beforeAll(async () => {
   network.enable()
   network.use(http.get(`https://${env.ACCESS_TEAM_DOMAIN}/cdn-cgi/access/certs`, () => HttpResponse.json({ keys: [jwk] })))
   managerToken = await new SignJWT({}).setProtectedHeader({ alg: 'RS256', kid: 'test-key' }).setIssuer(`https://${env.ACCESS_TEAM_DOMAIN}`).setAudience(env.ACCESS_AUD).setExpirationTime('1h').sign(privateKey)
-  for (const migration of [eventsMigration, roomMigration, publishedMigration, pricesMigration, outsideMigration, feedsMigration, sourceNoteMigration, stylesMigration]) await env.EVENTS_DB.exec(migration.replace(/--.*$/gm, '').replaceAll('\n', ' '))
+  for (const migration of [eventsMigration, roomMigration, publishedMigration, pricesMigration, outsideMigration, feedsMigration, sourceNoteMigration, stylesMigration, cityMigration]) await env.EVENTS_DB.exec(migration.replace(/--.*$/gm, '').replaceAll('\n', ' '))
 })
 afterAll(() => network.disable())
 
@@ -46,7 +47,8 @@ describe('other groups\' events', () => {
     const assets = { ...env.ASSETS, fetch: async () => new Response('<div id="root"></div><script id="dances-data" type="application/json">null</script>', { headers: { 'Content-Type': 'text/html' } }) }
     const page = await (await worker.fetch(new Request(`${origin}/events`), { ...env, ASSETS: assets })).text()
     expect(page).toContain('An Evening of Contra and Swing')
-    expect(page).toContain('Swing, Contra</p>')
+    expect(page).toContain('<span class="nowrap">Contra</span>')
+    expect(page).toContain('https://www.google.com/maps/search/?api=1&amp;query=LACS%2C%20Ithaca%2C%20NY')
     expect(page).not.toContain('Winter Afternoon of Contras')
   })
 

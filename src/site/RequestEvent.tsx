@@ -5,13 +5,13 @@ import { Input } from "../../check-in/src/components/ui/input"
 import { largeButtonClass } from "../../check-in/src/lib/sizes"
 import { StylePicker } from "../events/StylePicker"
 
-const blank = { title: "", groupName: "", date: "", startTime: "", endTime: "", venue: "", price: "", url: "", email: "" }
+const blank = { title: "", groupName: "", date: "", startTime: "", endTime: "", venue: "", city: "Ithaca", price: "", url: "", email: "" }
 
 // Lets anyone ask for a dance to be listed. Requests wait for an organizer in /manage.
 export function RequestEvent() {
   const [open, setOpen] = useState(false)
   return <>
-    <Button type="button" variant="outline" onClick={() => setOpen(true)}>Request an event</Button>
+    <Button type="button" variant="outline" aria-label="Request an event" onClick={() => setOpen(true)}><span className="request-long">Request an event</span><span className="request-short">Request</span></Button>
     {open && <RequestDialog onClose={() => setOpen(false)} />}
   </>
 }
@@ -60,7 +60,10 @@ function RequestDialog({ onClose }: { onClose: () => void }) {
           <label>Starts<Input type="time" {...field("startTime")} /></label>
           <label>Ends<Input type="time" {...field("endTime")} /></label>
         </div>
-        <label>Place<Input maxLength={300} {...field("venue")} /></label>
+        <div className="request-times">
+          <label>Place<Input maxLength={300} {...field("venue")} /></label>
+          <label>City<Input maxLength={80} {...field("city")} /></label>
+        </div>
         <label>Price<Input maxLength={100} {...field("price")} /></label>
         <label>Link<Input type="url" maxLength={2000} placeholder="https://" {...field("url")} /></label>
         <label>Your email<Input type="email" required maxLength={254} autoComplete="email" {...field("email")} /></label>

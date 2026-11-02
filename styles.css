@@ -74,15 +74,17 @@ main,
 
 .site-nav a {
   font-weight: 500;
+  line-height: 24px;
   text-decoration: none;
+}
+
+/* A whole-pixel line height keeps the site name and nav text on the same baseline. */
+.site-header .site-name {
+  line-height: 24px;
 }
 
 .site-nav a:hover {
   text-decoration: underline;
-}
-
-.site-nav a[aria-current="page"] {
-  font-weight: 600;
 }
 
 /* The name and the nav share one line down to the narrowest phones. */

@@ -29,7 +29,7 @@ export const events: ManagedEvent[] = [
 ]
 
 const outside = (id: string, title: string, groupName: string, days: number, startTime: string, endTime: string, venue: string, style: string, price: string): OutsideEvent => ({
-  id, title, groupName, date: daysFromToday(nextMonday + days), startTime, endTime, venue, styles: [style], price, url: "https://example.com", status: "published", updatedAt: common.updatedAt, fromFeed: false, sourceNote: "",
+  id, title, groupName, date: daysFromToday(nextMonday + days), startTime, endTime, venue, city: "Ithaca", styles: [style], price, url: "https://example.com", status: "published", updatedAt: common.updatedAt, fromFeed: false, sourceNote: "",
 })
 export const outsideEvents: OutsideEvent[] = [
   outside("mock-outside-1", "First Friday Contra", "Ithaca Contra Dance", 4, "19:30", "22:30", "Bethel Grove Community Center", "Contra", "$10, students free"),

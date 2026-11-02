@@ -7,7 +7,8 @@ import outsideMigration from '../../migrations/events/0011_outside_events.sql?ra
 import feedsMigration from '../../migrations/events/0014_dance_feeds.sql?raw'
 import sourceNoteMigration from '../../migrations/events/0015_outside_source_note.sql?raw'
 import stylesMigration from '../../migrations/events/0016_outside_styles.sql?raw'
-import { readFeeds } from './feeds'
+import cityMigration from '../../migrations/events/0021_outside_city.sql?raw'
+import { icsEvents, readFeeds } from './feeds'
 
 const network = setupNetwork()
 const ics = (...events: string[]) => `BEGIN:VCALENDAR\r\nVERSION:2.0\r\n${events.map(event => `BEGIN:VEVENT\r\n${event.trim().replace(/\n\s*/g, '\r\n')}\r\nEND:VEVENT\r\n`).join('')}END:VCALENDAR\r\n`
@@ -36,7 +37,7 @@ beforeAll(async () => {
     http.get('https://www.hands4dancers.org/upcoming-dances', () => HttpResponse.json({ upcoming: [{ id: 'h4', title: 'An evening of Contra  Dancing', startDate: Date.UTC(2099, 10, 21, 0, 0), endDate: Date.UTC(2099, 10, 21, 3, 30), fullUrl: '/upcoming-dances/2099/11/20/contra', location: { addressTitle: 'Lehman Alternative Community School' } }] })),
     http.get('https://example.org/broken.ics', () => new HttpResponse(null, { status: 500 })),
   )
-  for (const migration of [eventsMigration, outsideMigration, feedsMigration, sourceNoteMigration, stylesMigration]) await env.EVENTS_DB.exec(migration.replace(/--.*$/gm, '').replaceAll('\n', ' '))
+  for (const migration of [eventsMigration, outsideMigration, feedsMigration, sourceNoteMigration, stylesMigration, cityMigration]) await env.EVENTS_DB.exec(migration.replace(/--.*$/gm, '').replaceAll('\n', ' '))
 })
 afterAll(() => network.disable())
 
@@ -70,4 +71,26 @@ it('keeps a failing feed\'s events and records the problem', async () => {
   await readFeeds(env, 'ithaca-swing-dance-network')
   expect(await env.EVENTS_DB.prepare("SELECT feedError FROM dance_groups WHERE id = 'ithaca-swing-dance-network'").first('feedError')).toBe('The calendar link returned an error (500).')
   expect((await saved()).filter(event => event.groupId === 'ithaca-swing-dance-network')).toHaveLength(1)
+})
+
+it('reads the city from a calendar location, and leaves it to the group when there is none', () => {
+  const located = (location: string) => icsEvents(ics(`UID:a\n  DTSTART:20991114T181500\n  SUMMARY:Dance\n  LOCATION:${location}`))[0]
+  expect(located('Flynn Hall\\, 1 Main St\\, Rochester\\, NY 14620\\, United States')).toMatchObject({ venue: 'Flynn Hall, 1 Main St', city: 'Rochester' })
+  expect(located('Flynn Hall')).toMatchObject({ venue: 'Flynn Hall', city: '' })
+})
+
+it('expands weekly series, skipping removed dates and applying changed ones', () => {
+  const start = '20991101T203000'
+  const series = ics(
+    'UID:jam\n  DTSTART;TZID=America/New_York:20260107T203000\n  RRULE:FREQ=WEEKLY;INTERVAL=2;UNTIL=20260205T000000Z\n  EXDATE;TZID=America/New_York:20260121T203000\n  SUMMARY:Lindy Jam',
+    'UID:jam\n  RECURRENCE-ID;TZID=America/New_York:20260204T203000\n  DTSTART;TZID=America/New_York:20260205T190000\n  SUMMARY:Lindy Jam moved',
+    `UID:gone\n  DTSTART:${start}\n  STATUS:CANCELLED\n  SUMMARY:Cancelled Dance`,
+    'UID:monthly\n  DTSTART;TZID=America/New_York:20260107T203000\n  RRULE:FREQ=MONTHLY;BYDAY=2MO\n  SUMMARY:Monthly Dance',
+    'UID:packed\n  DTSTART;TZID=America/New_York:20991114T190000\n  SUMMARY:Contra Dance\\, Manlius Village Auditorium\\, Caller: Pamela Goddard\\nMusic: Glenrose',
+  )
+  expect(icsEvents(series).map(event => [event.sourceId, event.title, event.date, event.startTime])).toEqual([
+    ['jam:2026-01-07', 'Lindy Jam', '2026-01-07', '20:30'],
+    ['jam:2026-02-04', 'Lindy Jam moved', '2026-02-05', '19:00'],
+    ['packed', 'Contra Dance', '2099-11-14', '19:00'],
+  ])
 })

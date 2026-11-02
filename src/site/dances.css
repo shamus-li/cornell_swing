@@ -1,7 +1,7 @@
 /* /events: every listed dance by date, Swing Syndicate's own tinted. */
-.dances { display: grid; gap: 24px; padding: 40px 0 64px; }
+.dances { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 40px 0 64px; }
 .dances > section { display: grid; gap: 8px; }
-.dances-heading { display: grid; gap: 16px; }
+.dances-heading { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .dances h1:not([data-slot]) { font-size: clamp(2rem, 4vw, 2.5rem); }
 /* The button stays right of the filters, and wraps to its own line when they need the width. */
 .dances-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
@@ -18,12 +18,43 @@
 .event-page-event { border-bottom: 0; }
 .event-page h1:not([data-slot]) { margin-bottom: 12px; font-size: clamp(2rem, 4vw, 2.5rem); }
 
+/* The title's link covers the whole row; links inside the row stay on top of it. */
+.dance-row { position: relative; gap: 14px; padding-block: 10px; }
 .dance-row:last-child { border-bottom: 0; }
 .dance-row.is-ours { border-bottom-color: transparent; border-radius: 12px; background: color-mix(in srgb, var(--primary) 6%, var(--background)); }
+.dance-row:has(h3 a:hover) { background: var(--muted); }
+.dance-row.is-ours:has(h3 a:hover) { background: color-mix(in srgb, var(--primary) 11%, var(--background)); }
 .dance-row .event-content h3 { font-size: 1.125rem; }
-.dance-group { margin: 2px 0 0; font-weight: 500; }
+.dance-row h3 a { text-decoration: none; }
+.dance-row h3 a:hover { text-decoration: underline; }
+.dance-row h3 a::after { content: ""; position: absolute; inset: 0; }
+.dance-row :is(.icon-line, .event-actions, .dance-program) a { position: relative; z-index: 1; }
+.dance-row .event-meta { gap: 0; margin: 2px 0 0; color: var(--foreground); }
+.dance-styles { margin: 0; color: var(--muted-foreground); font-size: .8125rem; font-weight: 500; }
+.dance-external, .dance-facts { color: var(--muted-foreground); }
+.dance-facts { margin: 2px 0 0; }
+.dance-program { margin-top: 4px; }
+.dance-program p { margin: 0; }
+.dance-row .event-actions { margin-top: 8px; }
+
+@media (min-width: 761px) {
+  /* Time and place line up in columns; a lesson's two times stay stacked above its place. */
+  .dance-row .event-meta { grid-template-columns: 12rem minmax(0, 1fr); column-gap: 16px; }
+  .dance-row .schedule-times { grid-column: 1 / -1; }
+}
 
 @media (max-width: 760px) {
   .dances { padding-top: 32px; }
+  .dances-toolbar { justify-content: space-between; }
   .dances-toolbar [data-slot="button"] { height: 44px; padding-inline: 16px; }
+  /* Styles scroll sideways on their own row, edge to edge, so the list starts sooner. */
+  .dances-toolbar .filter-chips { order: 1; flex: 0 0 calc(100% + 32px); flex-wrap: nowrap; margin-inline: -16px; padding-inline: 16px; overflow-x: auto; scrollbar-width: none; }
+  .dances-toolbar .filter-chips button { flex: none; }
+}
+
+/* The short label keeps the button on the area toggle's line. */
+.request-short { display: none; }
+@media (max-width: 480px) {
+  .request-long { display: none; }
+  .request-short { display: inline; }
 }

@@ -2,7 +2,7 @@ import { isValidDate, isValidTime, todayInNewYork } from './model'
 import { isValidEmail } from '../lib/email'
 
 // Dances run by other groups, shown on /events beside Swing Syndicate's own events.
-export const danceStyles = ['Swing', 'Blues', 'West Coast Swing', 'Contra', 'English Country', 'Salsa', 'Tango', 'Ballroom', 'Line dancing', 'Other'] as const
+export const danceStyles = ['Swing', 'Blues', 'West Coast Swing', 'Contra', 'Square', 'English Country', 'Salsa', 'Tango', 'Ballroom', 'Line dancing', 'Other'] as const
 
 export interface OutsideEvent {
   id: string
@@ -12,6 +12,7 @@ export interface OutsideEvent {
   startTime: string
   endTime: string
   venue: string
+  city: string
   styles: string[]
   // Free text, such as "Students free · $15".
   price: string
@@ -29,7 +30,7 @@ type OutsideEventInput = Omit<OutsideEvent, 'id' | 'updatedAt' | 'fromFeed' | 's
 export function validateOutsideEvent(value: unknown): OutsideEventInput {
   if (!value || typeof value !== 'object') throw new Error('Enter the event details.')
   const input = value as Record<string, unknown>
-  const limits = { groupName: 120, title: 160, date: 10, startTime: 5, endTime: 5, venue: 300, price: 100, url: 2000 }
+  const limits = { groupName: 120, title: 160, date: 10, startTime: 5, endTime: 5, venue: 300, city: 80, price: 100, url: 2000 }
   const fields: Record<string, string> = {}
   for (const [key, limit] of Object.entries(limits)) {
     const field = input[key] ?? ''
@@ -52,7 +53,7 @@ export function validateOutsideEvent(value: unknown): OutsideEventInput {
     if (url?.protocol !== 'https:') throw new Error('Enter a link that starts with https://.')
   }
   if (input.status !== 'published' && input.status !== 'hidden' && input.status !== 'review') throw new Error('Choose whether the event is published.')
-  return { groupName: fields.groupName, title: fields.title, date: fields.date, startTime: fields.startTime, endTime: fields.endTime, venue: fields.venue, styles: danceStyles.filter(style => styles.includes(style)), price: fields.price, url: fields.url, status: input.status }
+  return { groupName: fields.groupName, title: fields.title, date: fields.date, startTime: fields.startTime, endTime: fields.endTime, venue: fields.venue, city: fields.city || 'Ithaca', styles: danceStyles.filter(style => styles.includes(style)), price: fields.price, url: fields.url, status: input.status }
 }
 
 // A visitor's request from /events, which waits for an organizer's review.
@@ -65,7 +66,7 @@ export function validateEventRequest(value: unknown): { input: OutsideEventInput
   return { input, email }
 }
 
-const columns = 'outside_events.id, dance_groups.name AS groupName, title, date, startTime, endTime, venue, styles, price, url, status, updatedAt, sourceId IS NOT NULL AS fromFeed, sourceNote'
+const columns = 'outside_events.id, dance_groups.name AS groupName, title, date, startTime, endTime, venue, outside_events.city, styles, price, url, status, updatedAt, sourceId IS NOT NULL AS fromFeed, sourceNote'
 
 // D1 returns styles as JSON text and the SQL comparison behind fromFeed as 0 or 1.
 type Row = Omit<OutsideEvent, 'styles' | 'fromFeed'> & { styles: string; fromFeed: number }
@@ -87,11 +88,11 @@ export async function listGroupNames(db: D1Database): Promise<string[]> {
 export async function saveOutsideEvent(db: D1Database, id: string | null, input: OutsideEventInput, sourceNote = ''): Promise<OutsideEvent | null> {
   const updatedAt = new Date().toISOString()
   const eventId = id ?? crypto.randomUUID()
-  const values = [input.title, input.date, input.startTime, input.endTime, input.venue, JSON.stringify(input.styles), input.price, input.url, input.status, updatedAt, input.groupName, eventId]
+  const values = [input.title, input.date, input.startTime, input.endTime, input.venue, input.city, JSON.stringify(input.styles), input.price, input.url, input.status, updatedAt, input.groupName, eventId]
   if (!id) values.push(sourceNote)
   const save = id
-    ? db.prepare('UPDATE outside_events SET title = ?, date = ?, startTime = ?, endTime = ?, venue = ?, styles = ?, price = ?, url = ?, status = ?, updatedAt = ?, groupId = (SELECT id FROM dance_groups WHERE name = ?11) WHERE id = ?12')
-    : db.prepare('INSERT INTO outside_events (title, date, startTime, endTime, venue, styles, price, url, status, updatedAt, groupId, id, sourceNote) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT id FROM dance_groups WHERE name = ?11), ?12, ?13)')
+    ? db.prepare('UPDATE outside_events SET title = ?, date = ?, startTime = ?, endTime = ?, venue = ?, city = ?, styles = ?, price = ?, url = ?, status = ?, updatedAt = ?, groupId = (SELECT id FROM dance_groups WHERE name = ?12) WHERE id = ?13')
+    : db.prepare('INSERT INTO outside_events (title, date, startTime, endTime, venue, city, styles, price, url, status, updatedAt, groupId, id, sourceNote) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT id FROM dance_groups WHERE name = ?12), ?13, ?14)')
   const [, result] = await db.batch([
     db.prepare('INSERT INTO dance_groups (id, name) VALUES (?, ?) ON CONFLICT (name) DO NOTHING').bind(crypto.randomUUID(), input.groupName),
     save.bind(...values),

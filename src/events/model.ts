@@ -87,6 +87,9 @@ export function formatEventPrices({ studentPrice, generalPrice }: Pick<EventReco
   return [studentPrice && formatPrice(studentPrice, 'students'), generalPrice && formatPrice(generalPrice, 'general')].filter((price): price is string => !!price)
 }
 // Up to $999.99, without leading zeros or more than two decimal places; empty when not announced.
+// A Google Maps search for a place in upstate New York.
+export const mapsSearchUrl = (place: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${place}, NY`)}`
+
 export const isValidPrice = (price: string) => /^((0|[1-9]\d{0,2})(\.\d{1,2})?)?$/.test(price)
 // A real YYYY-MM-DD date, and a 24-hour HH:MM time.
 export const isValidDate = (date: string) => /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(Date.parse(date)) && new Date(date).toISOString().slice(0, 10) === date
