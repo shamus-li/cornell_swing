@@ -10,6 +10,7 @@ import roomMigration from '../../migrations/events/0004_event_room.sql?raw'
 import publishedMigration from '../../migrations/events/0005_event_published.sql?raw'
 import pricesMigration from '../../migrations/events/0006_event_prices.sql?raw'
 import alertEmailMigration from '../../migrations/events/0007_alert_email.sql?raw'
+import lessonEndMigration from '../../migrations/events/0010_lesson_end.sql?raw'
 import worker from './worker'
 import siteWorker from '../worker'
 import { changeEventWithSheet } from './sheets'
@@ -54,6 +55,7 @@ beforeAll(async () => {
   await env.EVENTS_DB.exec(publishedMigration.replaceAll('\n', ' '))
   await env.EVENTS_DB.exec(pricesMigration.replaceAll('\n', ' '))
   await env.EVENTS_DB.exec(alertEmailMigration.replaceAll('\n', ' '))
+  await env.EVENTS_DB.exec(lessonEndMigration.replace(/^--.*$/gm, '').replaceAll('\n', ' '))
 })
 afterAll(() => network.disable())
 beforeEach(async () => { await env.EVENTS_DB.exec('DELETE FROM rsvp_sheet_connection; DELETE FROM rsvps; DELETE FROM events;') })

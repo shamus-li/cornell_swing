@@ -5,7 +5,7 @@ import { afterEach, expect, it, vi } from "vitest"
 import type { EventRecord } from "../events/model"
 import { NormalEventRow, parsePrograms, serializePrograms } from "./NormalEventRow"
 
-const event: EventRecord = { id: "normal-2099-10-12", kind: "normal", title: "Monday swing", date: "2099-10-12", startTime: "20:00", endTime: "22:00", location: "Dance hall", description: "**Beginner:** Basics\n\n**Advanced:** Swingouts\n\nThe social dance is 8-10pm!\n\n[Details](https://example.com)", published: true, updatedAt: "2026-09-20T12:00:00.000Z" }
+const event: EventRecord = { id: "normal-2099-10-12", kind: "normal", title: "Monday swing", date: "2099-10-12", startTime: "20:00", endTime: "22:00", lessonEndTime: "21:00", location: "Dance hall", description: "**Beginner:** Basics\n\n**Advanced:** Swingouts\n\nThe social dance is 8-10pm!\n\n[Details](https://example.com)", published: true, updatedAt: "2026-09-20T12:00:00.000Z" }
 let root: Root | undefined
 afterEach(async () => {
   if (root) await act(async () => root!.unmount())
@@ -46,7 +46,7 @@ it("extracts program labels without discarding extra paragraphs, tables, or dupl
   const notes = "Social dance 8-10pm.\n\n| Time | Activity |\n| --- | --- |\n| 9 PM | Jazz |\n\n**Beginner:** A second announcement"
   const description = `**Beginner:** Basics\n\n**Advanced**: Swingouts\n\n${notes}`
   const fields = parsePrograms(description)
-  expect(fields).toEqual({ beginner: "Basics", advanced: "Swingouts", notes })
+  expect(fields).toEqual({ lesson: "", beginner: "Basics", advanced: "Swingouts", notes })
   expect(serializePrograms(fields)).toBe(`**Beginner:** Basics\n\n**Advanced:** Swingouts\n\n${notes}`)
 })
 
@@ -63,6 +63,27 @@ it("shows an inline lesson row and saves edited programs while preserving notes 
   await submit(container)
   expect(onSave).toHaveBeenCalledWith({ ...event, room: "", description: event.description.replace("Basics", "Charleston") })
   expect(container.querySelector("form")).toBeNull()
+})
+
+async function chooseLessons(container: HTMLElement, label: string) {
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>('[aria-label="Lessons"] button')].find(button => button.textContent === label)!.click())
+}
+
+it("saves nights with one lesson or none, dropping topics for lessons the night no longer has", async () => {
+  const onSave = vi.fn(async (_draft: EventRecord) => {})
+  const container = await render(event, onSave)
+  await act(async () => container.querySelector<HTMLElement>('.normal-event-summary')!.click())
+  await chooseLessons(container, "One")
+  await enter(inputByLabel(container, "Topic"), "Musicality")
+  await enter(inputByLabel(container, "Lesson start"), "7:00 PM")
+  await submit(container)
+  expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ startTime: "19:00", lessonEndTime: "21:00", description: "**Lesson:** Musicality\n\nThe social dance is 8-10pm!\n\n[Details](https://example.com)" }))
+
+  await act(async () => container.querySelector<HTMLElement>('.normal-event-summary')!.click())
+  await chooseLessons(container, "None")
+  expect(inputByLabel(container, "Beginner")).toBeUndefined()
+  await submit(container)
+  expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ lessonEndTime: "", description: "The social dance is 8-10pm!\n\n[Details](https://example.com)" }))
 })
 
 it("preserves the exact legacy description when only location changes", async () => {

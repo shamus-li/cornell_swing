@@ -9,6 +9,9 @@ export interface EventRecord {
   date: string
   startTime: string
   endTime: string
+  // Weekly lessons only: the lesson runs from startTime until this time, then the social dance until endTime.
+  // Empty when the night is all social dance.
+  lessonEndTime?: string
   location: string
   locationUrl?: string
   room?: string
@@ -38,6 +41,11 @@ export function formatEventTime({ startTime, endTime }: Pick<EventRecord, 'start
   const start = formatTime(startTime)
   const end = formatTime(endTime)
   return start.slice(-2) === end.slice(-2) ? `${start.slice(0, -3)}–${end}` : `${start}–${end}`
+}
+// ["Lesson 8:00–9:00 PM", "Social dance 9:00–10:00 PM"], or only the social dance on nights without a lesson.
+export function formatLessonSchedule({ startTime, endTime, lessonEndTime }: Pick<EventRecord, 'startTime' | 'endTime' | 'lessonEndTime'>): string[] {
+  const social = `Social dance ${formatEventTime({ startTime: lessonEndTime || startTime, endTime })}`
+  return lessonEndTime ? [`Lesson ${formatEventTime({ startTime, endTime: lessonEndTime })}`, social] : [social]
 }
 // Formats a YYYY-MM-DD date, e.g. { month: 'short' } gives "Oct". Dates have no time zone, so UTC keeps the day fixed.
 export const formatEventDate = (date: string, options: Intl.DateTimeFormatOptions) => date ? new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', ...options }).format(new Date(`${date}T00:00:00Z`)) : 'TBA'
@@ -85,6 +93,8 @@ export function validateEvent(value: unknown): EventInput {
   }
   if (fields.endTime && !fields.startTime) throw new Error('Enter a start time before adding an end time.')
   if (fields.endTime && fields.endTime <= fields.startTime) throw new Error('The end time must be after the start time on the same day.')
+  const lessonEndTime = input.kind === 'normal' && typeof input.lessonEndTime === 'string' ? input.lessonEndTime.trim() : ''
+  if (lessonEndTime && (!/^([01]\d|2[0-3]):[0-5]\d$/.test(lessonEndTime) || !fields.startTime || lessonEndTime <= fields.startTime || (fields.endTime && lessonEndTime >= fields.endTime))) throw new Error('The lesson must end after the night starts and before it ends.')
   if (input.room !== undefined && (typeof input.room !== 'string' || input.room.length > 300)) throw new Error('Enter room details up to 300 characters.')
   const room = typeof input.room === 'string' ? input.room.trim() : ''
   const prices = { studentPrice: '', generalPrice: '' }
@@ -99,7 +109,7 @@ export function validateEvent(value: unknown): EventInput {
     try { url = new URL(locationUrl) } catch { throw new Error('Enter a valid Google Maps link.') }
     if (locationUrl.length > 2000 || url.protocol !== 'https:' || url.hostname !== 'www.google.com' || url.pathname !== '/maps/search/' || url.username || url.password || url.port) throw new Error('Enter a valid Google Maps link.')
   }
-  return { room, locationUrl, ...prices, kind: input.kind, published: input.published, title: fields.title, date: fields.date, startTime: fields.startTime, endTime: fields.endTime, location: fields.location, description: fields.description }
+  return { room, locationUrl, ...prices, lessonEndTime, kind: input.kind, published: input.published, title: fields.title, date: fields.date, startTime: fields.startTime, endTime: fields.endTime, location: fields.location, description: fields.description }
 }
 
 export function validateRSVP(value: unknown): { name: string; email: string } {

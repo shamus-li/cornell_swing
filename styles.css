@@ -229,15 +229,6 @@ h3:not([data-slot]) {
   padding: 64px 0 0;
 }
 
-.schedule-times {
-  margin: 8px 0 32px;
-  color: var(--muted-foreground);
-}
-
-.schedule-times span {
-  white-space: nowrap;
-}
-
 .etiquette h2,
 .faq h2,
 .about h2 {
@@ -356,10 +347,6 @@ h3:not([data-slot]) {
 
   .section {
     padding: 48px 0 0;
-  }
-
-  .schedule-times {
-    margin-bottom: 16px;
   }
 }
 

@@ -25,7 +25,7 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from "../../check-in/src
 type View = "special" | "lessons" | "newsletter" | "settings"
 const views: { value: View; label: string }[] = [{ value: "special", label: "Special events" }, { value: "lessons", label: "Lessons" }, { value: "newsletter", label: "Newsletter" }, { value: "settings", label: "Settings" }]
 const byDate = (a: EventRecord, b: EventRecord) => (a.date || "9999").localeCompare(b.date || "9999") || a.startTime.localeCompare(b.startTime)
-const newEvent = (kind: EventRecord["kind"]): EventRecord => ({ id: "", kind, title: kind === "normal" ? "Monday swing" : "", date: todayInNewYork(), startTime: kind === "normal" ? "20:00" : "", endTime: kind === "normal" ? "22:00" : "", location: "", locationUrl: "", room: "", studentPrice: "", generalPrice: "", description: "", published: false, updatedAt: "" })
+const newEvent = (kind: EventRecord["kind"]): EventRecord => ({ id: "", kind, title: kind === "normal" ? "Monday swing" : "", date: todayInNewYork(), startTime: kind === "normal" ? "20:00" : "", endTime: kind === "normal" ? "22:00" : "", lessonEndTime: kind === "normal" ? "21:00" : "", location: "", locationUrl: "", room: "", studentPrice: "", generalPrice: "", description: "", published: false, updatedAt: "" })
 const searchParam = (name: string) => new URLSearchParams(window.location.search).get(name)
 
 export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent[] }) {

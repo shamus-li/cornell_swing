@@ -80,7 +80,8 @@ export function EmailFrame({ children }: { children: ReactNode }) {
 
 // The opening is the first text in the email, so inboxes show its hook as the preview.
 export function GreetingBlock({ lesson, featured }: { lesson?: EventRecord; featured: EventRecord[] }) {
-  const topic = lesson && (parsePrograms(lesson.description).advanced || parsePrograms(lesson.description).beginner)
+  const programs = lesson && parsePrograms(lesson.description)
+  const topic = lesson?.lessonEndTime && programs && (programs.lesson || programs.advanced || programs.beginner)
   const parts = [
     lesson && `Monday we're ${topic ? `learning ${topic.charAt(0).toLowerCase()}${topic.slice(1)}` : "dancing"} at ${formatEventLocation(lesson)}`,
     ...featured.map(event => `${event.title} is ${relativeDay(event.date).replace(/^(This|Next) /, word => word.toLowerCase())}`),
@@ -98,7 +99,7 @@ export function GlanceBlock({ events }: { events: EventRecord[] }) {
     <table role="presentation" cellPadding={0} cellSpacing={0} border={0} width="100%" style={{ width: "100%", margin: "0 0 16px", borderCollapse: "collapse" }}><tbody>
       {events.map(event => <tr key={event.id}>
         <td style={{ width: 88, padding: "6px 12px 6px 0", verticalAlign: "top", fontSize: 15, lineHeight: "22px", fontWeight: 700, whiteSpace: "nowrap" }}>{formatEventDate(event.date, { weekday: "short", month: "short", day: "numeric" })}</td>
-        <td style={{ padding: "6px 0", verticalAlign: "top", fontSize: 15, lineHeight: "22px" }}>{event.kind === "normal" ? "Lessons and social dance" : event.title}<br /><span style={{ color: gray }}>{time(event)} · {formatEventLocation(event)}</span></td>
+        <td style={{ padding: "6px 0", verticalAlign: "top", fontSize: 15, lineHeight: "22px" }}>{event.kind === "normal" ? lessonTitle(event) : event.title}<br /><span style={{ color: gray }}>{time(event)} · {formatEventLocation(event)}</span></td>
       </tr>)}
     </tbody></table>
   </>
@@ -115,26 +116,21 @@ export function FeaturedBlock({ event }: { event: EventRecord }) {
   </>
 }
 
-// "20:00" plus 60 minutes is "21:00".
-function addMinutes(time: string, minutes: number) {
-  const total = Number(time.slice(0, 2)) * 60 + Number(time.slice(3)) + minutes
-  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`
-}
+const lessonTitle = (lesson: EventRecord) => lesson.lessonEndTime ? "Lessons and social dance" : "Social dance"
 
-// Monday nights open with an hour of lessons, then social dancing until the end.
+// Monday nights open with lessons, when there are any, then social dancing until the end.
 export function LessonBlock({ lesson, theme }: { lesson: EventRecord; theme: boolean }) {
-  const { beginner, advanced, notes } = parsePrograms(lesson.description)
-  const socialStart = addMinutes(lesson.startTime, 60)
-  const split = lesson.startTime && lesson.endTime > socialStart
+  const { lesson: topic, beginner, advanced, notes } = parsePrograms(lesson.description)
   const row: CSSProperties = { margin: "0 0 16px", fontSize: 16, lineHeight: "24px" }
   return <>
-    <Title>Lessons and social dance</Title>
+    <Title>{lessonTitle(lesson)}</Title>
     <p style={meta}>{fullDate(lesson.date)} · <Place event={lesson} /></p>
-    <p style={row}><strong>{split ? time({ ...lesson, endTime: socialStart }) : time(lesson)} · Lessons</strong>
+    {lesson.lessonEndTime && <p style={row}><strong>{time({ ...lesson, endTime: lesson.lessonEndTime })} · {topic ? "Lesson" : "Lessons"}</strong>
+      {topic && <><br />{topic}</>}
       {advanced && <><br />{advanced} <span style={{ color: gray }}>(advanced)</span></>}
       {beginner && <><br />{beginner} <span style={{ color: gray }}>(beginner)</span></>}
-    </p>
-    {split && <p style={row}><strong>{time({ ...lesson, startTime: socialStart })} · Social dance</strong>{theme && <><br />Secret theme: …</>}</p>}
+    </p>}
+    <p style={row}><strong>{time({ ...lesson, startTime: lesson.lessonEndTime || lesson.startTime })} · Social dance</strong>{theme && <><br />Secret theme: …</>}</p>
     {notes && <EmailMarkdown>{notes}</EmailMarkdown>}
   </>
 }

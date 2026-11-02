@@ -10,6 +10,12 @@ describe('event validation', () => {
   it.each([{ date: '2026-02-30' }, { startTime: '24:00' }, { endTime: '17:00' }, { startTime: '', endTime: '22:00' }, { kind: 'other' }, { title: ' ' }])('rejects invalid event fields %s', invalid => {
     expect(() => validateEvent({ ...event, ...invalid })).toThrow()
   })
+  it('keeps a weekly lesson end inside the night and drops it from special events', () => {
+    const lesson = { ...event, kind: 'normal', startTime: '19:00', lessonEndTime: '21:00' }
+    expect(validateEvent(lesson).lessonEndTime).toBe('21:00')
+    expect(validateEvent({ ...lesson, kind: 'special' }).lessonEndTime).toBe('')
+    for (const lessonEndTime of ['19:00', '22:00', '7pm']) expect(() => validateEvent({ ...lesson, lessonEndTime })).toThrow()
+  })
   it('uses the local New York date across a UTC day boundary', () => {
     expect(todayInNewYork(new Date('2026-10-11T02:00:00Z'))).toBe('2026-10-10')
   })

@@ -224,10 +224,10 @@ async function route(request: Request, env: Env): Promise<Response> {
     try { input = validateEvent(body) } catch (error) { throw new HttpError(400, (error as Error).message) }
     const id = method === 'POST' ? crypto.randomUUID() : managerMatch![1]
     let updatedAt = new Date().toISOString()
-    const values = [input.kind, input.title, input.date, input.startTime, input.endTime, input.location, input.description, updatedAt, input.locationUrl || '', input.room || '', input.published ? 1 : 0, input.studentPrice, input.generalPrice]
+    const values = [input.kind, input.title, input.date, input.startTime, input.endTime, input.location, input.description, updatedAt, input.locationUrl || '', input.room || '', input.published ? 1 : 0, input.studentPrice, input.generalPrice, input.lessonEndTime]
     if (method === 'POST') {
       const create = async () => {
-      await env.EVENTS_DB.prepare('INSERT INTO events (kind, title, date, startTime, endTime, location, description, updatedAt, locationUrl, room, published, studentPrice, generalPrice, id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(...values, id).run()
+      await env.EVENTS_DB.prepare('INSERT INTO events (kind, title, date, startTime, endTime, location, description, updatedAt, locationUrl, room, published, studentPrice, generalPrice, lessonEndTime, id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(...values, id).run()
       }
       if (input.kind === 'special') await createEventWithSheet(env, input.title, create)
       else await create()
@@ -239,7 +239,7 @@ async function route(request: Request, env: Env): Promise<Response> {
       const current = await env.EVENTS_DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first<EventRecord>()
       if (!current || current.updatedAt !== previous) throw new HttpError(409, 'Someone else saved this event after you opened it.', 'stale')
       const update = async () => {
-      const result = await env.EVENTS_DB.prepare('UPDATE events SET kind = ?, title = ?, date = ?, startTime = ?, endTime = ?, location = ?, description = ?, updatedAt = ?, locationUrl = ?, room = ?, published = ?, studentPrice = ?, generalPrice = ? WHERE id = ?14 AND updatedAt = ? AND (?1 = \'special\' OR NOT EXISTS (SELECT 1 FROM rsvps WHERE eventId = ?14))').bind(...values, id, previous).run()
+      const result = await env.EVENTS_DB.prepare('UPDATE events SET kind = ?, title = ?, date = ?, startTime = ?, endTime = ?, location = ?, description = ?, updatedAt = ?, locationUrl = ?, room = ?, published = ?, studentPrice = ?, generalPrice = ?, lessonEndTime = ? WHERE id = ?15 AND updatedAt = ? AND (?1 = \'special\' OR NOT EXISTS (SELECT 1 FROM rsvps WHERE eventId = ?15))').bind(...values, id, previous).run()
       if (result.meta.changes) return
       throw new EventConflict('The event changed, or has RSVPs and cannot become a normal event. Refresh before saving.')
       }

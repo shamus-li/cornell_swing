@@ -1,4 +1,4 @@
-.event-list { margin-top: 32px; }
+.event-list, .schedule-list { margin-top: 32px; }
 .event-row, .schedule-row { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 20px; padding: 16px 12px; border-bottom: 1px solid var(--border); }
 .event-content { min-width: 0; }
 .event-content h3 { font: 600 1.375rem/1.3 var(--sans); }
@@ -8,8 +8,8 @@
 .event-meta p { margin: 0; }
 /* A small grey icon before a detail, like Luma's event listings. */
 .icon-line { display: flex; gap: 8px; }
-/* A price never breaks across lines; the line wraps between prices. */
-.price { white-space: nowrap; }
+/* A price or a lesson time never breaks across lines; the line wraps between them. */
+.price, .nowrap { white-space: nowrap; }
 .icon-line > svg { flex: none; width: 16px; height: 16px; margin-top: .25em; color: var(--muted-foreground); }
 .event-markdown { overflow-wrap: anywhere; line-height: 1.5; }
 .event-markdown > :first-child { margin-top: 0; }
@@ -72,7 +72,8 @@ time { font-variant-numeric: tabular-nums; }
   .event-dialog-body { padding: 30px 24px; }
 }
 
-.schedule-location { margin: 0 0 4px; font-weight: 500; }
+.schedule-location, .schedule-times { margin: 0 0 4px; }
+.schedule-location { font-weight: 500; }
 .schedule-program .event-markdown { line-height: inherit; }
 .schedule-program > p, .schedule-program .event-markdown p { margin: 0; }
 .schedule-program > p { color: var(--muted-foreground); }
