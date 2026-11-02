@@ -251,6 +251,14 @@ async function route(request: Request, env: Env): Promise<Response> {
     if (!isValidEmail(email)) throw new HttpError(400, 'Enter a valid email address.')
     return json(await saveAlertEmail(env, email))
   }
+  // Temporary: charges $1 through Square's app on a phone to prove the door flow. Remove after the test.
+  if (path === '/manage/square/test' && method === 'GET') {
+    const callback = `${url.origin}/manage/square/test`
+    const charge = (tender: string) => `square-commerce-v1://payment/create?data=${encodeURIComponent(JSON.stringify({ amount_money: { amount: 100, currency_code: 'USD' }, callback_url: callback, client_id: env.SQUARE_APPLICATION_ID, version: '1.3', notes: 'door-test', options: { supported_tender_types: [tender], auto_return: true, skip_receipt: true } }))}`
+    const result = (url.searchParams.get('data') ?? '').replace(/[&<>]/g, char => `&#${char.charCodeAt(0)};`)
+    const auto = url.searchParams.has('auto') ? `<script>setTimeout(() => { location.href = ${JSON.stringify(charge('CREDIT_CARD'))} }, 1000)</script>` : ''
+    return new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Square test</title><style>body{font:18px system-ui;margin:16px}a{display:block;margin:12px 0;padding:16px;background:#111;color:#fff;border-radius:8px;text-decoration:none}pre{white-space:pre-wrap;word-break:break-all}</style><a href="${charge('CREDIT_CARD')}">$1 card</a><a href="${charge('CASH')}">$1 cash</a><a href="?auto=1">Open Square without a tap</a><pre>${result}</pre>${auto}`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+  }
   // Square sends the officer back to the callback with a code for reading the account's payments.
   if (path === '/manage/square/connect' && method === 'GET') {
     const state = crypto.randomUUID()
