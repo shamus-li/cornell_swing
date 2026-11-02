@@ -2,12 +2,15 @@ import type { IncomingMessage, ServerResponse } from "node:http"
 import { createElement } from "react"
 import { renderToString } from "react-dom/server"
 import { DancesPage } from "../src/site/DancesPage"
+import { EventPage } from "../src/site/EventPage"
 import { todayInNewYork, validateEvent, type ManagedEvent } from "../src/events/model"
+import { baseSlug } from "../src/events/slugs"
 import { events as sampleEvents, outsideEvents, square } from "./mock-data"
 
 // Stands in for the Worker under `npm run dev`, so every page has data without signing in.
 // Saves run the real event validation and last until this code changes or the dev server restarts.
-let events = [...sampleEvents]
+const withSlug = (event: ManagedEvent) => ({ ...event, slug: baseSlug(event) })
+let events = sampleEvents.map(withSlug)
 let outside = [...outsideEvents]
 let feeds: { id: string }[] = []
 const template: Record<string, string> = {}
@@ -31,7 +34,7 @@ async function crud<T extends { id: string }>(req: IncomingMessage, items: T[], 
 
 async function saveEvent(req: IncomingMessage, id?: string) {
   const draft = await body(req)
-  const saved: ManagedEvent = { ...draft, ...validateEvent(draft), id: id ?? crypto.randomUUID(), rsvpCount: draft.rsvpCount ?? 0, updatedAt: new Date().toISOString() }
+  const saved = withSlug({ ...draft, ...validateEvent(draft), id: id ?? crypto.randomUUID(), rsvpCount: draft.rsvpCount ?? 0, updatedAt: new Date().toISOString() })
   events = id ? events.map(event => event.id === id ? saved : event) : [...events, saved]
   return { event: saved }
 }
@@ -75,8 +78,13 @@ async function respond(req: IncomingMessage, path: string): Promise<object | nul
 
 export async function handle(req: IncomingMessage, res: ServerResponse, next: () => void) {
   const path = new URL(req.url!, "http://dev").pathname
-  // The Worker serves this address from the pre-rendered page.
+  // The Worker serves these addresses from the two pre-rendered event pages.
   if (path === "/events") { req.url = "/events/"; return next() }
+  if (/^\/events\/(?!event\/)[^/]+$/.test(path)) {
+    if (!events.some(event => event.slug === path.slice("/events/".length))) { res.writeHead(302, { Location: "/events" }).end(); return }
+    req.url = "/events/event/"
+    return next()
+  }
   if (!path.startsWith("/api/") && !path.startsWith("/manage/api/")) return next()
   let status = 200, result: object | null
   try { result = await respond(req, path) } catch (error) { status = 400; result = { error: (error as Error).message } }
@@ -90,9 +98,16 @@ function fill(html: string, script: string, data: object, page: string) {
     .replace(/(<main id="root"[^>]*>)(<\/main>)/, (_, open, close) => open + page + close)
 }
 
-export function renderPage(html: string) {
-  if (!html.includes('id="dances-data"')) return html
+export function renderPage(html: string, originalUrl: string) {
   const today = todayInNewYork()
-  const data = { events: published(), outside: outside.filter(event => event.date >= today), today }
-  return fill(html, "dances-data", data, renderToString(createElement(DancesPage, data)))
+  if (html.includes('id="dances-data"')) {
+    const data = { events: published(), outside: outside.filter(event => event.date >= today), today }
+    return fill(html, "dances-data", data, renderToString(createElement(DancesPage, data)))
+  }
+  if (html.includes('id="event-data"')) {
+    const slug = new URL(originalUrl, "http://dev").pathname.slice("/events/".length)
+    const data = { event: events.find(event => event.slug === slug) ?? events[0], today }
+    return fill(html, "event-data", data, renderToString(createElement(EventPage, data)))
+  }
+  return html
 }

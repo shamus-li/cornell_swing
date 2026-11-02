@@ -10,12 +10,9 @@
 
 /* Page */
 html:has(.manage-page) { scroll-behavior: auto; }
-/* App density: 14px text like Vercel and GitHub; touch screens get 16px inputs so iOS does not zoom. */
-/* The homepage uses system fonts on phones; the manager stays in Inter like check-in. */
 /* 866px leaves the event editor's description box 832px for text, the width of an event description on the homepage; the list shares the width so the header stays put. */
-.manage-page { --page: min(866px, calc(100% - 32px)); --sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; --serif: var(--sans); --body-font-size: .875rem; --control-font-size: .875rem; --input-font-size: .875rem; --small-font-size: .8125rem; --caption-font-size: .75rem; }
-@media (pointer: coarse) { .manage-page { --input-font-size: 1rem; } }
-/* Every field uses the same text size: 14px with a mouse, 16px on touch screens so iOS does not zoom in. */
+.manage-page { --page: min(866px, calc(100% - 32px)); --brand-font: var(--sans); --serif: var(--sans); }
+/* Every field uses the same text size. */
 .manage-page :is([data-slot="input"], [data-slot="input-group-control"], [data-slot="textarea"], [data-slot="popover-trigger"]) { font-size: var(--input-font-size); }
 .manage-header { justify-content: space-between; gap: 16px; }
 .manage-main { padding: 24px 0 64px; }
@@ -43,7 +40,7 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .manage-group h2 { margin: 0 0 4px; color: var(--muted-foreground); font: 500 var(--small-font-size) var(--sans); }
 .manage-group.is-past :is(.event-row-button, .normal-event-summary) { color: var(--muted-foreground); }
 .manage-list > * + * { border-top: 1px solid var(--border); }
-.event-row-button, .normal-event-summary { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 16px; align-items: center; width: 100%; height: auto; padding: 12px 8px; border: 0; border-radius: var(--radius); font-weight: 400; white-space: normal; text-align: left; line-height: 1.5; }
+.event-row-button, .normal-event-summary { font-size: var(--body-font-size); display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 16px; align-items: center; width: 100%; height: auto; padding: 12px 8px; border: 0; border-radius: var(--radius); font-weight: 450; white-space: normal; text-align: left; line-height: 1.5; }
 .normal-event-summary { grid-template-columns: 44px minmax(0, 1fr); align-items: start; }
 :is(.event-row-button, .normal-event-summary):hover { background: var(--muted); }
 :is(.event-row-button, .normal-event-summary):focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
@@ -53,8 +50,6 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .event-row-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .status-badge { flex: none; padding: 1px 8px; border-radius: 999px; background: var(--muted); color: var(--muted-foreground); font-size: var(--caption-font-size); font-weight: 500; }
 .guest-count { white-space: nowrap; font-size: var(--small-font-size); font-variant-numeric: tabular-nums; }
-.normal-event-program { font-size: var(--small-font-size); }
-.normal-event-program p { margin: 0; }
 
 /* Weekly lesson editing in place */
 .normal-event-edit { margin: 8px 0; padding: 16px; border-radius: 12px; background: var(--muted); }

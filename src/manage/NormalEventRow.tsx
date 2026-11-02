@@ -142,7 +142,7 @@ export function NormalEventRow({ event, editing, onEdit, onSave, onDelete, onCan
       <DateTile date={event.date} />
       <div className="event-row-text">
         <span className="event-row-title"><strong>{formatEventLocation(event)}</strong>{!event.published && <DraftBadge />}</span>
-        <div className="normal-event-program event-muted"><LessonTimes event={event} />{event.description ? <Markdown>{event.description}</Markdown> : event.lessonEndTime && <p>Lesson to be announced</p>}</div>
+        <LessonTimes event={event} /><div className="schedule-program">{event.description ? <Markdown>{event.description}</Markdown> : event.lessonEndTime && <p>Lesson to be announced</p>}</div>
       </div>
     </div></Button>}
   </article>
