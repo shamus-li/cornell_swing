@@ -26,8 +26,8 @@ import type { OutsideEvent } from "../events/outside"
 import { Person } from "../../check-in/src/components/ui/person"
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../../check-in/src/components/ui/input-group"
 
-type View = "special" | "lessons" | "newsletter" | "finances" | "settings"
-const views: { value: View; label: string }[] = [{ value: "special", label: "Special events" }, { value: "lessons", label: "Lessons" }, { value: "newsletter", label: "Newsletter" }, { value: "finances", label: "Finances" }, { value: "settings", label: "Settings" }]
+type ManagerTab = "special" | "lessons" | "newsletter" | "finances" | "settings"
+const managerTabs: { value: ManagerTab; label: string }[] = [{ value: "special", label: "Special events" }, { value: "lessons", label: "Lessons" }, { value: "newsletter", label: "Newsletter" }, { value: "finances", label: "Finances" }, { value: "settings", label: "Settings" }]
 const groupFilters = [{ value: "all", label: "All" }, { value: "ours", label: "Swing Syndicate" }, { value: "theirs", label: "Other groups" }] as const
 const byDate = (a: { date: string; startTime: string }, b: { date: string; startTime: string }) => (a.date || "9999").localeCompare(b.date || "9999") || a.startTime.localeCompare(b.startTime)
 const newEvent = (kind: EventRecord["kind"]): EventRecord => ({ id: "", kind, title: kind === "normal" ? "Monday Night Swing" : "", date: todayInNewYork(), startTime: kind === "normal" ? "20:00" : "", endTime: kind === "normal" ? "22:00" : "", lessonEndTime: kind === "normal" ? "21:00" : "", location: "", locationUrl: "", room: "", studentPrice: "", generalPrice: "", description: "", published: false, updatedAt: "" })
@@ -40,7 +40,7 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
   const [notice, setNotice] = useState("")
   // The Newsletter tab puts its copy buttons here, beside the title.
   const [titleActions, setTitleActions] = useState<HTMLDivElement | null>(null)
-  const [view, setView] = useState<View>(() => views.find(item => item.value === searchParam("view"))?.value ?? "special")
+  const [tab, setTab] = useState<ManagerTab>(() => managerTabs.find(item => item.value === searchParam("tab"))?.value ?? "special")
   const [editingId, setEditingId] = useState<string | null>(() => searchParam("event"))
   const editing = editingId === "new" ? { ...newEvent("special"), rsvpCount: 0 } : events.find(event => event.id === editingId) ?? null
   const [activeNormal, setActiveNormal] = useState<string | null>(null)
@@ -58,12 +58,12 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
     window.addEventListener("popstate", navigate)
     return () => window.removeEventListener("popstate", navigate)
   }, [])
-  function changeView(next: View) {
+  function changeTab(next: ManagerTab) {
     void openEvent(() => {
       const url = new URL(window.location.href)
-      url.searchParams.set("view", next)
+      url.searchParams.set("tab", next)
       window.history.replaceState(window.history.state, "", url)
-      setView(next)
+      setTab(next)
       setEditingOutside(null)
     })
   }
@@ -140,27 +140,29 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
       <span className="event-row-text"><span className="event-row-title"><strong>{event.title}</strong>{event.status === "hidden" && <DraftBadge />}</span><span className="event-muted">{outsideSummary(event)}</span></span>
     </Button>
 
+  const tabLabel = managerTabs.find(item => item.value === tab)!.label
+
   return <>
     <header className="site-header manage-header"><SiteBrand /></header>
     <main className="manage-main">
       {editing ? <EventEditor key={`${editing.id || "new"}-${editing.updatedAt}`} event={editing} leaveGuard={leaveGuard} onReplace={acceptSavedEvent} onCancel={closeSpecial} onRsvpChange={() => removeRsvpCount(editing.id)} onSave={event => { acceptSavedEvent(event); closeSpecial() }} onDelete={() => acceptDeletedEvent(editing.id)} /> : <>
         <div className="manage-title">
-          <h1>Events</h1>
-          {view === "special" && <div className="manage-title-actions">
+          <h1>{tabLabel}</h1>
+          {tab === "special" && <div className="manage-title-actions">
             <Button variant="outline" disabled={editingOutside !== null} onClick={() => { setEditingOutside(""); if (groupFilter === "ours") setGroupFilter("all") }}>Add another group's event</Button>
             <Button disabled={editingOutside !== null} onClick={() => { void openEvent(() => openSpecial(newEvent("special"))) }}>New event</Button>
           </div>}
-          {view === "lessons" && <Button onClick={() => { if (activeNormal !== "") void openEvent(() => setActiveNormal("")) }}>Add lesson</Button>}
-          {view === "newsletter" && <div ref={setTitleActions} className="manage-title-actions" />}
+          {tab === "lessons" && <Button onClick={() => { if (activeNormal !== "") void openEvent(() => setActiveNormal("")) }}>Add lesson</Button>}
+          {tab === "newsletter" && <div ref={setTitleActions} className="manage-title-actions" />}
         </div>
-        <Tabs label="Event views" tabs={views} value={view} onChange={changeView} />
-        {view === "special" && <div className="filter-chips manage-filter" role="group" aria-label="Groups">
+        <Tabs label="Manager sections" tabs={managerTabs} value={tab} onChange={changeTab} />
+        {tab === "special" && <div className="filter-chips manage-filter" role="group" aria-label="Groups">
           {groupFilters.map(({ value, label }) => <button key={value} type="button" aria-pressed={groupFilter === value} onClick={() => setGroupFilter(value)}>{label}{value === "theirs" && waiting.length > 0 && ` (${waiting.length} to review)`}</button>)}
         </div>}
         {notice && <p role="status" className="manage-notice">{notice}</p>}
         {error && <p role="alert" className="event-error manage-notice">{error} <Button variant="link" size="sm" onClick={() => window.location.reload()}>Reload</Button></p>}
-        <div role="tabpanel" className="manage-panel" aria-label={views.find(item => item.value === view)!.label}>
-          {view === "settings" ? <><SheetConnection onSync={load} /><CampusGroupsUpload /><DanceFeeds /><AlertEmail /></> : view === "finances" ? <Finances /> : loading ? <p role="status" className="event-muted manage-notice">Loading events…</p> : view === "newsletter" ? <Newsletter events={events} actions={titleActions} /> : view === "special"
+        <div role="tabpanel" className="manage-panel" aria-label={tabLabel}>
+          {tab === "settings" ? <><SheetConnection onSync={load} /><CampusGroupsUpload /><DanceFeeds /><AlertEmail /></> : tab === "finances" ? <Finances /> : loading ? <p role="status" className="event-muted manage-notice">Loading events…</p> : tab === "newsletter" ? <Newsletter events={events} actions={titleActions} /> : tab === "special"
             ? <>{review.length > 0 && <section className="manage-group" aria-label="Waiting for review"><h2>Waiting for review</h2><div className="manage-list">{review.map(outsideRow)}</div></section>}<EventGroups<ManagedEvent | OutsideEvent> events={[...events.filter(event => event.kind === "special" && groupFilter !== "theirs"), ...shownOutside.filter(event => !review.includes(event))].sort(byDate)} render={item => "groupName" in item ? outsideRow(item) : specialRow(item)} empty="No special events yet." first={editingOutside === "" && <OutsideEventForm event={blankOutsideEvent()} groups={groups} onSave={acceptOutside} onCancel={() => setEditingOutside(null)} />} /></>
             : <EventGroups events={events.filter(event => event.kind === "normal")} render={lessonRow} empty="No weekly lessons yet." first={activeNormal === "" && <NormalEventRow ref={normalEditor} editing onEdit={() => {}} event={newEvent("normal")} onSave={saveNormal} onCancel={() => setActiveNormal(null)} />} />}
         </div>

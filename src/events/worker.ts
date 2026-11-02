@@ -227,7 +227,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     if (!state || state !== url.searchParams.get('state')) throw new HttpError(400, 'Connect Square again from the Finances tab.')
     const code = url.searchParams.get('code')
     if (code) await connectSquare(env, url.origin, code)
-    return new Response(null, { status: 302, headers: { Location: '/manage?view=finances', 'Set-Cookie': 'square_state=; Path=/manage/square; Max-Age=0' } })
+    return new Response(null, { status: 302, headers: { Location: '/manage?tab=finances', 'Set-Cookie': 'square_state=; Path=/manage/square; Max-Age=0' } })
   }
   if (path === '/manage/api/square') {
     if (method === 'GET') return json(await squareFeed(env))

@@ -78,7 +78,7 @@ describe('Square feed', () => {
     expect(await (await manage('/square')).json()).toEqual({ square: null, payments: [] })
     expect((await callback('state=forged&code=abc', 'square_state=real')).status).toBe(400)
     const response = await callback('state=real&code=abc', 'square_state=real')
-    expect(response.headers.get('location')).toBe('/manage?view=finances')
+    expect(response.headers.get('location')).toBe('/manage?tab=finances')
     expect(await (await manage('/square')).json()).toMatchObject({ square: 'Swing Syndicate' })
     await manage('/square', 'DELETE')
     expect(await (await manage('/square')).json()).toMatchObject({ square: null })
