@@ -10,7 +10,8 @@
 .icon-line { display: flex; gap: 8px; }
 /* A price never breaks across lines; the line wraps between them. */
 .price { white-space: nowrap; }
-.icon-line > svg { flex: none; width: 16px; height: 16px; margin-top: .25em; color: var(--muted-foreground); }
+/* Centered on the first line of text, whatever its size. */
+.icon-line > svg { flex: none; width: 16px; height: 16px; margin-top: calc((1lh - 16px) / 2); color: var(--muted-foreground); }
 .event-markdown { overflow-wrap: anywhere; line-height: 1.5; }
 .event-markdown > :first-child { margin-top: 0; }
 .event-markdown > :last-child { margin-bottom: 0; }

@@ -63,7 +63,7 @@
   --primary-foreground: #fff;
   --destructive: #a22031;
   --radius: .5rem;
-  /* Type scale for reading pages; the manager sets a denser one. */
+  /* Type scale for the site and the manager. */
   --body-font-size: 1rem;
   --control-font-size: .9375rem;
   --input-font-size: 1rem;

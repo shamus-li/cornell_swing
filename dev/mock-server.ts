@@ -11,8 +11,8 @@ export function mockServer(): Plugin {
       server = dev
       dev.middlewares.use((req, res, next) => void api().then(({ handle }) => handle(req, res, next)).catch(next))
     },
-    async transformIndexHtml(html) {
-      return (await api()).renderPage(html)
+    async transformIndexHtml(html, context) {
+      return (await api()).renderPage(html, context.originalUrl ?? context.path)
     },
   }
 }
