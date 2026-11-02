@@ -354,6 +354,17 @@ h3:not([data-slot]) {
   font-size: var(--small-font-size);
 }
 
+/* On short pages the footer still sits at the bottom of the window. */
+body:has(> .site-footer) {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+body > .site-footer {
+  margin-top: auto;
+}
+
 .site-footer p {
   margin: 0;
 }
