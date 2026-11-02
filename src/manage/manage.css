@@ -64,6 +64,9 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .editor-row > span { color: var(--muted-foreground); font-size: var(--small-font-size); }
 .editor-row-top { align-items: start; }
 .editor-row-top > span { padding-top: 10px; }
+.lesson-times { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.normal-event-edit .segmented { background: var(--border); }
+.time-range { display: grid; grid-template-columns: minmax(0, 9rem) auto minmax(0, 9rem); justify-content: start; align-items: center; gap: 8px; color: var(--muted-foreground); }
 .normal-event-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
 /* Event editor */
@@ -105,6 +108,9 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .campusgroups-steps a { color: var(--foreground); text-decoration: underline; }
 .sheet-connection h2 { font: 600 1rem/1.4 var(--sans); }
 .sheet-connection p { margin: 0; }
+.manage-filter { margin-top: 16px; }
+.dance-feeds-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sheet-connection .event-row-button { grid-template-columns: minmax(0, 1fr); background: var(--background); }
 .sheet-connection-actions, .sheet-connection-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .sheet-connection-form { align-items: flex-end; }
 .sheet-connection-form > p { flex-basis: 100%; }
@@ -187,5 +193,9 @@ html:has(.manage-page) { scroll-behavior: auto; }
   /* The date takes its own line above the times. */
   .editor-when { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
   .editor-when > :first-child { grid-column: 1 / -1; }
+  /* Lesson labels sit above their fields, so a start and end time fit side by side. */
+  .normal-event-edit .editor-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .normal-event-edit .editor-row-top > span { padding-top: 0; }
+  .time-range { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
   .tab[aria-selected="true"]::after { inset: auto 10px -1px; }
 }

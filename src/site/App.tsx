@@ -13,6 +13,7 @@ export default function App({ initialSchedule }: { initialSchedule?: EventSnapsh
     <div>
       <header className="site-header">
         <SiteBrand />
+        <nav className="site-nav" aria-label="Main"><a href="/events">Events</a></nav>
       </header>
 
       <main id="main">

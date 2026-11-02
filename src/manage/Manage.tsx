@@ -19,14 +19,18 @@ import { DateTile } from "../events/DateTile"
 import { Tabs } from "./Tabs"
 import { Newsletter } from "./Newsletter"
 import { AlertEmail } from "./AlertEmail"
+import { DanceFeeds } from "./DanceFeeds"
 import { Finances } from "./Finances"
+import { blankOutsideEvent, OutsideEventForm, outsideSummary } from "./OutsideEventForm"
+import type { OutsideEvent } from "../events/outside"
 import { Person } from "../../check-in/src/components/ui/person"
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../../check-in/src/components/ui/input-group"
 
 type View = "special" | "lessons" | "newsletter" | "finances" | "settings"
 const views: { value: View; label: string }[] = [{ value: "special", label: "Special events" }, { value: "lessons", label: "Lessons" }, { value: "newsletter", label: "Newsletter" }, { value: "finances", label: "Finances" }, { value: "settings", label: "Settings" }]
-const byDate = (a: EventRecord, b: EventRecord) => (a.date || "9999").localeCompare(b.date || "9999") || a.startTime.localeCompare(b.startTime)
-const newEvent = (kind: EventRecord["kind"]): EventRecord => ({ id: "", kind, title: kind === "normal" ? "Monday swing" : "", date: todayInNewYork(), startTime: kind === "normal" ? "20:00" : "", endTime: kind === "normal" ? "22:00" : "", location: "", locationUrl: "", room: "", studentPrice: "", generalPrice: "", description: "", published: false, updatedAt: "" })
+const groupFilters = [{ value: "all", label: "All" }, { value: "ours", label: "Swing Syndicate" }, { value: "theirs", label: "Other groups" }] as const
+const byDate = (a: { date: string; startTime: string }, b: { date: string; startTime: string }) => (a.date || "9999").localeCompare(b.date || "9999") || a.startTime.localeCompare(b.startTime)
+const newEvent = (kind: EventRecord["kind"]): EventRecord => ({ id: "", kind, title: kind === "normal" ? "Monday Night Swing" : "", date: todayInNewYork(), startTime: kind === "normal" ? "20:00" : "", endTime: kind === "normal" ? "22:00" : "", lessonEndTime: kind === "normal" ? "21:00" : "", location: "", locationUrl: "", room: "", studentPrice: "", generalPrice: "", description: "", published: false, updatedAt: "" })
 const searchParam = (name: string) => new URLSearchParams(window.location.search).get(name)
 
 export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent[] }) {
@@ -40,6 +44,11 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
   const [editingId, setEditingId] = useState<string | null>(() => searchParam("event"))
   const editing = editingId === "new" ? { ...newEvent("special"), rsvpCount: 0 } : events.find(event => event.id === editingId) ?? null
   const [activeNormal, setActiveNormal] = useState<string | null>(null)
+  // Other groups' dances, listed with the special events. `editingOutside` is the open one's id, "" for a new one.
+  const [outside, setOutside] = useState<OutsideEvent[]>([])
+  const [groups, setGroups] = useState<string[]>([])
+  const [editingOutside, setEditingOutside] = useState<string | null>(null)
+  const [groupFilter, setGroupFilter] = useState<"all" | "ours" | "theirs">("all")
   const normalEditor = useRef<NormalEventHandle>(null)
   const switching = useRef(false)
   // Set by the event editor while it has unsaved edits; Back and Forward then ask before leaving.
@@ -55,6 +64,7 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
       url.searchParams.set("view", next)
       window.history.replaceState(window.history.state, "", url)
       setView(next)
+      setEditingOutside(null)
     })
   }
   function openSpecial(event: EventRecord) {
@@ -78,6 +88,14 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
     setEvents(data.events.sort(byDate))
   }
   useEffect(() => { if (initialEvents === undefined) void load().catch(err => setError(errorMessage(err))).finally(() => setLoading(false)) }, [])
+  useEffect(() => {
+    void api<{ events: OutsideEvent[]; groups: string[] }>("/outside-events", {}, "Other groups' events could not be loaded.").then(data => { setOutside(data.events); setGroups(data.groups) }).catch(err => setError(errorMessage(err)))
+  }, [])
+  function acceptOutside(saved: OutsideEvent) {
+    setOutside(current => [...current.filter(event => event.id !== saved.id), saved].sort(byDate))
+    setGroups(current => current.some(name => name.toLowerCase() === saved.groupName.toLowerCase()) ? current : [...current, saved.groupName].sort())
+    setEditingOutside(null)
+  }
   function acceptDeletedEvent(id: string) {
     const lesson = events.find(event => event.id === id)?.kind === "normal"
     setEvents(current => current.filter(event => event.id !== id))
@@ -106,11 +124,20 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
     acceptSavedEvent(event)
   }
   const lessonRow = (event: EventRecord) => <NormalEventRow key={`${event.id}-${event.updatedAt}-${activeNormal === event.id}`} ref={activeNormal === event.id ? normalEditor : undefined} editing={activeNormal === event.id} onEdit={() => { void openEvent(() => setActiveNormal(event.id)) }} event={event} onSave={saveNormal} onCancel={() => setActiveNormal(null)} onDelete={async () => { await api(`/events/${event.id}`, { method: "DELETE" }); acceptDeletedEvent(event.id) }} />
-  const specialRow = (event: ManagedEvent) => <Button key={event.id} variant="ghost" className="event-row-button" onClick={() => { void openEvent(() => openSpecial(event)) }}>
+  const specialRow = (event: ManagedEvent) => <Button key={event.id} variant="ghost" className="event-row-button" disabled={editingOutside !== null} onClick={() => { void openEvent(() => openSpecial(event)) }}>
     <DateTile date={event.date} />
     <span className="event-row-text"><span className="event-row-title"><strong>{event.title}</strong>{!event.published && <DraftBadge />}</span><span className="event-muted">{eventSummary(event)}</span></span>
     <span className="guest-count event-muted">{event.rsvpCount} RSVP{event.rsvpCount === 1 ? "" : "s"}</span>
   </Button>
+  // Upcoming events read from email, which an organizer publishes or deletes.
+  const shownOutside = groupFilter === "ours" ? [] : outside
+  const review = shownOutside.filter(event => event.status === "review" && event.date >= todayInNewYork())
+  const outsideRow = (event: OutsideEvent) => editingOutside === event.id
+    ? <OutsideEventForm key={event.id} event={event} groups={groups} onSave={acceptOutside} onCancel={() => setEditingOutside(null)} onDelete={() => { setOutside(current => current.filter(item => item.id !== event.id)); setEditingOutside(null) }} />
+    : <Button key={event.id} variant="ghost" className="event-row-button" disabled={editingOutside !== null} onClick={() => setEditingOutside(event.id)}>
+      <DateTile date={event.date} />
+      <span className="event-row-text"><span className="event-row-title"><strong>{event.title}</strong>{event.status === "hidden" && <DraftBadge />}</span><span className="event-muted">{outsideSummary(event)}</span></span>
+    </Button>
 
   return <>
     <header className="site-header manage-header"><SiteBrand /></header>
@@ -118,16 +145,22 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
       {editing ? <EventEditor key={`${editing.id || "new"}-${editing.updatedAt}`} event={editing} leaveGuard={leaveGuard} onReplace={acceptSavedEvent} onCancel={closeSpecial} onRsvpChange={() => removeRsvpCount(editing.id)} onSave={event => { acceptSavedEvent(event); closeSpecial() }} onDelete={() => acceptDeletedEvent(editing.id)} /> : <>
         <div className="manage-title">
           <h1>Events</h1>
-          {view === "special" && <Button onClick={() => { void openEvent(() => openSpecial(newEvent("special"))) }}>New event</Button>}
+          {view === "special" && <div className="manage-title-actions">
+            <Button variant="outline" disabled={editingOutside !== null} onClick={() => { setEditingOutside(""); if (groupFilter === "ours") setGroupFilter("all") }}>Add another group's event</Button>
+            <Button disabled={editingOutside !== null} onClick={() => { void openEvent(() => openSpecial(newEvent("special"))) }}>New event</Button>
+          </div>}
           {view === "lessons" && <Button onClick={() => { if (activeNormal !== "") void openEvent(() => setActiveNormal("")) }}>Add lesson</Button>}
           {view === "newsletter" && <div ref={setTitleActions} className="manage-title-actions" />}
         </div>
         <Tabs label="Event views" tabs={views} value={view} onChange={changeView} />
+        {view === "special" && <div className="filter-chips manage-filter" role="group" aria-label="Groups">
+          {groupFilters.map(({ value, label }) => <button key={value} type="button" aria-pressed={groupFilter === value} onClick={() => setGroupFilter(value)}>{label}</button>)}
+        </div>}
         {notice && <p role="status" className="manage-notice">{notice}</p>}
         {error && <p role="alert" className="event-error manage-notice">{error} <Button variant="link" size="sm" onClick={() => window.location.reload()}>Reload</Button></p>}
         <div role="tabpanel" className="manage-panel" aria-label={views.find(item => item.value === view)!.label}>
-          {view === "settings" ? <><SheetConnection onSync={load} /><CampusGroupsUpload /><AlertEmail /></> : view === "finances" ? <Finances /> : loading ? <p role="status" className="event-muted manage-notice">Loading events…</p> : view === "newsletter" ? <Newsletter events={events} actions={titleActions} /> : view === "special"
-            ? <EventGroups events={events.filter(event => event.kind === "special")} render={specialRow} empty="No special events yet." />
+          {view === "settings" ? <><SheetConnection onSync={load} /><CampusGroupsUpload /><DanceFeeds /><AlertEmail /></> : view === "finances" ? <Finances /> : loading ? <p role="status" className="event-muted manage-notice">Loading events…</p> : view === "newsletter" ? <Newsletter events={events} actions={titleActions} /> : view === "special"
+            ? <>{review.length > 0 && <section className="manage-group" aria-label="Waiting for review"><h2>Waiting for review</h2><div className="manage-list">{review.map(outsideRow)}</div></section>}<EventGroups<ManagedEvent | OutsideEvent> events={[...events.filter(event => event.kind === "special" && groupFilter !== "theirs"), ...shownOutside.filter(event => !review.includes(event))].sort(byDate)} render={item => "groupName" in item ? outsideRow(item) : specialRow(item)} empty="No special events yet." first={editingOutside === "" && <OutsideEventForm event={blankOutsideEvent()} groups={groups} onSave={acceptOutside} onCancel={() => setEditingOutside(null)} />} /></>
             : <EventGroups events={events.filter(event => event.kind === "normal")} render={lessonRow} empty="No weekly lessons yet." first={activeNormal === "" && <NormalEventRow ref={normalEditor} editing onEdit={() => {}} event={newEvent("normal")} onSave={saveNormal} onCancel={() => setActiveNormal(null)} />} />}
         </div>
       </>}
@@ -136,7 +169,7 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
 }
 
 // Upcoming events first, then past ones, which stay visible but muted.
-function EventGroups<T extends EventRecord>({ events, render, empty, first }: { events: T[]; render: (event: T) => ReactNode; empty: string; first?: ReactNode }) {
+function EventGroups<T extends { date: string }>({ events, render, empty, first }: { events: T[]; render: (event: T) => ReactNode; empty: string; first?: ReactNode }) {
   const today = todayInNewYork()
   const upcoming = events.filter(event => !event.date || event.date >= today)
   const past = events.filter(event => event.date && event.date < today)

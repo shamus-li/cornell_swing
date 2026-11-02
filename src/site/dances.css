@@ -1,0 +1,19 @@
+/* /events: every listed dance by date, Swing Syndicate's own tinted. */
+.dances { display: grid; gap: 24px; padding: 40px 0 64px; }
+.dances > section { display: grid; gap: 8px; }
+.dances-title { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
+
+.request-form { margin-top: 20px; }
+.request-form :is(label, .request-styles) { display: grid; gap: 6px; font-size: var(--small-font-size); font-weight: 500; }
+.request-form [data-slot="input"] { font-weight: 400; }
+.request-times { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.dances h2.dances-month { padding-bottom: 8px; border-bottom: 1px solid var(--border); font-size: 1.375rem; }
+
+.dance-row:last-child { border-bottom: 0; }
+.dance-row.is-ours { border-bottom-color: transparent; border-radius: 12px; background: color-mix(in srgb, var(--primary) 6%, var(--background)); }
+.dance-row .event-content h3 { font-size: 1.125rem; }
+.dance-group { margin: 2px 0 0; font-weight: 500; }
+
+@media (max-width: 760px) {
+  .dances { padding-top: 32px; }
+}

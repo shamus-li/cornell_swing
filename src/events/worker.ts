@@ -7,11 +7,14 @@ import { renderToString } from 'react-dom/server'
 import { EventSections, NextEvent } from '../site/components/Events'
 import { createRedirect, deleteRedirect, listRedirects, RedirectError, updateRedirect } from '../redirects/cloudflare'
 import { isRecord, parseRedirect } from '../redirects/redirect'
-import { alertEmailStatus, AlertEmailError, saveAlertEmail } from './alert-email'
+import { alertEmailStatus, AlertEmailError, saveAlertEmail, sendAlert } from './alert-email'
 import { isValidEmail } from '../lib/email'
 import { buildCampusGroups, campusGroupsKey, summarizeCampusGroups, type CampusGroupsData } from './campusgroups'
 import { formatEventLocation, hasEventDetails, todayInNewYork, validateEvent, validateRSVP, type EventRecord, type ManagedEvent, type RSVP } from './model'
 import { connectSquare, disconnectSquare, squareConnectUrl, squareFeed } from './square'
+import { listGroupNames, listOutsideEvents, saveOutsideEvent, validateEventRequest, validateOutsideEvent } from './outside'
+import { listFeeds, readFeeds, validateFeed } from './feeds'
+import { DancesPage, type DanceSnapshot } from '../site/DancesPage'
 
 // `code` lets the manager tell specific failures apart, such as "stale" for an event saved elsewhere since it was opened.
 class HttpError extends Error {
@@ -136,6 +139,22 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (path === '/redirects/api') return redirectsApi(request, env, method)
   if (path === '/manage/api/locations' && method === 'GET') return handleLocationSearch(request, env.GOOGLE_PLACES_API_KEY)
   if (path === '/api/events' && method === 'GET') return json({ events: await listEvents(env) })
+  if (path === '/api/event-requests' && method === 'POST') {
+    const limit = await env.RSVP_RATE_LIMITER.limit({ key: `request:${request.headers.get('cf-connecting-ip') || 'local'}` })
+    if (!limit.success) throw new HttpError(429, 'Please wait a minute before trying again.')
+    let requested
+    try { requested = validateEventRequest(await readBody(request)) } catch (error) { if (error instanceof HttpError) throw error; throw new HttpError(400, (error as Error).message) }
+    const { input, email } = requested
+    await saveOutsideEvent(env.EVENTS_DB, null, input, `Requested by ${email}`)
+    // The request is saved either way; the alert only tells organizers to look.
+    try {
+      await sendAlert(env, `Event request: ${input.title}`, [
+        `${email} asked to list ${input.title} by ${input.groupName} on ${input.date} on swingsyndicate.club/events.`,
+        `Review it under Waiting for review in Special events: ${url.origin}/manage/`,
+      ])
+    } catch (error) { logError('Event request alert failed', error) }
+    return json({ success: true }, 201)
+  }
   const publicMatch = path.match(/^\/api\/events\/([^/]+)\/(rsvp|calendar)$/)
   if (publicMatch) {
     const [, id, action] = publicMatch
@@ -224,6 +243,59 @@ async function route(request: Request, env: Env): Promise<Response> {
     await env.MEMBER_CACHE.put(campusGroupsKey, JSON.stringify(data))
     return json(summarizeCampusGroups(data))
   }
+  // Other groups' dances, listed on /events.
+  const feedMatch = path.match(/^\/manage\/api\/dance-feeds(?:\/([^/]+))?$/)
+  if (feedMatch) {
+    const id = feedMatch[1]
+    if (!id && method === 'GET') return json({ feeds: await listFeeds(env.EVENTS_DB) })
+    // Removing a feed keeps the group and its typed-in events.
+    if (id && method === 'DELETE') {
+      await env.EVENTS_DB.batch([
+        env.EVENTS_DB.prepare('DELETE FROM outside_events WHERE groupId = ? AND sourceId IS NOT NULL').bind(id),
+        env.EVENTS_DB.prepare("UPDATE dance_groups SET feedUrl = '', skipTitles = '', checkedAt = NULL, feedError = NULL WHERE id = ?").bind(id),
+      ])
+      return json({ success: true })
+    }
+    if ((!id && method === 'POST') || (id && method === 'PUT')) {
+      let input
+      try { input = validateFeed(await readBody(request)) } catch (error) { if (error instanceof HttpError) throw error; throw new HttpError(400, (error as Error).message) }
+      const values = [input.name, input.style, input.feedUrl, input.skipTitles]
+      // A new feed joins the group with the same name if one exists, such as a group whose events were typed in.
+      const saved = await (id
+        ? env.EVENTS_DB.prepare('UPDATE dance_groups SET name = ?, style = ?, feedUrl = ?, skipTitles = ? WHERE id = ? RETURNING id').bind(...values, id)
+        : env.EVENTS_DB.prepare('INSERT INTO dance_groups (name, style, feedUrl, skipTitles, id) VALUES (?, ?, ?, ?, ?) ON CONFLICT (name) DO UPDATE SET style = excluded.style, feedUrl = excluded.feedUrl, skipTitles = excluded.skipTitles RETURNING id').bind(...values, crypto.randomUUID())
+      ).first<{ id: string }>().catch((error: unknown) => {
+        if (String(error).includes('UNIQUE')) throw new HttpError(409, 'Another group already has this name.')
+        throw error
+      })
+      if (!saved) throw new HttpError(404, 'This feed was removed. Refresh the page.')
+      await readFeeds(env, saved.id)
+      const [feed] = await listFeeds(env.EVENTS_DB, saved.id)
+      return json({ feed }, id ? 200 : 201)
+    }
+    throw new HttpError(405, 'Method not allowed.')
+  }
+  const outsideMatch = path.match(/^\/manage\/api\/outside-events(?:\/([^/]+))?$/)
+  if (outsideMatch) {
+    const id = outsideMatch[1]
+    if (!id && method === 'GET') {
+      const [events, groups] = await Promise.all([listOutsideEvents(env.EVENTS_DB), listGroupNames(env.EVENTS_DB)])
+      return json({ events, groups })
+    }
+    if (id && method === 'DELETE') {
+      await env.EVENTS_DB.prepare('DELETE FROM outside_events WHERE id = ?').bind(id).run()
+      return json({ success: true })
+    }
+    if ((!id && method === 'POST') || (id && method === 'PUT')) {
+      const body = await readBody(request)
+      let input
+      try { input = validateOutsideEvent(body) } catch (error) { throw new HttpError(400, (error as Error).message) }
+      const event = await saveOutsideEvent(env.EVENTS_DB, id ?? null, input)
+      if (!event) throw new HttpError(404, 'This event was deleted. Refresh the page.')
+      return json({ event }, id ? 200 : 201)
+    }
+    throw new HttpError(405, 'Method not allowed.')
+  }
   const managerMatch = path.match(/^\/manage\/api\/events\/([^/]+)(\/rsvps)?$/)
   if (managerMatch?.[2] && method === 'DELETE') {
     const body = await readBody(request) as { email?: unknown }
@@ -243,10 +315,10 @@ async function route(request: Request, env: Env): Promise<Response> {
     try { input = validateEvent(body) } catch (error) { throw new HttpError(400, (error as Error).message) }
     const id = method === 'POST' ? crypto.randomUUID() : managerMatch![1]
     let updatedAt = new Date().toISOString()
-    const values = [input.kind, input.title, input.date, input.startTime, input.endTime, input.location, input.description, updatedAt, input.locationUrl || '', input.room || '', input.published ? 1 : 0, input.studentPrice, input.generalPrice]
+    const values = [input.kind, input.title, input.date, input.startTime, input.endTime, input.location, input.description, updatedAt, input.locationUrl || '', input.room || '', input.published ? 1 : 0, input.studentPrice, input.generalPrice, input.lessonEndTime]
     if (method === 'POST') {
       const create = async () => {
-      await env.EVENTS_DB.prepare('INSERT INTO events (kind, title, date, startTime, endTime, location, description, updatedAt, locationUrl, room, published, studentPrice, generalPrice, id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(...values, id).run()
+      await env.EVENTS_DB.prepare('INSERT INTO events (kind, title, date, startTime, endTime, location, description, updatedAt, locationUrl, room, published, studentPrice, generalPrice, lessonEndTime, id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(...values, id).run()
       }
       if (input.kind === 'special') await createEventWithSheet(env, input.title, create)
       else await create()
@@ -258,7 +330,7 @@ async function route(request: Request, env: Env): Promise<Response> {
       const current = await env.EVENTS_DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first<EventRecord>()
       if (!current || current.updatedAt !== previous) throw new HttpError(409, 'Someone else saved this event after you opened it.', 'stale')
       const update = async () => {
-      const result = await env.EVENTS_DB.prepare('UPDATE events SET kind = ?, title = ?, date = ?, startTime = ?, endTime = ?, location = ?, description = ?, updatedAt = ?, locationUrl = ?, room = ?, published = ?, studentPrice = ?, generalPrice = ? WHERE id = ?14 AND updatedAt = ? AND (?1 = \'special\' OR NOT EXISTS (SELECT 1 FROM rsvps WHERE eventId = ?14))').bind(...values, id, previous).run()
+      const result = await env.EVENTS_DB.prepare('UPDATE events SET kind = ?, title = ?, date = ?, startTime = ?, endTime = ?, location = ?, description = ?, updatedAt = ?, locationUrl = ?, room = ?, published = ?, studentPrice = ?, generalPrice = ?, lessonEndTime = ? WHERE id = ?15 AND updatedAt = ? AND (?1 = \'special\' OR NOT EXISTS (SELECT 1 FROM rsvps WHERE eventId = ?15))').bind(...values, id, previous).run()
       if (result.meta.changes) return
       throw new EventConflict('The event changed, or has RSVPs and cannot become a normal event. Refresh before saving.')
       }
@@ -289,6 +361,18 @@ async function route(request: Request, env: Env): Promise<Response> {
     const [response, events] = await Promise.all([env.ASSETS.fetch(assetRequest), listManagedEvents(env)])
     const snapshot = JSON.stringify({ events }).replaceAll('<', '\\u003c')
     return new HTMLRewriter().on('#manage-data', { element: element => { element.setInnerContent(snapshot, { html: true }) } }).transform(response)
+  }
+  if (path === '/events' && method === 'GET') {
+    const assetRequest = new Request(new URL('/events/', url), request)
+    assetRequest.headers.delete('If-None-Match')
+    assetRequest.headers.delete('If-Modified-Since')
+    const today = todayInNewYork()
+    const [response, loaded] = await Promise.all([env.ASSETS.fetch(assetRequest), Promise.all([cachedEvents(env, url), listOutsideEvents(env.EVENTS_DB, today)]).catch((error: unknown) => { logError('Dance listings failed to load', error); return null })])
+    if (!response.ok) return response
+    const listings: DanceSnapshot = { events: loaded?.[0] ?? [], outside: loaded?.[1] ?? [], today, unavailable: loaded === null }
+    const html = renderToString(createElement(DancesPage, listings))
+    const snapshot = JSON.stringify(listings).replaceAll('<', '\\u003c')
+    return new HTMLRewriter().on('#root', { element: element => { element.setInnerContent(html, { html: true }) } }).on('#dances-data', { element: element => { element.setInnerContent(snapshot, { html: true }) } }).transform(response)
   }
   if (path !== '/' || method !== 'GET') return env.ASSETS.fetch(request)
   const assetRequest = new Request(request)
@@ -325,7 +409,7 @@ export default {
     const pathname = new URL(request.url).pathname
     if (managerPage(pathname)) response.headers.set('X-Robots-Tag', 'noindex, nofollow')
     response.headers.set('X-Content-Type-Options', 'nosniff')
-    if (managerPage(pathname) || pathname === '/') {
+    if (managerPage(pathname) || ['/', '/events', '/events/'].includes(pathname)) {
       response.headers.set('Cache-Control', 'no-store')
       response.headers.delete('ETag')
       response.headers.delete('Last-Modified')

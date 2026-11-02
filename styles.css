@@ -9,6 +9,7 @@
 @source "./check-in/src/lib/sizes.ts";
 @source "./src/site/App.tsx";
 @source "./src/site/components/Events.tsx";
+@source "./src/site/RequestEvent.tsx";
 @source "./src/components/ui/carousel.tsx";
 
 :root {
@@ -62,6 +63,34 @@ main,
   min-height: 64px;
   display: flex;
   align-items: center;
+  gap: 16px;
+}
+
+.site-nav {
+  display: flex;
+  gap: 24px;
+  margin-left: auto;
+}
+
+.site-nav a {
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.site-nav a:hover,
+.site-nav a[aria-current="page"] {
+  text-decoration: underline;
+}
+
+/* The name and the nav share one line down to the narrowest phones. */
+@media (max-width: 380px) {
+  .site-header {
+    gap: 8px;
+  }
+
+  .site-header .site-name {
+    font-size: 1rem;
+  }
 }
 
 .hero {
@@ -229,15 +258,6 @@ h3:not([data-slot]) {
   padding: 64px 0 0;
 }
 
-.schedule-times {
-  margin: 8px 0 32px;
-  color: var(--muted-foreground);
-}
-
-.schedule-times span {
-  white-space: nowrap;
-}
-
 .etiquette h2,
 .faq h2,
 .about h2 {
@@ -356,10 +376,6 @@ h3:not([data-slot]) {
 
   .section {
     padding: 48px 0 0;
-  }
-
-  .schedule-times {
-    margin-bottom: 16px;
   }
 }
 

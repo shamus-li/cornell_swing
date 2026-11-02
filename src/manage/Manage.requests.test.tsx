@@ -24,6 +24,7 @@ async function click(text: string, scope: Document | HTMLElement = document) {
 it("updates RSVP counts and event deletion locally and loads the sheet status only in Settings", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true)
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/outside-events")) return Response.json({ events: [], groups: [] })
     if (url.endsWith("/rsvp-sheet")) return Response.json({ connection: { url: "https://docs.google.com/spreadsheets/d/example", error: null }, serviceAccountEmail: null })
     if (init?.method === "DELETE") return Response.json({ success: true })
     if (url.endsWith("/rsvps")) return Response.json({ rsvps: [{ name: "Dancer", email: "dancer@example.com", createdAt: "2026-09-21" }] })
