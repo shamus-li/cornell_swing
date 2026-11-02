@@ -6,8 +6,9 @@ import { EventDatePicker } from "./EventDatePicker"
 import { LocationPicker } from "./LocationPicker"
 import { EventTimePicker } from "./EventTimePicker"
 import { DeleteEventButton } from "./DeleteEventButton"
+import { LessonTimes } from "../events/LessonTimes"
 import { Markdown } from "../events/Markdown"
-import { formatEventLocation, formatLessonSchedule, type EventRecord } from "../events/model"
+import { formatEventLocation, validateEvent, type EventRecord } from "../events/model"
 import { DraftBadge } from "./EventDate"
 import { DateTile } from "../events/DateTile"
 import { errorMessage } from "./api"
@@ -62,15 +63,17 @@ export function NormalEventRow({ event, editing, onEdit, onSave, onDelete, onCan
   onCancel?: () => void
 }) {
   const saving = useRef(false)
+  const form = useRef<HTMLFormElement>(null)
   const [date, setDate] = useState(event.date)
   const [location, setLocation] = useState(event.location)
   const [locationUrl, setLocationUrl] = useState(event.locationUrl)
   const [room, setRoom] = useState(event.room || "")
   const [programs, setPrograms] = useState(() => parsePrograms(event.description))
   const [mode, setMode] = useState<LessonMode>(() => !event.lessonEndTime ? "none" : parsePrograms(event.description).lesson ? "one" : "two")
-  const [startTime, setStartTime] = useState(event.startTime)
+  const [lessonStart, setLessonStart] = useState(event.lessonEndTime ? event.startTime : "")
   const [endTime, setEndTime] = useState(event.endTime)
   const [lessonEnd, setLessonEnd] = useState(event.lessonEndTime || "")
+  const [socialStart, setSocialStart] = useState(event.lessonEndTime ? event.socialStartTime || "" : event.startTime)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const originalDescription = useMemo(() => serializePrograms(parsePrograms(event.description)), [event.description])
@@ -78,7 +81,9 @@ export function NormalEventRow({ event, editing, onEdit, onSave, onDelete, onCan
   const description = serializePrograms({ ...programs, ...(mode !== "one" && { lesson: "" }), ...(mode !== "two" && { beginner: "", advanced: "" }) })
   const descriptionChanged = description !== originalDescription
   const lessonEndTime = mode === "none" ? "" : lessonEnd
-  const dirty = editing && (date !== event.date || location !== event.location || locationUrl !== event.locationUrl || room !== (event.room || "") || startTime !== event.startTime || endTime !== event.endTime || lessonEndTime !== (event.lessonEndTime || "") || descriptionChanged)
+  const socialStartTime = mode === "none" ? "" : socialStart
+  const startTime = mode === "none" ? socialStart : lessonStart
+  const dirty = editing && (date !== event.date || location !== event.location || locationUrl !== event.locationUrl || room !== (event.room || "") || startTime !== event.startTime || endTime !== event.endTime || lessonEndTime !== (event.lessonEndTime || "") || socialStartTime !== (event.socialStartTime || "") || descriptionChanged)
   useEffect(() => {
     if (!dirty) return
     const warn = (e: BeforeUnloadEvent) => e.preventDefault()
@@ -88,10 +93,13 @@ export function NormalEventRow({ event, editing, onEdit, onSave, onDelete, onCan
   async function save(published = event.published): Promise<boolean> {
     if (saving.current) return false
     if (event.id && !dirty && published === event.published) { onCancel?.(); return true }
+    if (!form.current?.reportValidity()) return false
     if (mode !== "none" && !lessonEnd) { setError("Enter when the lesson ends."); return false }
     saving.current = true; setBusy(true); setError("")
     try {
-      await onSave({ ...event, published, date, startTime, endTime, lessonEndTime, location, room, ...(locationUrl !== undefined && { locationUrl }), description: descriptionChanged ? description : event.description })
+      const draft = { ...event, published, date, startTime, endTime, lessonEndTime, socialStartTime, location, room, ...(locationUrl !== undefined && { locationUrl }), description: descriptionChanged ? description : event.description }
+      validateEvent(draft)
+      await onSave(draft)
       onCancel?.()
       return true
     } catch (err) {
@@ -102,29 +110,30 @@ export function NormalEventRow({ event, editing, onEdit, onSave, onDelete, onCan
   // Leaving an untouched new lesson discards it instead of creating one.
   useImperativeHandle(ref, () => ({ save: () => event.id || dirty ? save() : (onCancel?.(), Promise.resolve(true)) }))
   const change = (key: keyof Programs, value: string) => setPrograms(current => ({ ...current, [key]: value }))
-  // Adding a lesson to a night without one starts it with an hour-long lesson.
+  // Adding a lesson to a night without one starts it with an hour-long lesson, followed by the social dance.
   function changeMode(next: LessonMode) {
-    if (mode === "none" && next !== "none" && !lessonEnd && startTime) setLessonEnd(addMinutes(startTime, 60))
+    if (mode === "none" && next !== "none" && !lessonEnd && socialStart) {
+      setLessonStart(socialStart)
+      setLessonEnd(addMinutes(socialStart, 60))
+      setSocialStart(addMinutes(socialStart, 60))
+    }
     setMode(next)
   }
-  // The social dance starts when the lesson ends, so its start time edits the lesson's end on nights with a lesson.
-  const socialStart = mode === "none" ? startTime : lessonEnd
-  const setSocialStart = mode === "none" ? setStartTime : setLessonEnd
   return <article className="normal-event-row">
-    {editing ? <form className="normal-event-edit" onSubmit={e => { e.preventDefault(); void save() }}>
+    {editing ? <form ref={form} className="normal-event-edit" onSubmit={e => { e.preventDefault(); void save() }}>
       <div className="normal-event-fields">
         <div className="editor-row"><span>Date</span><EventDatePicker value={date} onChange={setDate} disabled={busy} /></div>
         <div className="editor-row editor-row-top"><span>Location</span><LocationPicker value={location} url={locationUrl} room={room} onRoomChange={setRoom} onChange={(name, url) => { setLocation(name); setLocationUrl(url) }} disabled={busy} /></div>
         <div className="editor-row editor-row-top"><span>Lesson</span><div className="lesson-times">
           <div className="segmented" role="group" aria-label="Lessons">{lessonModes.map(item => <button key={item.value} type="button" aria-pressed={mode === item.value} disabled={busy} onClick={() => changeMode(item.value)}>{item.label}</button>)}</div>
-          {mode !== "none" && <div className="time-range"><EventTimePicker label="Lesson start" value={startTime} onChange={setStartTime} disabled={busy} /><span aria-hidden="true">–</span><EventTimePicker label="Lesson end" value={lessonEnd} onChange={setLessonEnd} disabled={busy} /></div>}
+          {mode !== "none" && <div className="time-range"><EventTimePicker label="Lesson start" value={lessonStart} onChange={setLessonStart} disabled={busy} required /><span aria-hidden="true">–</span><EventTimePicker label="Lesson end" value={lessonEnd} onChange={setLessonEnd} disabled={busy} required /></div>}
         </div></div>
         {mode === "one" && <label className="editor-row"><span>Topic</span><Input value={programs.lesson} onChange={e => change("lesson", e.target.value)} disabled={busy} /></label>}
         {mode === "two" && <>
           <label className="editor-row"><span>Beginner</span><Input value={programs.beginner} onChange={e => change("beginner", e.target.value)} disabled={busy} /></label>
           <label className="editor-row"><span>Advanced</span><Input value={programs.advanced} onChange={e => change("advanced", e.target.value)} disabled={busy} /></label>
         </>}
-        <div className="editor-row"><span>Social</span><div className="time-range"><EventTimePicker label="Social dance start" value={socialStart} onChange={setSocialStart} disabled={busy} /><span aria-hidden="true">–</span><EventTimePicker label="Social dance end" value={endTime} onChange={setEndTime} disabled={busy} /></div></div>
+        <div className="editor-row"><span>Social</span><div className="time-range"><EventTimePicker label="Social dance start" value={socialStart} onChange={setSocialStart} disabled={busy} required={mode !== "none"} /><span aria-hidden="true">–</span><EventTimePicker label="Social dance end" value={endTime} onChange={setEndTime} disabled={busy} /></div></div>
         <label className="editor-row editor-row-top"><span>Notes</span><Textarea rows={2} placeholder="Optional" value={programs.notes} onChange={e => change("notes", e.target.value)} disabled={busy} /></label>
       </div>
       {error && <p role="alert" className="event-error">{error}</p>}
@@ -133,7 +142,7 @@ export function NormalEventRow({ event, editing, onEdit, onSave, onDelete, onCan
       <DateTile date={event.date} />
       <div className="event-row-text">
         <span className="event-row-title"><strong>{formatEventLocation(event)}</strong>{!event.published && <DraftBadge />}</span>
-        <div className="normal-event-program event-muted"><p>{formatLessonSchedule(event).join(" · ")}</p>{event.description ? <Markdown>{event.description}</Markdown> : event.lessonEndTime && <p>Lesson to be announced</p>}</div>
+        <div className="normal-event-program event-muted"><LessonTimes event={event} />{event.description ? <Markdown>{event.description}</Markdown> : event.lessonEndTime && <p>Lesson to be announced</p>}</div>
       </div>
     </div></Button>}
   </article>

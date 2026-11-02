@@ -1,20 +1,21 @@
 import { useState } from "react"
 import { ClockIcon, MapPinIcon, TicketIcon } from "lucide-react"
 import { Button } from "../../check-in/src/components/ui/button"
-import { formatEventDate, formatEventLocation, formatEventPrices, formatEventTime, formatLessonSchedule, hasEventDetails, type EventRecord } from "../events/model"
+import { formatEventDate, formatEventLocation, formatEventPrices, formatEventTime, hasEventDetails, nightSpan, type EventRecord } from "../events/model"
 import type { OutsideEvent } from "../events/outside"
+import { LessonTimes } from "../events/LessonTimes"
 import { DateTile } from "../events/DateTile"
 import { RequestEvent } from "./RequestEvent"
 
 // `unavailable` is set when the server could not read the events, so the page says so instead of "no dances".
 export type DanceSnapshot = { events: EventRecord[]; outside: OutsideEvent[]; today: string; unavailable?: boolean }
 
-type Listing = { key: string; date: string; startTime: string; title: string; group: string; styles: string[]; time: string; venue: string; price: string; href: string; action: string; ours: boolean }
+type Listing = { key: string; date: string; startTime: string; title: string; group: string; styles: string[]; time: string; lesson?: EventRecord; venue: string; price: string; href: string; action: string; ours: boolean }
 
 function listings({ events, outside, today }: DanceSnapshot): Listing[] {
   const ours = events.filter(event => event.date >= today).map((event): Listing => ({
-    key: event.id, date: event.date, startTime: event.startTime, title: event.title, group: "Swing Syndicate", styles: ["Swing"],
-    time: event.kind === "normal" ? formatLessonSchedule(event).join(" · ") : formatEventTime(event), venue: formatEventLocation(event), price: formatEventPrices(event).join(" · "),
+    key: event.id, date: event.date, startTime: nightSpan(event).startTime, title: event.title, group: "Swing Syndicate", styles: ["Swing"],
+    time: formatEventTime(event), ...(event.kind === "normal" && { lesson: event }), venue: formatEventLocation(event), price: formatEventPrices(event).join(" · "),
     href: `/#event-${event.id}`, action: event.kind === "special" && hasEventDetails(event) ? "RSVP" : "Details", ours: true,
   }))
   const theirs = outside.filter(event => event.date >= today).map((event): Listing => ({
@@ -55,7 +56,7 @@ export function DancesPage(snapshot: DanceSnapshot) {
             <h3>{listing.title}</h3>
             <p className="dance-group">{listing.group} · {listing.styles.join(", ")}</p>
             <div className="event-meta">
-              <p className="icon-line"><ClockIcon aria-hidden="true" /><span>{formatEventDate(listing.date, { weekday: "long" })} · {listing.time}</span></p>
+              {listing.lesson ? <LessonTimes event={listing.lesson} /> : <p className="icon-line"><ClockIcon aria-hidden="true" /><span>{formatEventDate(listing.date, { weekday: "long" })} · {listing.time}</span></p>}
               {listing.venue && listing.venue !== "TBA" && <p className="icon-line"><MapPinIcon aria-hidden="true" /><span>{listing.venue}</span></p>}
               {listing.price && <p className="icon-line"><TicketIcon aria-hidden="true" /><span>{listing.price}</span></p>}
             </div>

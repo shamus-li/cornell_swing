@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { formatEventDate, formatEventLocation, formatEventPrices, formatEventTime, todayInNewYork, type EventRecord } from "../events/model"
+import { formatEventDate, formatEventLocation, formatEventPrices, formatEventTime, nightSpan, todayInNewYork, type EventRecord } from "../events/model"
 import { parsePrograms } from "./NormalEventRow"
 
 // Inline styles only, since Gmail keeps nothing else from pasted HTML.
@@ -99,7 +99,7 @@ export function GlanceBlock({ events }: { events: EventRecord[] }) {
     <table role="presentation" cellPadding={0} cellSpacing={0} border={0} width="100%" style={{ width: "100%", margin: "0 0 16px", borderCollapse: "collapse" }}><tbody>
       {events.map(event => <tr key={event.id}>
         <td style={{ width: 88, padding: "6px 12px 6px 0", verticalAlign: "top", fontSize: 15, lineHeight: "22px", fontWeight: 700, whiteSpace: "nowrap" }}>{formatEventDate(event.date, { weekday: "short", month: "short", day: "numeric" })}</td>
-        <td style={{ padding: "6px 0", verticalAlign: "top", fontSize: 15, lineHeight: "22px" }}>{event.kind === "normal" ? lessonTitle(event) : event.title}<br /><span style={{ color: gray }}>{time(event)} · {formatEventLocation(event)}</span></td>
+        <td style={{ padding: "6px 0", verticalAlign: "top", fontSize: 15, lineHeight: "22px" }}>{event.kind === "normal" ? lessonTitle(event) : event.title}<br /><span style={{ color: gray }}>{time(nightSpan(event))} · {formatEventLocation(event)}</span></td>
       </tr>)}
     </tbody></table>
   </>
@@ -116,21 +116,24 @@ export function FeaturedBlock({ event }: { event: EventRecord }) {
   </>
 }
 
-const lessonTitle = (lesson: EventRecord) => lesson.lessonEndTime ? "Lessons and social dance" : "Social dance"
+const lessonTitle = (lesson: EventRecord) => !lesson.lessonEndTime ? "Social dance" : parsePrograms(lesson.description).lesson ? "Lesson and social dance" : "Lessons and social dance"
 
-// Monday nights open with lessons, when there are any, then social dancing until the end.
+// Lessons, when there are any, and the social dance, in the order they start.
 export function LessonBlock({ lesson, theme }: { lesson: EventRecord; theme: boolean }) {
   const { lesson: topic, beginner, advanced, notes } = parsePrograms(lesson.description)
   const row: CSSProperties = { margin: "0 0 16px", fontSize: 16, lineHeight: "24px" }
+  const social = <p style={row}><strong>{time({ ...lesson, startTime: lesson.socialStartTime || lesson.startTime })} · Social dance</strong>{theme && <><br />Secret theme: …</>}</p>
+  const socialFirst = lesson.lessonEndTime && lesson.socialStartTime! < lesson.startTime
   return <>
     <Title>{lessonTitle(lesson)}</Title>
     <p style={meta}>{fullDate(lesson.date)} · <Place event={lesson} /></p>
+    {socialFirst && social}
     {lesson.lessonEndTime && <p style={row}><strong>{time({ ...lesson, endTime: lesson.lessonEndTime })} · {topic ? "Lesson" : "Lessons"}</strong>
       {topic && <><br />{topic}</>}
       {advanced && <><br />{advanced} <span style={{ color: gray }}>(advanced)</span></>}
       {beginner && <><br />{beginner} <span style={{ color: gray }}>(beginner)</span></>}
     </p>}
-    <p style={row}><strong>{time({ ...lesson, startTime: lesson.lessonEndTime || lesson.startTime })} · Social dance</strong>{theme && <><br />Secret theme: …</>}</p>
+    {!socialFirst && social}
     {notes && <EmailMarkdown>{notes}</EmailMarkdown>}
   </>
 }

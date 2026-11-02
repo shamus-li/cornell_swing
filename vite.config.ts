@@ -4,8 +4,10 @@ import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 
+import { mockServer } from "./dev/mock-server"
+
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), mockServer()],
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./check-in/src", import.meta.url)),
@@ -13,7 +15,9 @@ export default defineConfig({
     },
     dedupe: ["react", "react-dom"],
   },
-  server: { proxy: { "/api": "http://localhost:8787", "/manage/api": "http://localhost:8787", "/redirects/api": "http://localhost:8787" } },
+  server: { proxy: { "/redirects/api": "http://localhost:8787" } },
+  // The mock server renders pages using code that imports this package, which Node cannot load unbundled.
+  ssr: { noExternal: ["validator"] },
   build: {
     modulePreload: { polyfill: false },
     rollupOptions: {

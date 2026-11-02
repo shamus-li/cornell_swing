@@ -2,6 +2,7 @@ import { dateKeyInTimeZone, timestampForSheet } from '../../check-in/worker/goog
 import type { SquareFeed, SquarePayment } from './finance'
 import { upsertLedgerRows, type LedgerRow } from './ledger'
 import { logError } from './logging'
+import { nightSpan } from './model'
 
 // An officer connects the club's Square account from the Finances tab. The site then reads its payments
 // on SQUARE_CRON and files them on the finance sheet's Ledger.
@@ -15,7 +16,7 @@ type Connection = { merchantId: string; accessToken: string; refreshToken: strin
 type Money = { amount: number }
 type Payment = { id: string; created_at: string; status: string; source_type: string; amount_money: Money; refunded_money?: Money; processing_fee?: { amount_money: Money }[]; note?: string }
 type Tokens = { access_token: string; refresh_token: string; expires_at: string; merchant_id: string }
-type Event = { id: string; date: string; startTime: string; endTime: string }
+type Event = { id: string; date: string; startTime: string; endTime: string; lessonEndTime: string; socialStartTime: string }
 
 class SquareAuthError extends Error {}
 
@@ -63,8 +64,11 @@ async function eventAt(env: Env, paidAt: string): Promise<string | null> {
   const ms = Date.parse(paidAt)
   const serial = timestampForSheet(ms, env.TIME_ZONE)
   const minutes = (serial - Math.floor(serial)) * 24 * 60
-  const events = (await env.EVENTS_DB.prepare('SELECT id, date, startTime, endTime FROM events WHERE date = ? ORDER BY startTime').bind(dateKeyInTimeZone(ms, env.TIME_ZONE)).all<Event>()).results
-  return events.find(event => (!event.startTime || minutes >= minutesOf(event.startTime) - 120) && (!event.endTime || minutes <= minutesOf(event.endTime) + 180))?.id ?? null
+  const events = (await env.EVENTS_DB.prepare('SELECT id, date, startTime, endTime, lessonEndTime, socialStartTime FROM events WHERE date = ? ORDER BY startTime').bind(dateKeyInTimeZone(ms, env.TIME_ZONE)).all<Event>()).results
+  return events.find(event => {
+    const { startTime, endTime } = nightSpan(event)
+    return (!startTime || minutes >= minutesOf(startTime) - 120) && (!endTime || minutes <= minutesOf(endTime) + 180)
+  })?.id ?? null
 }
 
 async function savePayment(env: Env, payment: Payment): Promise<void> {

@@ -16,14 +16,17 @@ function parseTime(text: string): string | null {
   const minute = Number(match[2] || "0")
   if (minute > 59 || (match[3] ? hour < 1 || hour > 12 : hour > 23)) return null
   if (match[3]) hour = hour % 12 + (match[3].toLowerCase() === "pm" ? 12 : 0)
+  // Dances are in the evening, so a plain "9" means 9 PM; "09:00" still means morning.
+  else if (hour >= 1 && hour < 12 && !match[1].startsWith("0")) hour += 12
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
 }
 
-export function EventTimePicker({ value, onChange, label, disabled }: {
+export function EventTimePicker({ value, onChange, label, disabled, required }: {
   value: string
   onChange: (value: string) => void
   label: string
   disabled?: boolean
+  required?: boolean
 }) {
   const [text, setText] = useState(value ? timeLabel(value) : "")
   const input = useRef<HTMLInputElement>(null)
@@ -38,7 +41,7 @@ export function EventTimePicker({ value, onChange, label, disabled }: {
   function edit(next: string) {
     setText(next)
     const parsed = parseTime(next)
-    input.current?.setCustomValidity(parsed === null ? "Enter a time such as 8:07 PM or 20:07, or clear it for TBA." : "")
+    input.current?.setCustomValidity(parsed === null ? `Enter a time such as 8:07 PM or 20:07${required ? "" : ", or clear it for TBA"}.` : "")
     if (parsed !== null) onChange(parsed)
   }
 

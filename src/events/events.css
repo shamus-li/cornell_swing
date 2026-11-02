@@ -8,8 +8,8 @@
 .event-meta p { margin: 0; }
 /* A small grey icon before a detail, like Luma's event listings. */
 .icon-line { display: flex; gap: 8px; }
-/* A price or a lesson time never breaks across lines; the line wraps between them. */
-.price, .nowrap { white-space: nowrap; }
+/* A price never breaks across lines; the line wraps between them. */
+.price { white-space: nowrap; }
 .icon-line > svg { flex: none; width: 16px; height: 16px; margin-top: .25em; color: var(--muted-foreground); }
 .event-markdown { overflow-wrap: anywhere; line-height: 1.5; }
 .event-markdown > :first-child { margin-top: 0; }

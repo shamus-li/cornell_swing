@@ -4,8 +4,9 @@ import { Input } from "../../../check-in/src/components/ui/input"
 import { FloatingField, floatingInputClass } from "../../../check-in/src/components/ui/floating-field"
 import { Button } from "../../../check-in/src/components/ui/button"
 import { largeButtonClass } from "../../../check-in/src/lib/sizes"
-import { formatEventLocation, formatEventDate, formatEventPrices, formatEventTime, formatLessonSchedule, hasEventDetails, scheduleTitle, todayInNewYork, type EventRecord } from "../../events/model"
+import { formatEventLocation, formatEventDate, formatEventPrices, formatEventTime, hasEventDetails, scheduleTitle, todayInNewYork, type EventRecord } from "../../events/model"
 import { EventLocation } from "../../events/EventLocation"
+import { LessonTimes } from "../../events/LessonTimes"
 import { Markdown } from "../../events/Markdown"
 import { DateTile } from "../../events/DateTile"
 
@@ -85,9 +86,6 @@ function RsvpDialog({ event, onClose }: { event: EventRecord; onClose: () => voi
   </dialog>
 }
 
-// Each part stays on one line, so a narrow screen wraps between the lesson and the social dance.
-const LessonSchedule = ({ event }: { event: EventRecord }) => formatLessonSchedule(event).map((part, index) => <Fragment key={part}>{index > 0 && " · "}<span className="nowrap">{part}</span></Fragment>)
-
 const nextLesson = ({ events, today }: EventSnapshot) => events.find(event => event.kind === "normal" && event.date >= today)
 
 // The Worker renders this into the hero on each request, like EventSections below it.
@@ -101,7 +99,7 @@ export function NextEvent({ events, today }: EventSnapshot) {
     <div className="next-event-details is-next">
       <div className="next-event-row">
         <DateTile date={event.date} />
-        <div><p className="next-event-title">{formatEventDate(event.date, { weekday: "long", month: "long", day: "numeric" })}</p><p className="event-muted">{event.kind === "normal" ? <LessonSchedule event={event} /> : formatEventTime(event)}</p></div>
+        <div><p className="next-event-title">{formatEventDate(event.date, { weekday: "long", month: "long", day: "numeric" })}</p>{event.kind === "normal" ? <div className="event-muted"><LessonTimes event={event} /></div> : <p className="event-muted">{formatEventTime(event)}</p>}</div>
       </div>
       <div className="next-event-row">
         <span className="next-event-icon"><MapPinIcon aria-hidden="true" /></span>
@@ -139,7 +137,7 @@ export function EventSections(snapshot: EventSnapshot) {
     <DateTile date={event.date} />
     <div className="schedule-content">
       <p className="schedule-location icon-line"><MapPinIcon aria-hidden="true" /><span><EventLocation event={event} /></span></p>
-      <p className="schedule-times icon-line"><ClockIcon aria-hidden="true" /><span><LessonSchedule event={event} /></span></p>
+      <LessonTimes event={event} />
       <div className="schedule-program">{event.description ? <Markdown>{event.description}</Markdown> : event.lessonEndTime && <p>Lesson TBA</p>}</div>
     </div>
   </article>

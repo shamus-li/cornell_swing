@@ -10,7 +10,7 @@ import { todayInNewYork } from "../events/model"
 import { Markdown } from "../events/Markdown"
 
 const base = { date: "2099-10-17", startTime: "18:15", endTime: "22:00", location: "Dance hall", description: "**Live music**", published: true, updatedAt: "2026-09-20T12:00:00.000Z", rsvpCount: 0 }
-const events: ManagedEvent[] = [{ ...base, id: "normal", kind: "normal", title: "Monday swing", lessonEndTime: "21:00" }, { ...base, id: "special", kind: "special", title: "Autumn dance", rsvpCount: 1 }]
+const events: ManagedEvent[] = [{ ...base, id: "normal", kind: "normal", title: "Monday swing", lessonEndTime: "21:00", socialStartTime: "21:00" }, { ...base, id: "special", kind: "special", title: "Autumn dance", rsvpCount: 1 }]
 let root: Root | undefined
 afterEach(async () => {
   if (root) await act(async () => root!.unmount())

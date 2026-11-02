@@ -5,7 +5,7 @@ import { afterEach, expect, it, vi } from "vitest"
 import type { EventRecord } from "../events/model"
 import { NormalEventRow, parsePrograms, serializePrograms } from "./NormalEventRow"
 
-const event: EventRecord = { id: "normal-2099-10-12", kind: "normal", title: "Monday swing", date: "2099-10-12", startTime: "20:00", endTime: "22:00", lessonEndTime: "21:00", location: "Dance hall", description: "**Beginner:** Basics\n\n**Advanced:** Swingouts\n\nThe social dance is 8-10pm!\n\n[Details](https://example.com)", published: true, updatedAt: "2026-09-20T12:00:00.000Z" }
+const event: EventRecord = { id: "normal-2099-10-12", kind: "normal", title: "Monday swing", date: "2099-10-12", startTime: "20:00", endTime: "22:00", lessonEndTime: "21:00", socialStartTime: "21:00", location: "Dance hall", description: "**Beginner:** Basics\n\n**Advanced:** Swingouts\n\nThe social dance is 8-10pm!\n\n[Details](https://example.com)", published: true, updatedAt: "2026-09-20T12:00:00.000Z" }
 let root: Root | undefined
 afterEach(async () => {
   if (root) await act(async () => root!.unmount())
@@ -84,6 +84,42 @@ it("saves nights with one lesson or none, dropping topics for lessons the night 
   expect(inputByLabel(container, "Beginner")).toBeUndefined()
   await submit(container)
   expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ lessonEndTime: "", description: "The social dance is 8-10pm!\n\n[Details](https://example.com)" }))
+})
+
+it("saves a social dance that runs at the same time as the lesson", async () => {
+  const onSave = vi.fn(async (_draft: EventRecord) => {})
+  const container = await render(event, onSave)
+  await act(async () => container.querySelector<HTMLElement>('.normal-event-summary')!.click())
+  await enter(inputByLabel(container, "Social dance start"), "8:00 PM")
+  await submit(container)
+  expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ startTime: "20:00", lessonEndTime: "21:00", socialStartTime: "20:00", endTime: "22:00" }))
+})
+
+it("keeps each time when switching to no lesson and back", async () => {
+  const onSave = vi.fn(async (_draft: EventRecord) => {})
+  const container = await render({ ...event, startTime: "21:00", lessonEndTime: "22:00", socialStartTime: "20:00" }, onSave)
+  await act(async () => container.querySelector<HTMLElement>('.normal-event-summary')!.click())
+  await chooseLessons(container, "None")
+  expect(inputByLabel(container, "Social dance start").value).toBe("8:00 PM")
+  await chooseLessons(container, "Two levels")
+  await enter(inputByLabel(container, "Lesson end"), "9")
+  await enter(inputByLabel(container, "Lesson start"), "8")
+  await submit(container)
+  expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ startTime: "20:00", lessonEndTime: "21:00", socialStartTime: "20:00" }))
+})
+
+it("does not publish a mistyped time or a lesson that ends before it starts", async () => {
+  const onSave = vi.fn(async (_draft: EventRecord) => {})
+  const container = await render({ ...event, published: false }, onSave)
+  await act(async () => container.querySelector<HTMLElement>('.normal-event-summary')!.click())
+  const publish = [...container.querySelectorAll("button")].find(button => button.textContent === "Publish")!
+  await enter(inputByLabel(container, "Lesson end"), "abc")
+  await act(async () => publish.click())
+  expect(inputByLabel(container, "Lesson end").validationMessage).toBe("Enter a time such as 8:07 PM or 20:07.")
+  await enter(inputByLabel(container, "Lesson end"), "7:00 PM")
+  await act(async () => publish.click())
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe("The lesson must end after it starts.")
+  expect(onSave).not.toHaveBeenCalled()
 })
 
 it("preserves the exact legacy description when only location changes", async () => {

@@ -23,6 +23,7 @@
   },
   "include": [
     "src",
+    "dev",
     "check-in/src",
     "check-in/worker",
     "check-in/test",
