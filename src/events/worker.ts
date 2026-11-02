@@ -257,7 +257,22 @@ async function route(request: Request, env: Env): Promise<Response> {
     const charge = (tender: string) => `square-commerce-v1://payment/create?data=${encodeURIComponent(JSON.stringify({ amount_money: { amount: 100, currency_code: 'USD' }, callback_url: callback, client_id: env.SQUARE_APPLICATION_ID, version: '1.3', notes: 'door-test', options: { supported_tender_types: [tender], auto_return: true, skip_receipt: true } }))}`
     const result = (url.searchParams.get('data') ?? '').replace(/[&<>]/g, char => `&#${char.charCodeAt(0)};`)
     const auto = url.searchParams.has('auto') ? `<script>setTimeout(() => { location.href = ${JSON.stringify(charge('CARD_FROM_READER'))} }, 1000)</script>` : ''
-    return new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="apple-mobile-web-app-capable" content="yes"><title>Square test</title><style>body{font:18px system-ui;margin:16px}a{display:block;margin:12px 0;padding:16px;background:#111;color:#fff;border-radius:8px;text-decoration:none}pre{white-space:pre-wrap;word-break:break-all}</style><p id="mode"></p><a href="${charge('CARD_FROM_READER')}">A: Card from reader</a><a href="${charge('CREDIT_CARD')}">B: Credit card</a><a href="?auto=1">C: Card from reader, no tap</a><pre>${result}</pre><script>document.getElementById('mode').textContent = navigator.standalone ? 'Home Screen app' : 'Browser'</script>${auto}`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+    return new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="apple-mobile-web-app-capable" content="yes"><title>Square test</title><style>body{font:18px system-ui;margin:16px}a{display:block;margin:12px 0;padding:16px;background:#111;color:#fff;border-radius:8px;text-decoration:none}pre{white-space:pre-wrap;word-break:break-all}</style><p id="mode"></p><a href="${charge('CARD_FROM_READER')}">A: Card from reader</a><a href="${charge('CREDIT_CARD')}">B: Credit card</a><a href="?auto=1">C: Card from reader, no tap</a><pre>${result}</pre><script>
+const mode = document.getElementById('mode'), out = document.querySelector('pre'), channel = new BroadcastChannel('door-test')
+mode.textContent = 'Tabs in history: ' + history.length
+channel.onmessage = ({ data }) => {
+  if (data.result) out.textContent = data.result
+  if (data.close) window.close()
+}
+if (out.textContent) {
+  channel.postMessage({ result: out.textContent })
+  setTimeout(() => {
+    mode.textContent = 'Tried to close this tab'
+    window.close()
+    setTimeout(() => { mode.textContent = 'Could not close this tab, closing older ones'; channel.postMessage({ close: true }) }, 500)
+  }, 1500)
+}
+</script>${auto}`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
   }
   // Square sends the officer back to the callback with a code for reading the account's payments.
   if (path === '/manage/square/connect' && method === 'GET') {
