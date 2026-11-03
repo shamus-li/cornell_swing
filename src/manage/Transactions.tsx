@@ -36,14 +36,18 @@ const periods: { value: string; label: string; range: () => [string, string] }[]
 export function TransactionsTable({ transactions, showEvent = true }: { transactions: Transaction[]; showEvent?: boolean }) {
   const counted = transactions.filter(onSheet)
   const total = (pick: (item: Transaction) => number) => counted.reduce((sum, item) => sum + pick(item), 0)
+  // These columns only appear when a row has something to show: no export means no CampusGroups column.
+  const showStatus = transactions.some(item => item.status)
+  const showFee = transactions.some(item => item.fee)
+  const leading = 2 + (showEvent ? 1 : 0) + (showStatus ? 1 : 0)
   return <Card><Table>
     <TableHeader><TableRow>
       <TableHead>Date</TableHead>
       <TableHead>Description</TableHead>
       {showEvent && <TableHead className={wide}>Event</TableHead>}
       <TableHead className={wide}>Account</TableHead>
-      <TableHead className={wide}>CampusGroups</TableHead>
-      <TableHead className={`${wide} text-right`}>Square fee</TableHead>
+      {showStatus && <TableHead className={wide}>CampusGroups</TableHead>}
+      {showFee && <TableHead className={`${wide} text-right`}>Square fee</TableHead>}
       <TableHead className="text-right">Amount</TableHead>
     </TableRow></TableHeader>
     <TableBody>{transactions.map(item => <TableRow key={item.id}>
@@ -51,14 +55,14 @@ export function TransactionsTable({ transactions, showEvent = true }: { transact
       <TableCell>{item.description}</TableCell>
       {showEvent && <TableCell className={wide}>{item.eventId ? <a href={`/manage/?event=${item.eventId}`}>{item.eventName}</a> : item.eventName}</TableCell>}
       <TableCell className={`${wide} whitespace-nowrap`}>{item.account}</TableCell>
-      <TableCell className={wide}>{item.status && <span className={`finance-check${item.status === "in-campusgroups" || item.status === "after-export" ? "" : " is-off"}`}>{item.status === "in-campusgroups" ? <Check aria-hidden="true" /> : item.status !== "after-export" && <TriangleAlert aria-hidden="true" />}{statusLabels[item.status]}</span>}</TableCell>
-      <TableCell className={`${wide} ${number}`}>{item.fee ? money(item.fee) : ""}</TableCell>
+      {showStatus && <TableCell className={wide}>{item.status && <span className={`finance-check${item.status === "in-campusgroups" || item.status === "after-export" ? "" : " is-off"}`}>{item.status === "in-campusgroups" ? <Check aria-hidden="true" /> : item.status !== "after-export" && <TriangleAlert aria-hidden="true" />}{statusLabels[item.status]}</span>}</TableCell>}
+      {showFee && <TableCell className={`${wide} ${number}`}>{item.fee ? money(item.fee) : ""}</TableCell>}
       <TableCell className={number}>{money(item.amount)}</TableCell>
     </TableRow>)}</TableBody>
     <TableFooter><TableRow>
       <TableCell colSpan={2} className="sm:hidden">Total on the Balance Sheet</TableCell>
-      <TableCell colSpan={showEvent ? 5 : 4} className={wide}>Total on the Balance Sheet, {transactions.length} {transactions.length === 1 ? "row" : "rows"}</TableCell>
-      <TableCell className={`${wide} ${number}`}>{money(total(item => item.fee))}</TableCell>
+      <TableCell colSpan={leading + 1} className={wide}>Total on the Balance Sheet, {transactions.length} {transactions.length === 1 ? "row" : "rows"}</TableCell>
+      {showFee && <TableCell className={`${wide} ${number}`}>{money(total(item => item.fee))}</TableCell>}
       <TableCell className={number}>{money(total(item => item.amount))}</TableCell>
     </TableRow></TableFooter>
   </Table></Card>

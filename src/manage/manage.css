@@ -66,7 +66,6 @@ html:has(.manage-page) { scroll-behavior: auto; }
 
 /* Event editor */
 .event-editor-shell { display: grid; gap: 16px; }
-.back-button { justify-self: start; margin-left: -12px; color: var(--muted-foreground); }
 .event-editor { display: grid; gap: 16px; padding-top: 8px; }
 .editor-title { display: flex; align-items: flex-start; gap: 16px; }
 /* An undated tile stays the height of a dated one, so setting the date moves nothing below it. */

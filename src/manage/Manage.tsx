@@ -1,6 +1,6 @@
 import { addDays, differenceInCalendarDays, format, parseISO } from "date-fns"
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react"
-import { CalendarIcon, MapPinIcon, MusicIcon, TicketIcon, XIcon } from "lucide-react"
+import { ArrowLeftIcon, CalendarIcon, MapPinIcon, MusicIcon, TicketIcon, XIcon } from "lucide-react"
 import { Button } from "../../check-in/src/components/ui/button"
 import { Input } from "../../check-in/src/components/ui/input"
 import { StylePicker } from "../events/StylePicker"
@@ -12,7 +12,7 @@ import { NormalEventRow, type NormalEventHandle } from "./NormalEventRow"
 import { DiscardChangesButton, DiscardChangesDialog } from "./DiscardChangesButton"
 import { DeleteEventButton } from "./DeleteEventButton"
 import { CopyButton } from "./CopyButton"
-import { EventGuests, EventOverview } from "./EventOverview"
+import { EventGuests, EventOverview, useEventRecords } from "./EventOverview"
 import { SheetConnection } from "./SheetConnection"
 import { CampusGroupsUpload } from "./CampusGroupsUpload"
 import { api, ApiError, errorMessage } from "./api"
@@ -191,6 +191,9 @@ function EventGroups<T extends { date: string }>({ events, render, empty, first 
 function EventEditor({ event, leaveGuard, onSave, onReplace, onDelete, onCancel, onRsvpChange }: { event: ManagedEvent; leaveGuard: RefObject<(() => void) | null>; onRsvpChange: () => void; onSave: (event: EventRecord) => void; onReplace: (event: EventRecord) => void; onDelete: () => void; onCancel: () => void }) {
   const [draft, setDraft] = useState<EventRecord>(event)
   const [tab, setTab] = useState<"overview" | "guests" | "details">(event.id ? "overview" : "details")
+  const records = useEventRecords(event.id, onRsvpChange)
+  // RSVPs before the event, and who came once it has started.
+  const guestCount = !event.date || event.date > todayInNewYork() ? event.rsvpCount : records.attended
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const [editorError, setEditorError] = useState("")
@@ -242,10 +245,10 @@ function EventEditor({ event, leaveGuard, onSave, onReplace, onDelete, onCancel,
   }
   return <div className="event-editor-shell">
     <DiscardChangesDialog open={leaving} onOpenChange={setLeaving} onDiscard={onCancel} />
-    <DiscardChangesButton variant="ghost" size="sm" className="back-button" dirty={dirty} onDiscard={onCancel} disabled={busy}>← Events</DiscardChangesButton>
+    <DiscardChangesButton variant="ghost" className="back-button" dirty={dirty} onDiscard={onCancel} disabled={busy}><ArrowLeftIcon aria-hidden="true" />Events</DiscardChangesButton>
     {event.id && tab !== "details" && <div className="event-page-title"><DateTile date={event.date} /><h1>{event.title}</h1></div>}
-    {event.id && <Tabs label="Event sections" tabs={[{ value: "overview", label: "Overview" }, { value: "guests", label: <>Guests <span className="tab-count">{event.rsvpCount}</span></> }, { value: "details", label: "Details" }]} value={tab} onChange={setTab} />}
-    {tab === "overview" ? <div role="tabpanel" className="guest-panel" aria-label="Overview"><EventOverview event={event} rsvpCount={event.rsvpCount} /></div> : tab === "guests" ? <div role="tabpanel" className="guest-panel" aria-label="Guests"><EventGuests event={event} onChange={onRsvpChange} /></div> :
+    {event.id && <Tabs label="Event sections" tabs={[{ value: "overview", label: "Overview" }, { value: "guests", label: <>Guests{guestCount !== null && guestCount !== undefined && <> <span className="tab-count">{guestCount}</span></>}</> }, { value: "details", label: "Details" }]} value={tab} onChange={setTab} />}
+    {tab === "overview" ? <div role="tabpanel" className="guest-panel" aria-label="Overview"><EventOverview records={records} rsvpCount={event.rsvpCount} /></div> : tab === "guests" ? <div role="tabpanel" className="guest-panel" aria-label="Guests"><EventGuests records={records} /></div> :
     <form role={event.id ? "tabpanel" : undefined} className="event-editor" aria-label={event.id ? "Edit event" : "New event"} onSubmit={e => { e.preventDefault(); if (e.currentTarget.reportValidity()) void save(event.published) }}>
       <div className="editor-title">
         <DateTile date={draft.date} />

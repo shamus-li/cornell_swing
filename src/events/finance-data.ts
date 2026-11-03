@@ -1,4 +1,4 @@
-import { getGoogleAccessToken, readCheckins } from '../../check-in/worker/google'
+import { createCachedGoogleAccessTokenProvider, getGoogleAccessToken, readCheckins } from '../../check-in/worker/google'
 import type { CampusGroupsRow, EventActivity, FinanceEvent, FinanceOverview, Transaction } from './finance'
 import { fiscalYear } from './ledger'
 import { todayInNewYork } from './model'
@@ -13,6 +13,11 @@ type EventRow = { id: string; title: string; date: string }
 type SheetRow = { index: number; date: string; amount: number; account: string; description: string; siteRow: boolean; label: { key: string; name: string; rest: string } | null }
 
 const DAY_MS = 86_400_000
+// Reading whole sheets from Google takes a while, so pages reuse a read for this long. Only finished reads are
+// kept: a stateless Worker must never await another request's pending I/O.
+const SHEET_CACHE_MS = 60_000
+const sheetCache = new Map<string, { at: number; value: unknown }>()
+const accessToken = createCachedGoogleAccessTokenProvider(getGoogleAccessToken)
 // How far apart CampusGroups and the sheet can date the same transaction.
 const MATCH_DAYS = 14
 const SHEET_EPOCH_MS = Date.UTC(1899, 11, 30)
@@ -94,11 +99,21 @@ export function buildEvents(rows: SheetRow[], events: EventRow[]): FinanceEvent[
   return [...grouped.values()].map(event => ({ ...event, earned: round(event.earned), spent: round(event.spent), grant: round(event.grant) })).sort((a, b) => b.date.localeCompare(a.date))
 }
 
-async function readBalanceSheet(env: Env, tabs: string[]): Promise<unknown[][][]> {
+async function cached<T>(key: string, read: () => Promise<T>): Promise<T> {
+  const hit = sheetCache.get(key)
+  if (hit && Date.now() - hit.at < SHEET_CACHE_MS) return hit.value as T
+  const value = await read()
+  sheetCache.set(key, { at: Date.now(), value })
+  return value
+}
+
+const readBalanceSheet = (env: Env, tabs: string[]) => cached(tabs.join(), () => fetchBalanceSheet(env, tabs))
+
+async function fetchBalanceSheet(env: Env, tabs: string[]): Promise<unknown[][][]> {
   const url = new URL(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(env.FINANCE_SPREADSHEET_ID)}/values:batchGet`)
   url.searchParams.set('valueRenderOption', 'UNFORMATTED_VALUE')
   for (const tab of tabs) url.searchParams.append('ranges', tab)
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${await getGoogleAccessToken(env)}` } })
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${await accessToken(env)}` } })
   if (!response.ok) throw new Error(`Balance Sheet read failed with ${response.status}`)
   return ((await response.json()) as { valueRanges: { values?: unknown[][] }[] }).valueRanges.map(range => range.values ?? [])
 }
@@ -147,7 +162,7 @@ export async function eventActivity(env: Env, eventId: string): Promise<EventAct
     readPayments(env, 'WHERE p.eventId = ?', eventId),
     env.EVENTS_DB.prepare("SELECT email, ticketName, amount FROM door_charges WHERE eventId = ? AND status IN ('card', 'cash', 'free', 'waived')").bind(eventId).all<{ email: string; ticketName: string; amount: number }>(),
     env.MEMBER_CACHE.get<StoredExport>(campusGroupsTransactionsKey, 'json'),
-    getGoogleAccessToken(env).then(token => readCheckins(env, token)),
+    cached('checkins', async () => readCheckins(env, await accessToken(env))),
   ])
   const tickets = new Map<string, { name: string; count: number; amount: number }>()
   for (const charge of charges.results) {

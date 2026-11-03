@@ -1,6 +1,6 @@
 import { EventSchedule } from "../events/EventSchedule"
 import { useState } from "react"
-import { ClockIcon, MapPinIcon, TicketIcon } from "lucide-react"
+import { ArrowLeftIcon, ClockIcon, MapPinIcon, TicketIcon } from "lucide-react"
 import { Button } from "../../check-in/src/components/ui/button"
 import { formatEventDate, formatEventDayRange, formatEventPrices, formatEventTime, hasEventDetails, isUpcoming, type EventRecord } from "../events/model"
 import { LessonTimes } from "../events/LessonTimes"
@@ -28,6 +28,7 @@ export function EventPage({ event, today }: EventPageData) {
   const prices = formatEventPrices(event)
   const upcoming = isUpcoming(event, today)
   return <>
+    <Button asChild variant="ghost" className="back-button"><a href="/events"><ArrowLeftIcon aria-hidden="true" />Events</a></Button>
     <article className="event-row event-page-event">
       <DateTile date={event.date} />
       <div className="event-content">
