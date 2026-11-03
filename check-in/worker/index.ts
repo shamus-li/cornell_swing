@@ -49,7 +49,7 @@ import { ATTENDANCE_SYNC_STATE_KEY, ATTENDANCE_SYNC_STATE_VERSION } from "./sync
 import { isRecord } from "./util"
 import { loadWaiverForm, readWaiver, submitWaiver, WAIVER_FORM_URL, WaiverFormChanged, waiverEventName } from "./waiver"
 import { generalRiskTag } from "../../src/events/campusgroups"
-import { syncPayments } from "../../src/events/square"
+import { sendUnsentCash, syncPayments } from "../../src/events/square"
 import { campusGroupsKey, type CampusGroupsData } from "../../src/events/campusgroups"
 
 export { CheckinGuard } from "./checkin-guard"
@@ -258,6 +258,7 @@ async function handleDoor(request: Request, env: Env, path: string, timestamp = 
       return json({ message: "Already checked in", next: await nextSteps(env, attendee) }, 409)
     }
     const recorded = await settleAtDoor(env, id, event, attendee, ticket, method, timestamp)
+    if (method === "cash") await sendUnsentCash(env)
     return json({ message: recorded ? "Checked in" : "Already checked in", next: await nextSteps(env, attendee) }, recorded ? 201 : 409)
   }
   const match = path.match(/^charges\/([^/]+)(?:\/(tap|return))?$/)

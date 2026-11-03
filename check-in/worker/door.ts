@@ -83,7 +83,8 @@ export async function settleCardCharge(env: Env, charge: DoorCharge, paymentId: 
 // Cash, a free ticket or a volunteer, confirmed on a laptop. The laptop picks the ID, so retrying after a lost
 // response changes nothing, and any card charge still waiting is canceled. If another laptop already settled
 // this person for this day, nothing is recorded, even when both ask at once, and this returns false. Cash goes
-// on the Balance Sheet with the event's Square payments.
+// on the Balance Sheet with the event's Square payments, and waits under an unsent ID until Square has it too.
+export const UNSENT_CASH = "unsent:"
 export async function settleAtDoor(env: Env, id: string, session: EventSession, attendee: Attendee, ticket: Pick<DoorTicket, "name" | "amount" | "days">, status: "cash" | "free" | "waived", timestamp: number): Promise<boolean> {
   const now = new Date(timestamp).toISOString()
   await env.EVENTS_DB.batch([
@@ -92,7 +93,7 @@ export async function settleAtDoor(env: Env, id: string, session: EventSession, 
     env.EVENTS_DB.prepare("UPDATE door_charges SET status = 'canceled' WHERE eventId = ? AND email = ? AND status = 'pending' AND EXISTS (SELECT 1 FROM door_charges WHERE id = ?)").bind(session.id, attendee.email, id),
     env.EVENTS_DB.prepare("INSERT OR IGNORE INTO door_ticket_days (chargeId, date) SELECT id, ? FROM door_charges WHERE id = ?").bind(session.sessionDate, id),
     ...(status === "cash"
-      ? [env.EVENTS_DB.prepare("INSERT OR IGNORE INTO square_payments (id, paidAt, amount, fee, cash, note, eventId) SELECT ?, ?, amount, 0, 1, ?, ? FROM door_charges WHERE id = ?").bind(`cash:${id}`, now, `Door cash: ${ticket.name}`, session.id, id)]
+      ? [env.EVENTS_DB.prepare("INSERT OR IGNORE INTO square_payments (id, paidAt, amount, fee, cash, note, eventId) SELECT ?, ?, amount, 0, 1, ?, ? FROM door_charges WHERE id = ? AND paymentId IS NULL").bind(`${UNSENT_CASH}${id}`, now, `Door cash: ${ticket.name}`, session.id, id)]
       : []),
   ])
   if (!await findCharge(env, id)) return false

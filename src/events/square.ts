@@ -1,4 +1,4 @@
-import { findCharge, settleCardCharge } from '../../check-in/worker/door'
+import { findCharge, settleCardCharge, UNSENT_CASH } from '../../check-in/worker/door'
 import { findSession } from '../../check-in/worker/events'
 import { sendAlert } from './alert-email'
 import { dateKeyInTimeZone, timestampForSheet } from '../../check-in/worker/google'
@@ -7,15 +7,17 @@ import { upsertLedgerRows, type LedgerRow } from './ledger'
 import { logError } from './logging'
 
 // An officer connects the club's Square account from the Settings tab. The site then reads its payments
-// each morning and files them on the Balance Sheet.
+// each morning and files them on the Balance Sheet, and records door cash in Square.
 const SQUARE = 'https://connect.squareup.com'
 const VERSION = '2025-01-23'
 // Payments are listed again for this long, so refunds and fees that settle later still reach the Balance Sheet.
 const RELIST_MS = 3 * 86_400_000
+// Someone is waiting at the door, and a payment that doesn't get through is sent again by the next sync.
+const SEND_CASH_TIMEOUT_MS = 5_000
 
 type Connection = { merchantId: string; accessToken: string; refreshToken: string; expiresAt: string; syncedAt: string }
 type Money = { amount: number }
-type Payment = { id: string; created_at: string; status: string; source_type: string; amount_money: Money; refunded_money?: Money; processing_fee?: { amount_money: Money }[]; note?: string; order_id?: string }
+type Payment = { id: string; created_at: string; status: string; source_type: string; amount_money: Money; refunded_money?: Money; processing_fee?: { amount_money: Money }[]; note?: string; order_id?: string; reference_id?: string }
 type Tokens = { access_token: string; refresh_token: string; expires_at: string; merchant_id: string }
 
 class SquareAuthError extends Error {}
@@ -24,7 +26,7 @@ const redirectUri = (origin: string) => `${origin}/manage/square/callback`
 
 export function squareConnectUrl(env: Env, origin: string, state: string): string {
   const url = new URL(`${SQUARE}/oauth2/authorize`)
-  url.search = new URLSearchParams({ client_id: env.SQUARE_APPLICATION_ID, scope: 'PAYMENTS_READ MERCHANT_PROFILE_READ ORDERS_READ', redirect_uri: redirectUri(origin), state }).toString()
+  url.search = new URLSearchParams({ client_id: env.SQUARE_APPLICATION_ID, scope: 'PAYMENTS_READ PAYMENTS_WRITE MERCHANT_PROFILE_READ ORDERS_READ', redirect_uri: redirectUri(origin), state }).toString()
   return url.toString()
 }
 
@@ -58,6 +60,48 @@ export async function disconnectSquare(env: Env): Promise<void> {
   if (merchantId) await fetch(`${SQUARE}/oauth2/revoke`, { method: 'POST', headers: { Authorization: `Client ${env.SQUARE_APPLICATION_SECRET}`, 'Content-Type': 'application/json', 'Square-Version': VERSION }, body: JSON.stringify({ client_id: env.SQUARE_APPLICATION_ID, merchant_id: merchantId }) })
 }
 
+// The saved cash row takes Square's ID, so the next sync recognizes the payment instead of adding it again.
+async function linkCash(env: Env, chargeId: string, paymentId: string): Promise<void> {
+  await env.EVENTS_DB.batch([
+    env.EVENTS_DB.prepare('UPDATE square_payments SET id = ? WHERE id = ?').bind(paymentId, `${UNSENT_CASH}${chargeId}`),
+    env.EVENTS_DB.prepare('UPDATE door_charges SET paymentId = ? WHERE id = ?').bind(paymentId, chargeId),
+  ])
+}
+
+// Records door cash in Square. Check-in never waits on this succeeding, so failures are only logged and the next
+// sync sends the payment again; the charge's ID as the key means Square keeps one payment however often it's sent.
+// A 403 here must not disconnect Square the way a failed read does: a connection made before this permission
+// existed can still read payments until an officer connects it again.
+export async function sendUnsentCash(env: Env): Promise<void> {
+  // Staging shares the club's real Square account.
+  if (env.STAGING) return
+  const token = await env.EVENTS_DB.prepare('SELECT accessToken FROM square_connection').first<string>('accessToken')
+  if (!token) return
+  const { results } = await env.EVENTS_DB.prepare('SELECT id, amount, note FROM square_payments WHERE id LIKE ?').bind(`${UNSENT_CASH}%`).all<{ id: string; amount: number; note: string }>()
+  try {
+    for (const row of results) {
+      const chargeId = row.id.slice(UNSENT_CASH.length)
+      const money = { amount: row.amount, currency: 'USD' }
+      const response = await fetch(`${SQUARE}/v2/payments`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Square-Version': VERSION },
+        body: JSON.stringify({ idempotency_key: chargeId, source_id: 'CASH', amount_money: money, cash_details: { buyer_supplied_money: money }, reference_id: chargeId, note: row.note }),
+        signal: AbortSignal.timeout(SEND_CASH_TIMEOUT_MS),
+      })
+      // Square refused this one payment, which shouldn't hold up the others.
+      if (response.status === 400) {
+        logError('Square refused door cash', new Error(await response.text()))
+        continue
+      }
+      if (!response.ok) throw new Error(`Square returned ${response.status}`)
+      const { payment } = await response.json() as { payment: Payment }
+      await linkCash(env, chargeId, payment.id)
+    }
+  } catch (error) {
+    logError('Door cash not sent to Square', error)
+  }
+}
+
 type SeenPayment = { amount: number; fee: number }
 
 // The door phone sends its charge's ID as a note on the sale. Square keeps that note on the sale's order, not
@@ -76,6 +120,8 @@ async function savePayment(env: Env, token: string, payment: Payment, seen?: See
     if (seen.amount !== amount || seen.fee !== fee) await env.EVENTS_DB.prepare('UPDATE square_payments SET amount = ?, fee = ?, synced = 0 WHERE id = ?').bind(amount, fee, payment.id).run()
     return
   }
+  // Door cash whose reply from Square was lost. Its row is already saved, so the insert below changes nothing.
+  if (payment.reference_id) await linkCash(env, payment.reference_id, payment.id)
   const paidAt = Date.parse(payment.created_at)
   const chargeId = await doorChargeId(token, payment)
   const charge = chargeId ? await findCharge(env, chargeId) : null
@@ -106,6 +152,7 @@ export async function syncPayments(env: Env): Promise<void> {
       token = tokens.access_token
       await env.EVENTS_DB.prepare('UPDATE square_connection SET accessToken = ?, expiresAt = ? WHERE id = 1').bind(tokens.access_token, tokens.expires_at).run()
     }
+    await sendUnsentCash(env)
     const begin = new Date(Date.parse(connection.syncedAt) - RELIST_MS).toISOString()
     const seen = new Map((await env.EVENTS_DB.prepare('SELECT id, amount, fee FROM square_payments WHERE paidAt >= ?').bind(begin).all<SeenPayment & { id: string }>()).results.map(row => [row.id, row]))
     let cursor: string | undefined

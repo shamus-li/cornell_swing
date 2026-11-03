@@ -242,6 +242,93 @@ describe("door tickets", () => {
   })
 })
 
+describe("door cash in Square", () => {
+  type SentCash = { idempotency_key: string; source_id: string; amount_money: { amount: number }; cash_details: object; reference_id: string }
+  let sent: SentCash[] = []
+  // Square keeps one payment per key, and the sync lists whatever it holds.
+  const squareTakes = (status = 200) =>
+    network.use(http.post("https://connect.squareup.com/v2/payments", async ({ request }) => {
+      const body = (await request.json()) as SentCash
+      sent.push(body)
+      const id = `cash-${body.idempotency_key}`
+      if (!payments.some((payment) => payment.id === id)) payments.push({ id, created_at: new Date().toISOString(), status: "COMPLETED", source_type: "CASH", amount_money: body.amount_money, reference_id: body.reference_id })
+      return status === 200 ? HttpResponse.json({ payment: { id } }) : HttpResponse.json({}, { status })
+    }))
+  const squareDown = () => network.use(http.post("https://connect.squareup.com/v2/payments", () => HttpResponse.error()))
+  const rows = async () => (await env.EVENTS_DB.prepare("SELECT id, amount, cash FROM square_payments ORDER BY id").all()).results
+
+  beforeEach(() => {
+    sent = []
+  })
+
+  it("records cash in Square and counts it once after the sync lists it", async () => {
+    squareTakes()
+    expect((await settle("general", "cash", "paid")).status).toBe(201)
+    expect(sent).toMatchObject([{ idempotency_key: "paid", source_id: "CASH", amount_money: { amount: 1500, currency: "USD" }, cash_details: { buyer_supplied_money: { amount: 1500, currency: "USD" } }, reference_id: "paid" }])
+    await syncPayments(env)
+    expect(await rows()).toEqual([{ id: "cash-paid", amount: 1500, cash: 1 }])
+    expect(await env.EVENTS_DB.prepare("SELECT paymentId FROM door_charges").first("paymentId")).toBe("cash-paid")
+  })
+
+  it("counts cash once when the laptop retries after Square already has it", async () => {
+    squareTakes()
+    await settle("general", "cash", "retry")
+    expect((await settle("general", "cash", "retry")).status).toBe(201)
+    expect(await rows()).toEqual([{ id: "cash-retry", amount: 1500, cash: 1 }])
+    expect(sent).toHaveLength(1)
+  })
+
+  it("checks the person in when Square is unreachable, and sends the cash at the next sync", async () => {
+    squareDown()
+    expect((await settle("general", "cash", "later")).status).toBe(201)
+    expect(await isCheckedIn()).toBe(true)
+    expect(await rows()).toEqual([{ id: "unsent:later", amount: 1500, cash: 1 }])
+    squareTakes()
+    await syncPayments(env)
+    expect(sent).toHaveLength(1)
+    expect(await rows()).toEqual([{ id: "cash-later", amount: 1500, cash: 1 }])
+  })
+
+  it("counts cash once when Square saved it but its reply was lost", async () => {
+    squareTakes(500)
+    await settle("general", "cash", "lost")
+    await syncPayments(env)
+    expect(await rows()).toEqual([{ id: "cash-lost", amount: 1500, cash: 1 }])
+  })
+
+  it("keeps the connection and the cash when the connection lacks permission to record payments", async () => {
+    network.use(http.post("https://connect.squareup.com/v2/payments", () => HttpResponse.json({ errors: [{ code: "INSUFFICIENT_SCOPES" }] }, { status: 403 })))
+    expect((await settle("general", "cash", "scope")).status).toBe(201)
+    await syncPayments(env)
+    expect(await env.EVENTS_DB.prepare("SELECT COUNT(*) AS count FROM square_connection").first("count")).toBe(1)
+    expect(await rows()).toEqual([{ id: "unsent:scope", amount: 1500, cash: 1 }])
+  })
+
+  it("moves on to the next payment when Square refuses one", async () => {
+    await env.EVENTS_DB.prepare("INSERT INTO square_payments (id, paidAt, amount, fee, cash, note) VALUES ('unsent:bad', ?, 1, 0, 1, '')").bind(new Date().toISOString()).run()
+    network.use(http.post("https://connect.squareup.com/v2/payments", async ({ request }) => {
+      const { idempotency_key: key } = (await request.json()) as SentCash
+      return key === "bad" ? HttpResponse.json({}, { status: 400 }) : HttpResponse.json({ payment: { id: `cash-${key}` } })
+    }))
+    await settle("general", "cash", "good")
+    expect(await rows()).toEqual([{ id: "cash-good", amount: 1500, cash: 1 }, { id: "unsent:bad", amount: 1, cash: 1 }])
+  })
+
+  it("never sends staging's cash to the real account", async () => {
+    squareTakes()
+    const request = new Request("https://example.com/check-in/api/door/settle", { method: "POST", body: JSON.stringify({ ...ada, id: "staging", ticketId: "general", method: "cash" }) })
+    expect((await handleApiRequest(request, { ...env, STAGING: "1" } as unknown as Env)).status).toBe(201)
+    expect(sent).toEqual([])
+  })
+
+  it("leaves cash recorded before this existed on the site only", async () => {
+    squareTakes()
+    await env.EVENTS_DB.prepare("INSERT INTO square_payments (id, paidAt, amount, fee, cash, note) VALUES ('cash:old', ?, 1000, 0, 1, '')").bind(new Date().toISOString()).run()
+    await settle("general", "cash", "new")
+    expect(sent.map((payment) => payment.idempotency_key)).toEqual(["new"])
+  })
+})
+
 describe("which session a moment belongs to", () => {
   const at = (iso: string) => timestampForSheet(Date.parse(iso), "America/New_York")
   const add = (id: string, kind: string, date: string, startTime: string, endTime: string, moreDays: { date: string; startTime: string; endTime: string }[] = []) =>
