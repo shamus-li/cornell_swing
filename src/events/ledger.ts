@@ -22,25 +22,29 @@ export function fiscalYear(date: string): string {
   return `${start}-${start + 1}`
 }
 
+// The sheet leaves a blank amount for a row someone set up ahead of an event.
+const isBlank = (cell: unknown) => cell === undefined || cell === null || cell === ''
+
+// Writes each row, then removes the site's rows that have reached zero, like a full refund. Only rows with an ID
+// and a Square or Cash source are the site's; a total that reaches zero never adds a row.
 export async function upsertLedgerRows(env: Env, rows: LedgerRow[]): Promise<void> {
-  if (!rows.length) return
   const token = await getGoogleAccessToken(env)
-  const base = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(env.FINANCE_SPREADSHEET_ID)}/values`
+  const sheet = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(env.FINANCE_SPREADSHEET_ID)}`
+  const base = `${sheet}/values`
   const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
   const read = new URL(`${base}:batchGet`)
-  read.searchParams.append('ranges', `${TAB}!B:B`)
-  read.searchParams.append('ranges', `${TAB}!D:D`)
-  read.searchParams.append('ranges', `${TAB}!H:H`)
+  read.searchParams.set('valueRenderOption', 'UNFORMATTED_VALUE')
+  for (const column of ['B', 'C', 'D', 'H']) read.searchParams.append('ranges', `${TAB}!${column}:${column}`)
   const response = await fetch(read, { headers })
   if (!response.ok) throw new Error(`Ledger read failed with ${response.status}`)
   const { valueRanges } = await response.json() as { valueRanges: { values?: unknown[][] }[] }
-  const [dates, sources, ids] = valueRanges.map(range => range.values ?? [])
+  const [dates, amounts, sources, ids] = valueRanges.map(range => range.values ?? [])
   const key = (id: unknown, source: unknown) => `${String(id ?? '')}|${String(source ?? '')}`
   const rowOf = new Map(ids.map((row, index) => [key(row[0], sources[index]?.[0]), index + 1]))
+  const totals = new Map(rows.map(row => [key(row.id, row.source), row.amount]))
   let next = Math.max(dates.length, ids.length) + 1
-  // A total that reaches zero, like a full refund, still updates its row, but never adds a new one.
   // Column G stays with the treasurer for notes.
-  const data = rows.filter(row => row.amount || rowOf.has(key(row.id, row.source))).flatMap(row => {
+  const data = rows.filter(row => row.amount).flatMap(row => {
     const at = rowOf.get(key(row.id, row.source)) ?? next++
     const serial = (Date.parse(`${row.date}T00:00:00Z`) - SHEET_EPOCH_MS) / DAY_MS
     return [
@@ -48,8 +52,23 @@ export async function upsertLedgerRows(env: Env, rows: LedgerRow[]): Promise<voi
       { range: `${TAB}!H${at}`, values: [[row.id]] },
     ]
   })
-  if (!data.length) return
-  // RAW keeps "26-27" as text and stops a payment note from running as a formula.
-  const write = await fetch(`${base}:batchUpdate`, { method: 'POST', headers, body: JSON.stringify({ valueInputOption: 'RAW', data }) })
-  if (!write.ok) throw new Error(`Ledger write failed with ${write.status}`)
+  if (data.length) {
+    // RAW keeps "26-27" as text and stops a payment note from running as a formula.
+    const write = await fetch(`${base}:batchUpdate`, { method: 'POST', headers, body: JSON.stringify({ valueInputOption: 'RAW', data }) })
+    if (!write.ok) throw new Error(`Ledger write failed with ${write.status}`)
+  }
+  const zeroed = ids.flatMap((row, index) => {
+    const source = sources[index]?.[0]
+    if (!row[0] || (source !== 'Square' && source !== 'Cash') || isBlank(amounts[index]?.[0])) return []
+    return (totals.get(key(row[0], source)) ?? Number(amounts[index][0])) === 0 ? [index] : []
+  })
+  if (!zeroed.length) return
+  const tabs = await fetch(`${sheet}?fields=sheets.properties(sheetId,title)`, { headers })
+  if (!tabs.ok) throw new Error(`Ledger read failed with ${tabs.status}`)
+  const { sheets } = await tabs.json() as { sheets: { properties: { sheetId: number; title: string } }[] }
+  const sheetId = sheets.find(({ properties }) => `'${properties.title}'` === TAB)!.properties.sheetId
+  // From the bottom up, so removing a row doesn't move the ones still to remove.
+  const requests = zeroed.reverse().map(index => ({ deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: index, endIndex: index + 1 } } }))
+  const remove = await fetch(`${sheet}:batchUpdate`, { method: 'POST', headers, body: JSON.stringify({ requests }) })
+  if (!remove.ok) throw new Error(`Ledger row removal failed with ${remove.status}`)
 }

@@ -82,6 +82,7 @@ async function respond(req: IncomingMessage, path: string): Promise<object | nul
   if (route.startsWith("/locations")) return { places }
   if (route === "/square") return square
   if (route === "/finance") return finance
+  if (route === "/finance/file") return finance
   if (route === "/finance/campusgroups") return { ...finance, campusGroupsUploadedAt: new Date().toISOString() }
   if (route === "/alert-email") return { email: "alerts@example.com", verified: true }
   if (route.startsWith("/rsvp-sheet")) {

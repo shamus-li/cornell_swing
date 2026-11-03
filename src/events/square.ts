@@ -12,6 +12,8 @@ const SQUARE = 'https://connect.squareup.com'
 const VERSION = '2025-01-23'
 // Payments are listed again for this long, so refunds and fees that settle later still reach the Balance Sheet.
 const RELIST_MS = 3 * 86_400_000
+const FILE_NOW_RELIST_MS = 365 * 86_400_000
+const FILING_LOCK_MS = 2 * 60_000
 // Someone is waiting at the door, and a payment that doesn't get through is sent again by the next sync.
 const SEND_CASH_TIMEOUT_MS = 5_000
 
@@ -141,7 +143,7 @@ async function savePayment(env: Env, token: string, payment: Payment, seen?: See
 }
 
 // Reads new payments from Square, which settles any door charge they pay for.
-export async function syncPayments(env: Env): Promise<void> {
+export async function syncPayments(env: Env, relistMs = RELIST_MS): Promise<void> {
   const connection = await env.EVENTS_DB.prepare('SELECT merchantId, accessToken, refreshToken, expiresAt, syncedAt FROM square_connection').first<Connection>()
   if (!connection) return
   const startedAt = new Date().toISOString()
@@ -153,7 +155,7 @@ export async function syncPayments(env: Env): Promise<void> {
       await env.EVENTS_DB.prepare('UPDATE square_connection SET accessToken = ?, expiresAt = ? WHERE id = 1').bind(tokens.access_token, tokens.expires_at).run()
     }
     await sendUnsentCash(env)
-    const begin = new Date(Date.parse(connection.syncedAt) - RELIST_MS).toISOString()
+    const begin = new Date(Date.parse(connection.syncedAt) - relistMs).toISOString()
     const seen = new Map((await env.EVENTS_DB.prepare('SELECT id, amount, fee FROM square_payments WHERE paidAt >= ?').bind(begin).all<SeenPayment & { id: string }>()).results.map(row => [row.id, row]))
     let cursor: string | undefined
     do {
@@ -172,11 +174,24 @@ export async function syncPayments(env: Env): Promise<void> {
   await env.EVENTS_DB.prepare('UPDATE square_connection SET syncedAt = ? WHERE id = 1').bind(startedAt).run()
 }
 
-// Only the cron and connecting run this, because two writers at once could claim the same new row on the sheet.
-export async function syncSquare(env: Env): Promise<void> {
-  await syncPayments(env)
-  await syncLedger(env)
+// Reads Square and files what changed on the Balance Sheet, unless that's already running, because two writers at
+// once could claim the same new row on the sheet. Returns whether it ran.
+export async function syncSquare(env: Env, relistMs = RELIST_MS): Promise<boolean> {
+  const now = Date.now()
+  const lock = await env.EVENTS_DB.prepare('INSERT INTO filing_lock (id, until) VALUES (1, ?1) ON CONFLICT (id) DO UPDATE SET until = ?1 WHERE until < ?2')
+    .bind(new Date(now + FILING_LOCK_MS).toISOString(), new Date(now).toISOString()).run()
+  if (!lock.meta.changes) return false
+  try {
+    await syncPayments(env, relistMs)
+    await syncLedger(env)
+    return true
+  } finally {
+    await env.EVENTS_DB.prepare('DELETE FROM filing_lock').run()
+  }
 }
+
+// An officer filing by hand also catches a refund on an older payment.
+export const fileNow = (env: Env) => syncSquare(env, FILE_NOW_RELIST_MS)
 
 type Stored = { id: string; paidAt: string; amount: number; fee: number; cash: number; note: string; eventId: string | null }
 
@@ -190,7 +205,6 @@ export function eventLabel(title: string, date: string): string {
 // recomputed from every payment so the totals stay right however often it runs. Other payments are batched by day the same way.
 async function syncLedger(env: Env): Promise<void> {
   const pending = (await env.EVENTS_DB.prepare('SELECT id, paidAt, amount, fee, cash, note, eventId FROM square_payments WHERE synced = 0').all<Stored>()).results
-  if (!pending.length) return
   const rows: LedgerRow[] = []
   for (const eventId of new Set(pending.map(payment => payment.eventId).filter(id => id !== null))) {
     const event = (await env.EVENTS_DB.prepare('SELECT title, date FROM events WHERE id = ?').bind(eventId).first<{ title: string; date: string }>())!
@@ -211,7 +225,7 @@ async function syncLedger(env: Env): Promise<void> {
     }
   }
   await upsertLedgerRows(env, rows)
-  await env.EVENTS_DB.batch(pending.map(payment => env.EVENTS_DB.prepare('UPDATE square_payments SET synced = 1 WHERE id = ?').bind(payment.id)))
+  if (pending.length) await env.EVENTS_DB.batch(pending.map(payment => env.EVENTS_DB.prepare('UPDATE square_payments SET synced = 1 WHERE id = ?').bind(payment.id)))
 }
 
 export async function squareFeed(env: Env): Promise<SquareFeed> {

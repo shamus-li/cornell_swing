@@ -48,8 +48,8 @@ export function EventOverview({ records: { activity: data, activityError: error,
   const counted = data.transactions.filter(onSheet)
   const earned = counted.filter(item => item.amount > 0).reduce((sum, item) => sum + item.amount - item.fee, 0)
   const expenses = counted.filter(item => item.amount < 0)
-  const spent = -expenses.reduce((sum, item) => sum + item.amount, 0)
-  const grant = -expenses.filter(item => item.account === "GPSA").reduce((sum, item) => sum + item.amount, 0)
+  const spent = expenses.reduce((sum, item) => sum - item.amount, 0)
+  const grant = expenses.filter(item => item.account === "GPSA").reduce((sum, item) => sum - item.amount, 0)
   const stats = [["RSVPs", String(rsvpCount)], [data.checkins.length ? "Checked in" : "Attended", came === null || came === undefined ? "Not recorded" : String(came)], ["Earned", money(earned)], ["Spent", money(spent)], ["Net after GPSA", money(earned - spent + grant)]]
 
   return <div className="finance">

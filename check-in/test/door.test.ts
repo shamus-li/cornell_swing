@@ -329,6 +329,16 @@ describe("door cash in Square", () => {
   })
 })
 
+describe("canceling on the phone", () => {
+  it("tells the laptop the person was canceled", async () => {
+    const { id } = (await (await post("door/charges", general)).json()) as { id: string }
+    expect(await (await get(`door/charges/${id}`)).json()).toEqual({ status: "pending" })
+    await handleApiRequest(new Request(`https://example.com/check-in/api/door/charges/${id}`, { method: "DELETE" }), env)
+    expect(await (await get(`door/charges/${id}`)).json()).toEqual({ status: "canceled" })
+    expect(await queue()).toEqual([])
+  })
+})
+
 describe("which session a moment belongs to", () => {
   const at = (iso: string) => timestampForSheet(Date.parse(iso), "America/New_York")
   const add = (id: string, kind: string, date: string, startTime: string, endTime: string, moreDays: { date: string; startTime: string; endTime: string }[] = []) =>

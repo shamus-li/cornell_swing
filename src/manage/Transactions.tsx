@@ -32,6 +32,7 @@ export function TransactionsTable({ transactions, showEvent = true }: { transact
   // These columns only appear when a row has something to show: no export means no CampusGroups column.
   const showStatus = transactions.some(item => item.status)
   const showFee = transactions.some(item => item.fee)
+  const rowCount = `${transactions.length} ${transactions.length === 1 ? "row" : "rows"}`
   const leading = 2 + (showEvent ? 1 : 0) + (showStatus ? 1 : 0)
   return <Card><Table>
     <TableHeader><TableRow>
@@ -53,8 +54,8 @@ export function TransactionsTable({ transactions, showEvent = true }: { transact
       <TableCell className={number}>{money(item.amount)}</TableCell>
     </TableRow>)}</TableBody>
     <TableFooter><TableRow>
-      <TableCell colSpan={2} className="sm:hidden">Total on the Balance Sheet</TableCell>
-      <TableCell colSpan={leading + 1} className={wide}>Total on the Balance Sheet, {transactions.length} {transactions.length === 1 ? "row" : "rows"}</TableCell>
+      <TableCell colSpan={2} className="sm:hidden">{rowCount}</TableCell>
+      <TableCell colSpan={leading + 1} className={wide}>{rowCount}</TableCell>
       {showFee && <TableCell className={`${wide} ${number}`}>{money(total(item => item.fee))}</TableCell>}
       <TableCell className={number}>{money(total(item => item.amount))}</TableCell>
     </TableRow></TableFooter>
@@ -64,9 +65,9 @@ export function TransactionsTable({ transactions, showEvent = true }: { transact
 // Every transaction, narrowed by typing an event or description, the time period and the account.
 export function Transactions({ transactions }: { transactions: Transaction[] }) {
   const [search, setSearch] = useState("")
-  const [period, setPeriod] = useState("all")
+  const [period, setPeriod] = useState(() => clubYear(todayInNewYork()))
   const [account, setAccount] = useState("all")
-  const years = [...new Set(transactions.map(item => clubYear(item.date)))].sort().reverse()
+  const years = [...new Set([clubYear(todayInNewYork()), ...transactions.map(item => clubYear(item.date))])].sort().reverse()
   const recent = daysAgo(30)
   const words = search.toLowerCase().split(/\s+/).filter(Boolean)
   const shown = transactions.filter(item => {
