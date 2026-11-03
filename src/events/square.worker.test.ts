@@ -50,9 +50,9 @@ beforeAll(async () => {
     http.get('https://sheets.googleapis.com/v4/spreadsheets/:id/values:batchGet', ({ request }) => {
       // The Finances tab's read of the Balance Sheet.
       const ranges = new URL(request.url).searchParams.getAll('ranges')
-      if (ranges[0].endsWith('A2:H')) sheetReads++
-      if (ranges[0].endsWith('A2:H')) return HttpResponse.json({ valueRanges: [
-        { values: [['26-27', 46283, 10, 'Cash', 'Y', 'Fall 26 The Lindy Haunt: Cash Profits', '', 'haunt'], ['26-27', 46286, -400, 'GPSA', 'Y', 'Fall 26 The Lindy Haunt: Ageless Jazz Band']] },
+      if (ranges[0].endsWith('A2:I')) sheetReads++
+      if (ranges[0].endsWith('A2:I')) return HttpResponse.json({ valueRanges: [
+        { values: [['26-27', 46283, 10, 'Cash', 'Y', 'Fall 26 The Lindy Haunt: Cash Profits', '', 'haunt'], ['26-27', 46286, -400, 'GPSA', 'Y', 'Fall 26 The Lindy Haunt: Ageless Jazz Band', '', '', 'haunt'], ['26-27', 46300, -25, 'GPSA', 'Y', 'Band tip']] },
         { values: [['GPSA', 0, 3500, -950, 2550], ['Venmo', 0, 0, 0, 0], ['Cash', 989, 225, 0, 1214], ['Totals', 989, 3725, -950, 3764]] },
         { values: [[1214.78]] },
       ].slice(0, ranges.length) })
@@ -218,6 +218,21 @@ describe('Square feed', () => {
     ])
     expect(ledger.every(item => item.range.includes('!A'))).toBe(true)
     await env.MEMBER_CACHE.delete('finance:campusgroups:v1')
+  })
+  it('links a treasurer row to an event, and refuses once the sheet has moved that row', async () => {
+    ledger = []
+    const link = (body: object) => worker.fetch(new Request(`${origin}/manage/api/finance/link`, { method: 'POST', headers: { origin, 'Content-Type': 'application/json', 'Cf-Access-Jwt-Assertion': managerToken }, body: JSON.stringify(body) }), env)
+    const tip = { id: 'sheet-2', date: '2026-10-05', amount: -25, description: 'Band tip' }
+    expect((await link({ ...tip, eventId: 'haunt' })).status).toBe(200)
+    expect(ledger).toEqual([{ range: "'Transaction History'!I4", values: [['haunt']] }])
+    ledger = []
+    expect((await link({ ...tip, eventId: null })).status).toBe(200)
+    expect(ledger).toEqual([{ range: "'Transaction History'!I4", values: [['']] }])
+    ledger = []
+    expect((await link({ ...tip, id: 'sheet-1', eventId: 'haunt' })).status).toBe(409)
+    expect((await link({ ...tip, eventId: 'gone' })).status).toBe(409)
+    expect((await link({ id: 'sheet-0', date: '2026-09-18', amount: 10, description: 'Fall 26 The Lindy Haunt: Cash Profits', eventId: 'haunt' })).status).toBe(409)
+    expect(ledger).toEqual([])
   })
   it('refuses to file while another filing is running', async () => {
     await env.EVENTS_DB.prepare("INSERT INTO filing_lock (id, until) VALUES (1, ?)").bind(new Date(Date.now() + 60_000).toISOString()).run()

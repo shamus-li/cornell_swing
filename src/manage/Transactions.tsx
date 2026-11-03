@@ -1,11 +1,13 @@
 import { useState } from "react"
 import { Check, TriangleAlert } from "lucide-react"
+import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select"
 import { Card } from "../components/ui/card"
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "../components/ui/table"
-import { clubYear, type Transaction, type TransactionStatus } from "../events/finance"
+import { clubYear, isTreasurerRow, type EventOption, type FinanceOverview, type Transaction, type TransactionStatus } from "../events/finance"
 import { todayInNewYork } from "../events/model"
+import { api, errorMessage } from "./api"
 import { money } from "./money"
 
 const dateLabel = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
@@ -26,7 +28,31 @@ function daysAgo(days: number): string {
   date.setUTCDate(date.getUTCDate() - days)
   return date.toISOString().slice(0, 10)
 }
-export function TransactionsTable({ transactions, showEvent = true }: { transactions: Transaction[]; showEvent?: boolean }) {
+
+type Link = (item: Transaction, eventId: string | null) => Promise<void>
+
+// A treasurer's row picks its event here. Same-named events are told apart by date.
+function EventCell({ item, options, onLink }: { item: Transaction; options: EventOption[]; onLink: Link }) {
+  const [changing, setChanging] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const shown = item.eventId ? <a href={`/manage/?event=${item.eventId}`}>{item.eventName}</a> : item.eventName
+  if (!isTreasurerRow(item)) return shown
+  if (item.eventId && !changing && !saving) return <span className="finance-event">{shown}<Button type="button" variant="link" size="sm" aria-label={`Change event for ${item.description}`} onClick={() => setChanging(true)}>Change</Button></span>
+  async function choose(value: string) {
+    setSaving(true)
+    await onLink(item, value === "none" ? null : value)
+    setSaving(false)
+  }
+  return <Select value={item.eventId ?? ""} disabled={saving} defaultOpen={changing} onOpenChange={open => { if (!open) setChanging(false) }} onValueChange={value => void choose(value)}>
+    <SelectTrigger aria-label={`Event for ${item.description}`}><SelectValue placeholder="Choose event" /></SelectTrigger>
+    <SelectContent>
+      {item.eventId && <SelectItem value="none">No event</SelectItem>}
+      {options.map(option => <SelectItem key={option.id} value={option.id}>{option.date ? `${option.title} · ${dateLabel.format(new Date(`${option.date}T00:00:00Z`))}` : option.title}</SelectItem>)}
+    </SelectContent>
+  </Select>
+}
+
+export function TransactionsTable({ transactions, showEvent = true, options = [], onLink }: { transactions: Transaction[]; showEvent?: boolean; options?: EventOption[]; onLink?: Link }) {
   const counted = transactions.filter(onSheet)
   const total = (pick: (item: Transaction) => number) => counted.reduce((sum, item) => sum + pick(item), 0)
   // These columns only appear when a row has something to show: no export means no CampusGroups column.
@@ -47,7 +73,7 @@ export function TransactionsTable({ transactions, showEvent = true }: { transact
     <TableBody>{transactions.map(item => <TableRow key={item.id}>
       <TableCell className="whitespace-nowrap tabular-nums">{dateLabel.format(new Date(`${item.date}T00:00:00Z`))}</TableCell>
       <TableCell>{item.description}</TableCell>
-      {showEvent && <TableCell className={wide}>{item.eventId ? <a href={`/manage/?event=${item.eventId}`}>{item.eventName}</a> : item.eventName}</TableCell>}
+      {showEvent && <TableCell className={wide}>{onLink ? <EventCell item={item} options={options} onLink={onLink} /> : item.eventId ? <a href={`/manage/?event=${item.eventId}`}>{item.eventName}</a> : item.eventName}</TableCell>}
       <TableCell className={`${wide} whitespace-nowrap`}>{item.account}</TableCell>
       {showStatus && <TableCell className={wide}>{item.status && <span title={statuses[item.status].title} className={`finance-check${item.status === "in-campusgroups" || item.status === "after-export" ? "" : " is-off"}`}>{item.status === "in-campusgroups" ? <><Check aria-hidden="true" /><span className="sr-only">{statuses[item.status].title}</span></> : item.status !== "after-export" && <TriangleAlert aria-hidden="true" />}{statuses[item.status].word}</span>}</TableCell>}
       {showFee && <TableCell className={`${wide} ${number}`}>{item.fee ? money(item.fee) : ""}</TableCell>}
@@ -63,8 +89,9 @@ export function TransactionsTable({ transactions, showEvent = true }: { transact
 }
 
 // Every transaction, narrowed by typing an event or description, the time period and the account.
-export function Transactions({ transactions }: { transactions: Transaction[] }) {
+export function Transactions({ transactions, options, onChange }: { transactions: Transaction[]; options: EventOption[]; onChange: (overview: FinanceOverview) => void }) {
   const [search, setSearch] = useState("")
+  const [error, setError] = useState("")
   const [period, setPeriod] = useState(() => clubYear(todayInNewYork()))
   const [account, setAccount] = useState("all")
   const years = [...new Set([clubYear(todayInNewYork()), ...transactions.map(item => clubYear(item.date))])].sort().reverse()
@@ -75,6 +102,11 @@ export function Transactions({ transactions }: { transactions: Transaction[] }) 
     return (period === "all" || (period === "30" ? item.date >= recent : clubYear(item.date) === period)) && (account === "all" || item.account === account) && words.every(word => text.includes(word))
   })
   const accounts = [...new Set(transactions.map(item => item.account))].sort()
+  const link: Link = async (item, eventId) => {
+    setError("")
+    try { onChange(await api<FinanceOverview>("/finance/link", { method: "POST", body: JSON.stringify({ id: item.id, eventId, date: item.date, amount: item.amount, description: item.description }) }, "The event could not be saved. Try again.")) }
+    catch (err) { setError(errorMessage(err)) }
+  }
   return <section aria-labelledby="finance-transactions-title">
     <div className="finance-heading">
       <h2 id="finance-transactions-title">Transactions</h2>
@@ -90,6 +122,7 @@ export function Transactions({ transactions }: { transactions: Transaction[] }) 
         </Select>
       </div>
     </div>
-    {shown.length ? <TransactionsTable transactions={shown} /> : <p className="event-muted">No transactions match.</p>}
+    {error && <p role="alert" className="event-error">{error}</p>}
+    {shown.length ? <TransactionsTable transactions={shown} options={options} onLink={link} /> : <p className="event-muted">No transactions match.</p>}
   </section>
 }

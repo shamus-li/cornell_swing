@@ -508,12 +508,28 @@ describe('Sheets source of truth', () => {
     expect(await env.EVENTS_DB.prepare('SELECT COUNT(*) AS count FROM rsvps').first('count')).toBe(0)
     expect(await env.EVENTS_DB.prepare('SELECT COUNT(*) AS count FROM events').first('count')).toBe(1)
   })
-  it('reports a duplicate title as a conflict without marking the sheet as failing', async () => {
+  it('lets special events share a title, each with its own page and sheet rows', async () => {
     const first = await create({ title: 'Fall formal' })
     const second = await create({ title: 'Winter formal', date: '2099-10-11' })
+    const rows = [['Event','Name','Email']]
+    await connect(rows)
+    const renamed = await call(`/manage/api/events/${second.id}`, 'PUT', { ...second, title: first.title }, true)
+    expect(renamed.status).toBe(200)
+    expect((await renamed.json() as { event: { slug: string } }).event.slug).not.toBe(first.slug)
+    const third = await create({ title: first.title, date: '2099-10-12' })
+    expect(third.title).toBe(first.title)
+    expect((await call(`/api/events/${third.id}/rsvp`,'POST',{name:'Jane',email:'jane@example.com'})).status).toBeLessThan(300)
+    await deliverRSVPs(env)
+    expect(rows[1]).toEqual([first.title,'Jane','jane@example.com',third.id])
+    expect((await call('/manage/api/rsvp-sheet/sync','POST',undefined,true)).status).toBe(200)
+    expect(await env.EVENTS_DB.prepare('SELECT eventId FROM rsvps').first('eventId')).toBe(third.id)
+    expect(await env.EVENTS_DB.prepare('SELECT error FROM rsvp_sheet_connection').first('error')).toBeNull()
+  })
+  it('reports a conflict with the event without marking the sheet as failing', async () => {
+    const created = await create()
     await connect([['Event','Name','Email']])
-    const response = await call(`/manage/api/events/${second.id}`, 'PUT', { ...second, title: first.title }, true)
-    expect(response.status).toBe(409)
+    await env.EVENTS_DB.prepare("INSERT INTO rsvps (eventId,name,email,createdAt) VALUES (?,'Jane','jane@example.com',?)").bind(created.id,created.updatedAt).run()
+    expect((await call(`/manage/api/events/${created.id}`, 'PUT', { ...created, kind: 'normal' }, true)).status).toBe(409)
     expect(await env.EVENTS_DB.prepare('SELECT error FROM rsvp_sheet_connection').first('error')).toBeNull()
   })
   it('deletes a weekly lesson without the sheet even when the sheet is failing', async () => {

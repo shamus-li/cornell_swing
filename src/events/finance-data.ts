@@ -1,8 +1,9 @@
 import { createCachedGoogleAccessTokenProvider, getGoogleAccessToken, readCheckins } from '../../check-in/worker/google'
 import type { CampusGroupsRow, EventActivity, FinanceEvent, FinanceOverview, Transaction } from './finance'
-import { appendLedgerRows, fiscalYear } from './ledger'
+import { appendLedgerRows, fiscalYear, linkLedgerRow } from './ledger'
 import { todayInNewYork } from './model'
-import { eventLabel, withFilingLock } from './square'
+import { EventConflict } from './sheets'
+import { withFilingLock } from './square'
 
 // The Finances tab and event pages: the Balance Sheet, with its batched Square and cash rows replaced by each
 // payment, checked row by row against the latest CampusGroups transactions export.
@@ -10,7 +11,7 @@ export const campusGroupsTransactionsKey = 'finance:campusgroups:v1'
 type StoredExport = { uploadedAt: string; rows: CampusGroupsRow[] }
 type Payment = { id: string; paidAt: string; amount: number; fee: number; cash: number; note: string; eventId: string | null; title: string | null }
 type EventRow = { id: string; title: string; date: string }
-type SheetRow = { index: number; date: string; amount: number; account: string; description: string; siteRow: boolean; label: { key: string; name: string; rest: string } | null }
+type SheetRow = { index: number; date: string; amount: number; account: string; description: string; siteRow: boolean; eventId: string }
 
 const DAY_MS = 86_400_000
 // Reading whole sheets from Google takes seconds, so a page first gets the last read saved in KV, then asks again
@@ -34,18 +35,16 @@ function usDate(value: string): string {
   return match ? `${match[3]}-${match[1].padStart(2, '0')}-${match[2].padStart(2, '0')}` : ''
 }
 
-// Rows named like "Fall 2025 Back-2-Skool Swing: Room Rental" belong to an event.
-function parseLabel(description: string): SheetRow['label'] {
-  const match = description.match(/^(Fall|Spring) (?:20)?(\d\d) ([^:]+):\s*(.*)$/)
-  return match ? { key: `${match[1]} ${match[2]} ${match[3].trim()}`, name: match[3].trim(), rest: match[4].trim() } : null
-}
+// A row on an event's page drops the "Fall 2025 Back-2-Skool Swing: " the sheet starts it with.
+const withoutEventName = (description: string) => description.replace(/^(Fall|Spring) (?:20)?\d\d [^:]+:\s*/, '') || description
 
+// A row names its event by ID: the site's own rows in column H, and the treasurer's in column I.
 export function parseSheetRows(values: unknown[][]): SheetRow[] {
   return values.flatMap((row, index) => {
     const source = String(row[3] ?? '').trim()
     if (typeof row[2] !== 'number' || !row[2]) return []
-    const description = String(row[5] ?? '').trim()
-    return [{ index, date: sheetDate(row[1]), amount: row[2], account: source, description, siteRow: !!row[7] && (source === 'Square' || source === 'Cash'), label: parseLabel(description) }]
+    const siteRow = !!row[7] && (source === 'Square' || source === 'Cash')
+    return [{ index, date: sheetDate(row[1]), amount: row[2], account: source, description: String(row[5] ?? '').trim(), siteRow, eventId: String((siteRow ? row[7] : row[8]) ?? '').trim() }]
   })
 }
 
@@ -65,9 +64,6 @@ function linesAddingUpTo(lines: SheetRow[], amount: number): SheetRow[] {
   }
   return []
 }
-
-// The sheet labels an event with its plain name; a year in the site's title only keeps titles unique.
-const sheetLabel = (event: EventRow) => eventLabel(event.title.replace(/ 20\d\d$/, ''), event.date)
 
 // Pairs the CampusGroups export with the sheet. One sheet row pairs with one export row: same account and amount,
 // close in date. A payment can also be several lines on the sheet, like an instructor's fee and travel.
@@ -94,14 +90,14 @@ function pairExport(rows: SheetRow[], stored: StoredExport | null) {
 }
 
 export function buildTransactions(rows: SheetRow[], payments: Payment[], stored: StoredExport | null, events: EventRow[]): Transaction[] {
-  const byLabel = new Map(events.map(event => [sheetLabel(event), event]))
+  const byId = new Map(events.map(event => [event.id, event]))
   const uploaded = stored?.uploadedAt.slice(0, 10) ?? ''
   const { paired, unpaired } = pairExport(rows, stored)
   const fromSheet = rows.filter(row => !row.siteRow).map((row): Transaction => {
-    const event = row.label && byLabel.get(row.label.key)
+    const event = byId.get(row.eventId)
     const cornell = !!stored && (row.account === 'GPSA' || row.account === 'Outside Funding')
     return {
-      id: `sheet-${row.index}`, date: row.date, description: row.label?.rest || row.description, account: row.account || 'No account', eventId: event?.id ?? null, eventName: row.label?.name ?? null, amount: row.amount, fee: 0,
+      id: `sheet-${row.index}`, date: row.date, description: event ? withoutEventName(row.description) : row.description, account: row.account || 'No account', eventId: event?.id ?? null, eventName: event?.title ?? null, amount: row.amount, fee: 0,
       status: !cornell ? null : paired.has(row.index) ? 'in-campusgroups' : row.date > uploaded ? 'after-export' : 'not-in-campusgroups',
     }
   })
@@ -113,15 +109,15 @@ export function buildTransactions(rows: SheetRow[], payments: Payment[], stored:
 }
 
 export function buildEvents(rows: SheetRow[], events: EventRow[]): FinanceEvent[] {
-  const byLabel = new Map(events.map(event => [sheetLabel(event), event]))
+  const byId = new Map(events.map(event => [event.id, event]))
   const grouped = new Map<string, FinanceEvent>()
   for (const row of rows) {
-    if (!row.label) continue
-    const event = byLabel.get(row.label.key)
-    const entry = grouped.get(row.label.key) ?? { id: event?.id ?? null, name: row.label.name, date: event?.date ?? row.date, earned: 0, spent: 0, grant: 0 }
+    const event = byId.get(row.eventId)
+    if (!event) continue
+    const entry = grouped.get(event.id) ?? { id: event.id, name: event.title, date: event.date, earned: 0, spent: 0, grant: 0 }
     if (row.amount > 0) entry.earned += row.amount
     else { entry.spent -= row.amount; if (row.account === 'GPSA') entry.grant -= row.amount }
-    grouped.set(row.label.key, entry)
+    grouped.set(event.id, entry)
   }
   return [...grouped.values()].map(event => ({ ...event, earned: round(event.earned), spent: round(event.spent), grant: round(event.grant) })).sort((a, b) => b.date.localeCompare(a.date))
 }
@@ -141,7 +137,7 @@ async function cached<T>(env: Env, fresh: boolean, key: string, read: () => Prom
 function readBalanceSheet(env: Env, fresh: boolean) {
   const [first, second] = fiscalYear(todayInNewYork()).split('-')
   const tabs = [TRANSACTIONS, `'20${first}-20${second} Synopsis'!A2:E8`, "'Quick Cash Calculation Tool'!C11"]
-  return cached(env, fresh, `finance:sheet:v2:${first}`, () => fetchBalanceSheet(env, tabs))
+  return cached(env, fresh, `finance:sheet:v3:${first}`, () => fetchBalanceSheet(env, tabs))
 }
 
 async function fetchBalanceSheet(env: Env, tabs: string[]): Promise<unknown[][][]> {
@@ -155,7 +151,7 @@ async function fetchBalanceSheet(env: Env, tabs: string[]): Promise<unknown[][][
 
 const readPayments = async (env: Env, where = '', ...bind: string[]) => (await env.EVENTS_DB.prepare(`SELECT p.id, p.paidAt, p.amount, p.fee, p.cash, p.note, p.eventId, e.title FROM square_payments p LEFT JOIN events e ON e.id = p.eventId ${where}`).bind(...bind).all<Payment>()).results
 const readEvents = async (env: Env) => (await env.EVENTS_DB.prepare("SELECT id, title, date FROM events WHERE kind = 'special'").all<EventRow>()).results
-const TRANSACTIONS = "'Transaction History'!A2:H"
+const TRANSACTIONS = "'Transaction History'!A2:I"
 
 export async function financeOverview(env: Env, fresh = false): Promise<FinanceOverview> {
   const year = fiscalYear(todayInNewYork())
@@ -175,7 +171,7 @@ export async function financeOverview(env: Env, fresh = false): Promise<FinanceO
       : name === 'Square' ? { source: 'Square sales', difference: round(squareSales - filedSquare) } : null
     return [{ name: name === 'Square' ? 'Square Checking' : name === 'Cash' ? 'Cash box' : name, start, moneyIn, moneyOut: Math.abs(moneyOut), balance, check }]
   })
-  return { accounts, events: buildEvents(rows, events), transactions: buildTransactions(rows, payments, stored, events), campusGroupsUploadedAt: stored?.uploadedAt ?? null }
+  return { accounts, events: buildEvents(rows, events), transactions: buildTransactions(rows, payments, stored, events), eventOptions: [...events].sort((a, b) => b.date.localeCompare(a.date)), campusGroupsUploadedAt: stored?.uploadedAt ?? null }
 }
 
 // Keeps what the page needs from each row of the export, which also names the officers who filed them, and adds
@@ -191,6 +187,23 @@ export async function saveCampusGroupsTransactions(env: Env, body: unknown): Pro
     await appendLedgerRows(env, pairExport(parseSheetRows(history), stored).unpaired.map(row => ({ date: row.date, amount: row.amount, source: row.account, complete: !row.pending, description: row.item })))
   })
   if (!added) throw new Error('The Balance Sheet is being updated. Upload the export again in a minute.')
+}
+
+// Links one of the treasurer's rows to an event, or removes the link. Sorting the tab moves rows, so the row must
+// still be the one the officer was looking at.
+export async function linkSheetRow(env: Env, body: unknown): Promise<void> {
+  const { id, eventId, date, amount, description } = (body ?? {}) as Partial<Transaction>
+  const index = Number(id?.match(/^sheet-(\d+)$/)?.[1] ?? NaN)
+  const changed = new EventConflict('The Balance Sheet changed. Refresh and try again.')
+  if (eventId && !await env.EVENTS_DB.prepare("SELECT 1 FROM events WHERE id = ? AND kind = 'special'").bind(eventId).first()) throw changed
+  const linked = await withFilingLock(env, async () => {
+    const [history] = await readBalanceSheet(env, true)
+    const row = parseSheetRows(history).find(item => item.index === index)
+    if (!row || row.siteRow || row.date !== date || row.amount !== amount || withoutEventName(row.description) !== withoutEventName(description ?? '')) throw changed
+    // The tab's values start on sheet row 2.
+    await linkLedgerRow(env, index + 2, eventId ?? '')
+  })
+  if (!linked) throw new EventConflict('The Balance Sheet is being updated. Try again in a minute.')
 }
 
 const clock = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' })

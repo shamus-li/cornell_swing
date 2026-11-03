@@ -104,7 +104,7 @@ export function FinanceOverview() {
       </Table></Card>
     </section>
 
-    <Transactions transactions={data.transactions} />
+    <Transactions transactions={data.transactions} options={data.eventOptions} onChange={setData} />
 
     <section aria-labelledby="finance-events-title">
       <div className="finance-heading">
@@ -121,7 +121,7 @@ export function FinanceOverview() {
           return <TableBody key={year}>
             <TableRow className="bg-muted/50 font-medium"><TableCell>{year}</TableCell><TableCell className="hidden sm:table-cell" /><EventFigures events={inYear} /></TableRow>
             {inYear.map(event => <TableRow key={`${event.name}-${event.date}`}>
-              <TableCell>{event.id ? <a href={`/manage/?event=${event.id}`}>{event.name}</a> : event.name}</TableCell>
+              <TableCell><a href={`/manage/?event=${event.id}`}>{event.name}</a></TableCell>
               <TableCell className="hidden whitespace-nowrap tabular-nums sm:table-cell">{longDate.format(dateOf(event.date))}</TableCell>
               <EventFigures events={[event]} />
             </TableRow>)}

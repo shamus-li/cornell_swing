@@ -15,6 +15,7 @@ let outside = [...outsideEvents]
 let feeds = [...danceFeeds]
 let redirects = [...sampleRedirects]
 let sheetConnection: typeof sheet | null = sheet
+let financeData = finance
 const template: Record<string, string> = {}
 const rsvps: Record<string, { name: string; email: string; createdAt: string }[]> = { "mock-special-1": eventRsvps }
 // In the Worker's order: by date, undated events last.
@@ -81,9 +82,15 @@ async function respond(req: IncomingMessage, path: string): Promise<object | nul
   }
   if (route.startsWith("/locations")) return { places }
   if (route === "/square") return square
-  if (route === "/finance") return finance
-  if (route === "/finance/file") return finance
-  if (route === "/finance/campusgroups") return { ...finance, campusGroupsUploadedAt: new Date().toISOString() }
+  if (route === "/finance") return financeData
+  if (route === "/finance/file") return financeData
+  if (route === "/finance/link") {
+    const { id, eventId } = await body(req)
+    const eventName = financeData.eventOptions.find(option => option.id === eventId)?.title ?? null
+    financeData = { ...financeData, transactions: financeData.transactions.map(item => item.id === id ? { ...item, eventId, eventName } : item) }
+    return financeData
+  }
+  if (route === "/finance/campusgroups") return { ...financeData, campusGroupsUploadedAt: new Date().toISOString() }
   if (route === "/alert-email") return { email: "alerts@example.com", verified: true }
   if (route.startsWith("/rsvp-sheet")) {
     if (method === "PUT") sheetConnection = { ...sheet, url: (await body(req)).url }

@@ -26,10 +26,6 @@ const quoted = (title: string) => `'${title.replaceAll("'", "''")}'`
 const range = (connection: Connection) => `${quoted(connection.tabTitle)}!A:D`
 const registryTitle = (connection: Connection) => `_Swing events ${connection.sheetId}`
 
-async function titleTaken(env: Env, title: string, exceptId = ''): Promise<boolean> {
-  return !!await env.EVENTS_DB.prepare("SELECT 1 FROM events WHERE kind = 'special' AND id != ? AND lower(trim(title)) = lower(trim(?)) LIMIT 1").bind(exceptId, title).first()
-}
-
 async function deleteRows(connection: Connection, token: string, signal: AbortSignal, rows: Participant[]): Promise<void> {
   if (!rows.length) return
   await request(`${endpoint(connection.spreadsheetId)}:batchUpdate`, token, signal, 'POST', { requests: [...rows].sort((a, b) => b.row - a.row).map(row => ({ deleteDimension: { range: { sheetId: connection.sheetId, dimension: 'ROWS', startIndex: row.row - 1, endIndex: row.row } } })) })
@@ -238,7 +234,6 @@ export async function changeEventWithSheet(env: Env, event: EventRecord, newTitl
     const current = await env.EVENTS_DB.prepare('SELECT * FROM events WHERE id = ?').bind(event.id).first<EventRecord>()
     if (!current || current.updatedAt !== event.updatedAt) throw new EventConflict('The event changed. Refresh before saving.')
     if (newKind === 'normal' && await env.EVENTS_DB.prepare('SELECT 1 FROM rsvps WHERE eventId = ? LIMIT 1').bind(event.id).first()) throw new EventConflict('An event with RSVPs cannot become a normal event.')
-    if (renamed && await titleTaken(env, newTitle, event.id)) throw new EventConflict('Special events must have unique titles.')
     const rows = (await readParticipants(env, connection, token, signal)).filter(row => row.eventId === event.id)
     if (rows.length && newKind === 'normal') throw new EventConflict('An event with sheet RSVPs cannot become a normal event.')
     const setTitles = (title: string, signal: AbortSignal) => request(`${endpoint(connection.spreadsheetId)}/values:batchUpdate`, token, signal, 'POST', { valueInputOption: 'RAW', data: rows.map(row => ({ range: `${quoted(connection.tabTitle)}!A${row.row}`, values: [[title]] })) })
@@ -260,22 +255,14 @@ export async function changeEventWithSheet(env: Env, event: EventRecord, newTitl
     await refreshRegistry(env, connection, token, signal)
     return true
   })
-  if (!connected) {
-    if (renamed && await titleTaken(env, newTitle, event.id)) throw new EventConflict('Special events must have unique titles.')
-    await change()
-  }
+  if (!connected) await change()
 }
 
-export async function createEventWithSheet(env: Env, title: string, create: () => Promise<void>): Promise<void> {
-  const checkAndCreate = async () => {
-    if (await titleTaken(env, title)) throw new EventConflict('Special events must have unique titles.')
-    await create()
-    return true
-  }
+export async function createEventWithSheet(env: Env, create: () => Promise<void>): Promise<void> {
   if (!await withSheet(env, async (connection, token, signal) => {
     const stored = await ensureRegistry(connection, token, signal)
-    await checkAndCreate()
+    await create()
     await refreshRegistry(env, connection, token, signal, stored)
     return true
-  })) await checkAndCreate()
+  })) await create()
 }

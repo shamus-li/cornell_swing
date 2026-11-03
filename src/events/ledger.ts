@@ -73,6 +73,13 @@ export async function upsertLedgerRows(env: Env, rows: LedgerRow[]): Promise<voi
   if (!remove.ok) throw new Error(`Ledger row removal failed with ${remove.status}`)
 }
 
+// Hidden column I links one of the treasurer's rows to an event, and an empty ID removes the link.
+export async function linkLedgerRow(env: Env, row: number, eventId: string): Promise<void> {
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(env.FINANCE_SPREADSHEET_ID)}/values:batchUpdate`
+  const write = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${await getGoogleAccessToken(env)}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ valueInputOption: 'RAW', data: [{ range: `${TAB}!I${row}`, values: [[eventId]] }] }) })
+  if (!write.ok) throw new Error(`Ledger write failed with ${write.status}`)
+}
+
 // Rows from elsewhere that belong to the treasurer once added, so they get no ID. An unfinished one is marked Incomplete.
 export async function appendLedgerRows(env: Env, rows: { date: string; amount: number; source: string; complete: boolean; description: string }[]): Promise<void> {
   if (!rows.length) return

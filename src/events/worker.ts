@@ -12,7 +12,7 @@ import { isValidEmail } from '../lib/email'
 import { buildCampusGroups, campusGroupsKey, summarizeCampusGroups, type CampusGroupsData } from './campusgroups'
 import { academicYearStart, formatEventDate, formatEventLocation, formatEventTime, formatLessonSchedule, hasEventDetails, isUpcoming, todayInNewYork, validateEvent, validateRSVP, type EventRecord, type ManagedEvent, type RSVP } from './model'
 import { connectSquare, disconnectSquare, fileNow, squareConnectUrl, squareFeed } from './square'
-import { eventActivity, financeOverview, saveCampusGroupsTransactions } from './finance-data'
+import { eventActivity, financeOverview, linkSheetRow, saveCampusGroupsTransactions } from './finance-data'
 import { listGroupNames, listOutsideEvents, saveOutsideEvent, validateEventRequest, validateOutsideEvent } from './outside'
 import { listFeeds, readFeeds, validateFeed } from './feeds'
 import { assignSlug } from './slugs'
@@ -289,6 +289,10 @@ async function route(request: Request, env: Env): Promise<Response> {
     if (!await fileNow(env)) throw new HttpError(409, 'Filing is already running. Try again in a minute.')
     return json(await financeOverview(env, true))
   }
+  if (path === '/manage/api/finance/link' && method === 'POST') {
+    await linkSheetRow(env, await readBody(request))
+    return json(await financeOverview(env, true))
+  }
   const activityMatch = path.match(/^\/manage\/api\/events\/([^/]+)\/activity$/)
   if (activityMatch && method === 'GET') {
     const activity = await eventActivity(env, activityMatch[1], url.searchParams.has('fresh'))
@@ -380,7 +384,7 @@ async function route(request: Request, env: Env): Promise<Response> {
       const create = async () => {
       await env.EVENTS_DB.prepare('INSERT INTO events (kind, title, date, startTime, endTime, location, description, updatedAt, locationUrl, room, published, tickets, lessonEndTime, socialStartTime, lastDate, moreDays, styles, city, id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(...values, id).run()
       }
-      if (input.kind === 'special') await createEventWithSheet(env, input.title, create)
+      if (input.kind === 'special') await createEventWithSheet(env, create)
       else await create()
     } else {
       const previous = (body as Record<string, unknown>).updatedAt
