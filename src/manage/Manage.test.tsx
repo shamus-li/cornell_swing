@@ -64,7 +64,7 @@ it("edits rendered Markdown in place, preserves headings and lists on save, and 
   const description = "**Live music**\n\n[Details](https://example.com)\n\n## Program\n\n- Jazz and swing"
   let current = events.map(event => ({ ...event, description }))
   const fetcher = vi.fn(async (_url: string, init?: RequestInit) => {
-    if (_url.endsWith("/activity")) return Response.json({ attendance: null, tickets: [], transactions: [], checkins: [], sheetReadAt: "9999-01-01T00:00:00.000Z" })
+    if (_url.includes("/activity")) return Response.json({ attendance: null, tickets: [], transactions: [], checkins: [] })
     if (_url.endsWith("/rsvps")) return Response.json({ rsvps: [] })
     if (init?.method === "PUT") {
       const saved = JSON.parse(init.body as string) as ManagedEvent
@@ -119,7 +119,7 @@ it("creates a special event as a draft with unconfirmed times, opens its private
       current = [...current, created]
       return Response.json({ event: created })
     }
-    if (url.endsWith("/activity")) return Response.json({ attendance: null, tickets: [], transactions: [], checkins: [], sheetReadAt: "9999-01-01T00:00:00.000Z" })
+    if (url.includes("/activity")) return Response.json({ attendance: null, tickets: [], transactions: [], checkins: [] })
     if (url.endsWith("/rsvps")) return Response.json({ rsvps: [{ name: "Test Dancer", email: "dancer@example.com", createdAt: base.updatedAt }] })
     return Response.json({ events: current })
   })

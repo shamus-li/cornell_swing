@@ -169,7 +169,7 @@ async function eventPage(request: Request, env: Env, url: URL, slug: string): Pr
     .transform(response)
 }
 
-async function route(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
+async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url)
   let path: string
   try { path = decodeURIComponent(url.pathname).replace(/\/$/, '') || '/' }
@@ -280,14 +280,14 @@ async function route(request: Request, env: Env, ctx?: ExecutionContext): Promis
     await disconnectSquare(env)
     return json({ success: true })
   }
-  if (path === '/manage/api/finance' && method === 'GET') return json(await financeOverview(env, ctx))
+  if (path === '/manage/api/finance' && method === 'GET') return json(await financeOverview(env, url.searchParams.has('fresh')))
   if (path === '/manage/api/finance/campusgroups' && method === 'PUT') {
     try { await saveCampusGroupsTransactions(env, await readBody(request, 2_000_000)) } catch (error) { if (error instanceof HttpError) throw error; throw new HttpError(400, (error as Error).message) }
-    return json(await financeOverview(env, ctx))
+    return json(await financeOverview(env))
   }
   const activityMatch = path.match(/^\/manage\/api\/events\/([^/]+)\/activity$/)
   if (activityMatch && method === 'GET') {
-    const activity = await eventActivity(env, activityMatch[1], ctx)
+    const activity = await eventActivity(env, activityMatch[1], url.searchParams.has('fresh'))
     if (!activity) throw new HttpError(404, 'Event not found.')
     return json(activity)
   }
@@ -454,7 +454,7 @@ async function route(request: Request, env: Env, ctx?: ExecutionContext): Promis
 export default {
   async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     let response: Response
-    try { response = await route(request, env, ctx) }
+    try { response = await route(request, env) }
     catch (error) {
       if (error instanceof SheetError) {
         if (error.cause) logError('RSVP sheet operation failed', error.cause)

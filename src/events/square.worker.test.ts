@@ -118,10 +118,12 @@ describe('Square feed', () => {
     ])
     expect(overview.transactions.find(item => item.id === 'cash-1')).toMatchObject({ eventId: 'haunt', eventName: 'The Lindy Haunt 👻', amount: 10, account: 'Cash' })
     expect(overview.transactions.some(item => item.description === 'Square Profits')).toBe(false)
-    // The next page gets the saved copy without waiting on Google.
+    // The next page gets the saved copy without waiting on Google, then asks for the sheet as it is now.
     expect(sheetReads).toBe(1)
     await manage('/finance')
     expect(sheetReads).toBe(1)
+    await manage('/finance?fresh=1')
+    expect(sheetReads).toBe(2)
     const activity = await (await manage('/events/haunt/activity')).json() as EventActivity
     expect(activity.checkins).toEqual([{ name: 'Maya', email: 'maya@example.edu', time: '7:12 PM', ticket: null }])
     expect(activity.transactions.map(item => item.description)).toContain('Ageless Jazz Band')

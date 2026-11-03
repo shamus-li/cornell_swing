@@ -27,7 +27,7 @@ it("updates RSVP counts and event deletion locally and loads the sheet status on
     if (url.endsWith("/outside-events")) return Response.json({ events: [], groups: [] })
     if (url.endsWith("/rsvp-sheet")) return Response.json({ connection: { url: "https://docs.google.com/spreadsheets/d/example", error: null }, serviceAccountEmail: null })
     if (init?.method === "DELETE") return Response.json({ success: true })
-    if (url.endsWith("/activity")) return Response.json({ attendance: null, tickets: [], transactions: [], checkins: [], sheetReadAt: "9999-01-01T00:00:00.000Z" })
+    if (url.includes("/activity")) return Response.json({ attendance: null, tickets: [], transactions: [], checkins: [] })
     if (url.endsWith("/rsvps")) return Response.json({ rsvps: [{ name: "Dancer", email: "dancer@example.com", createdAt: "2026-09-21" }] })
     throw new Error(`Unexpected request: ${url}`)
   })
