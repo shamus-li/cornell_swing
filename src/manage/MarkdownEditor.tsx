@@ -1,6 +1,10 @@
 import { lazy, Suspense } from "react"
 
-const Editor = lazy(() => import("./MarkdownEditorContent").then(module => ({ default: module.MarkdownEditor })))
+const loadEditor = () => import("./MarkdownEditorContent")
+const Editor = lazy(() => loadEditor().then(module => ({ default: module.MarkdownEditor })))
+
+// The editor is a large download, so an event page fetches it ahead of the first click on Details.
+export const preloadMarkdownEditor = () => void loadEditor().catch(() => {})
 
 export function MarkdownEditor(props: {
   markdown: string

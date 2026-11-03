@@ -1,6 +1,7 @@
 import { createCachedGoogleAccessTokenProvider, getGoogleAccessToken, readCheckins } from '../../check-in/worker/google'
 import type { CampusGroupsRow, EventActivity, FinanceEvent, FinanceOverview, Transaction } from './finance'
 import { fiscalYear } from './ledger'
+import { logError } from './logging'
 import { todayInNewYork } from './model'
 import { eventLabel } from './square'
 
@@ -13,10 +14,9 @@ type EventRow = { id: string; title: string; date: string }
 type SheetRow = { index: number; date: string; amount: number; account: string; description: string; siteRow: boolean; label: { key: string; name: string; rest: string } | null }
 
 const DAY_MS = 86_400_000
-// Reading whole sheets from Google takes a while, so pages reuse a read for this long. Only finished reads are
-// kept: a stateless Worker must never await another request's pending I/O.
-const SHEET_CACHE_MS = 60_000
-const sheetCache = new Map<string, { at: number; value: unknown }>()
+// Reading whole sheets from Google takes seconds, so pages get the last read from KV right away, and a read older
+// than this is replaced in the background for the page to pick up.
+const SHEET_FRESH_MS = 60_000
 const accessToken = createCachedGoogleAccessTokenProvider(getGoogleAccessToken)
 // How far apart CampusGroups and the sheet can date the same transaction.
 const MATCH_DAYS = 14
@@ -99,15 +99,28 @@ export function buildEvents(rows: SheetRow[], events: EventRow[]): FinanceEvent[
   return [...grouped.values()].map(event => ({ ...event, earned: round(event.earned), spent: round(event.spent), grant: round(event.grant) })).sort((a, b) => b.date.localeCompare(a.date))
 }
 
-async function cached<T>(key: string, read: () => Promise<T>): Promise<T> {
-  const hit = sheetCache.get(key)
-  if (hit && Date.now() - hit.at < SHEET_CACHE_MS) return hit.value as T
-  const value = await read()
-  sheetCache.set(key, { at: Date.now(), value })
-  return value
+type Snapshot<T> = { at: string; value: T }
+
+async function cached<T>(env: Env, ctx: ExecutionContext | undefined, key: string, read: () => Promise<T>): Promise<Snapshot<T>> {
+  const refresh = async () => {
+    const snapshot = { at: new Date().toISOString(), value: await read() }
+    await env.MEMBER_CACHE.put(key, JSON.stringify(snapshot))
+    return snapshot
+  }
+  const stored = await env.MEMBER_CACHE.get<Snapshot<T>>(key, 'json')
+  if (!stored) return refresh()
+  if (Date.now() - Date.parse(stored.at) >= SHEET_FRESH_MS) ctx?.waitUntil(refresh().catch((error: unknown) => logError('Finance sheet refresh failed', error)))
+  return stored
 }
 
-const readBalanceSheet = (env: Env, tabs: string[]) => cached(tabs.join(), () => fetchBalanceSheet(env, tabs))
+const oldest = (...times: string[]) => times.reduce((first, time) => time < first ? time : first)
+
+// The tabs Finances and event pages use, read together so they share one saved copy.
+function readBalanceSheet(env: Env, ctx: ExecutionContext | undefined) {
+  const [first, second] = fiscalYear(todayInNewYork()).split('-')
+  const tabs = [TRANSACTIONS, `'20${first}-20${second} Synopsis'!A2:E8`, "'Quick Cash Calculation Tool'!C11"]
+  return cached(env, ctx, `finance:sheet:v1:${first}`, () => fetchBalanceSheet(env, tabs))
+}
 
 async function fetchBalanceSheet(env: Env, tabs: string[]): Promise<unknown[][][]> {
   const url = new URL(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(env.FINANCE_SPREADSHEET_ID)}/values:batchGet`)
@@ -122,11 +135,10 @@ const readPayments = async (env: Env, where = '', ...bind: string[]) => (await e
 const readEvents = async (env: Env) => (await env.EVENTS_DB.prepare("SELECT id, title, date FROM events WHERE kind = 'special'").all<EventRow>()).results
 const TRANSACTIONS = "'Transaction History'!A2:H"
 
-export async function financeOverview(env: Env): Promise<FinanceOverview> {
+export async function financeOverview(env: Env, ctx?: ExecutionContext): Promise<FinanceOverview> {
   const year = fiscalYear(todayInNewYork())
-  const [first, second] = year.split('-')
-  const [history, synopsis, count] = await readBalanceSheet(env, [TRANSACTIONS, `'20${first}-20${second} Synopsis'!A2:E8`, "'Quick Cash Calculation Tool'!C11"])
-  const [payments, events, stored] = await Promise.all([readPayments(env), readEvents(env), env.MEMBER_CACHE.get<StoredExport>(campusGroupsTransactionsKey, 'json')])
+  const second = year.split('-')[1]
+  const [{ at: sheetReadAt, value: [history, synopsis, count] }, payments, events, stored] = await Promise.all([readBalanceSheet(env, ctx), readPayments(env), readEvents(env), env.MEMBER_CACHE.get<StoredExport>(campusGroupsTransactionsKey, 'json')])
   const rows = parseSheetRows(history)
   const inYear = (date: string) => date && fiscalYear(date) === year
   const exportTotal = (account: string) => round((stored?.rows ?? []).filter(row => cornellAccount(row.source) === account && row.source.includes(`FY${second}`) && !/rejected/i.test(row.paymentStatus)).reduce((sum, row) => sum + (Number(row.amount) || 0), 0))
@@ -141,7 +153,7 @@ export async function financeOverview(env: Env): Promise<FinanceOverview> {
       : name === 'Square' ? { source: 'Square sales', difference: round(squareSales - filedSquare) } : null
     return [{ name: name === 'Square' ? 'Square Checking' : name === 'Cash' ? 'Cash box' : name, start, moneyIn, moneyOut: Math.abs(moneyOut), balance, check }]
   })
-  return { accounts, events: buildEvents(rows, events), transactions: buildTransactions(rows, payments, stored, events), campusGroupsUploadedAt: stored?.uploadedAt ?? null }
+  return { accounts, events: buildEvents(rows, events), transactions: buildTransactions(rows, payments, stored, events), campusGroupsUploadedAt: stored?.uploadedAt ?? null, sheetReadAt }
 }
 
 // Keeps what the page needs from each row of the export, which also names the officers who filed them.
@@ -154,15 +166,15 @@ export async function saveCampusGroupsTransactions(env: Env, body: unknown): Pro
 
 const clock = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' })
 
-export async function eventActivity(env: Env, eventId: string): Promise<EventActivity | null> {
+export async function eventActivity(env: Env, eventId: string, ctx?: ExecutionContext): Promise<EventActivity | null> {
   const event = await env.EVENTS_DB.prepare('SELECT id, title, date, attendance FROM events WHERE id = ?').bind(eventId).first<EventRow & { attendance: number | null }>()
   if (!event) return null
-  const [[history], payments, charges, stored, checkins] = await Promise.all([
-    readBalanceSheet(env, [TRANSACTIONS]),
+  const [sheet, payments, charges, stored, checkins] = await Promise.all([
+    readBalanceSheet(env, ctx),
     readPayments(env, 'WHERE p.eventId = ?', eventId),
     env.EVENTS_DB.prepare("SELECT email, ticketName, amount FROM door_charges WHERE eventId = ? AND status IN ('card', 'cash', 'free', 'waived')").bind(eventId).all<{ email: string; ticketName: string; amount: number }>(),
     env.MEMBER_CACHE.get<StoredExport>(campusGroupsTransactionsKey, 'json'),
-    cached('checkins', async () => readCheckins(env, await accessToken(env))),
+    cached(env, ctx, 'finance:checkins:v1', async () => readCheckins(env, await accessToken(env))),
   ])
   const tickets = new Map<string, { name: string; count: number; amount: number }>()
   for (const charge of charges.results) {
@@ -172,8 +184,9 @@ export async function eventActivity(env: Env, eventId: string): Promise<EventAct
   return {
     attendance: event.attendance,
     tickets: [...tickets.values()],
-    transactions: buildTransactions(parseSheetRows(history), payments, stored, [event]).filter(item => item.eventId === eventId),
-    checkins: checkins.filter(row => row.eventId === eventId).map(row => ({
+    transactions: buildTransactions(parseSheetRows(sheet.value[0]), payments, stored, [event]).filter(item => item.eventId === eventId),
+    sheetReadAt: oldest(sheet.at, checkins.at),
+    checkins: checkins.value.filter(row => row.eventId === eventId).map(row => ({
       name: row.name, email: row.email,
       time: typeof row.timestamp === 'number' ? clock.format(new Date(SHEET_EPOCH_MS + row.timestamp * DAY_MS)) : '',
       ticket: charges.results.find(charge => charge.email === row.email)?.ticketName ?? null,

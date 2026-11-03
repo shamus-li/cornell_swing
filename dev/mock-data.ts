@@ -79,9 +79,11 @@ export const finance: FinanceOverview = {
     row("t6", "2025-10-20", "Payment for dance instructor (including transport)", "GPSA", -1483.85, null, "only-campusgroups"),
   ],
   campusGroupsUploadedAt: "2026-09-27T20:47:00.000Z",
+  sheetReadAt: "9999-01-01T00:00:00.000Z",
 }
 
 export const activity: EventActivity = {
+  sheetReadAt: "9999-01-01T00:00:00.000Z",
   attendance: null,
   tickets: [{ name: "Student", count: 2, amount: 20 }, { name: "General", count: 2, amount: 30 }],
   transactions: sweaterRows,

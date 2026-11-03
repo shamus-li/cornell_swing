@@ -165,7 +165,7 @@ async function eventPage(request: Request, env: Env, url: URL, slug: string): Pr
     .transform(response)
 }
 
-async function route(request: Request, env: Env): Promise<Response> {
+async function route(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
   const url = new URL(request.url)
   let path: string
   try { path = decodeURIComponent(url.pathname).replace(/\/$/, '') || '/' }
@@ -276,14 +276,14 @@ async function route(request: Request, env: Env): Promise<Response> {
     await disconnectSquare(env)
     return json({ success: true })
   }
-  if (path === '/manage/api/finance' && method === 'GET') return json(await financeOverview(env))
+  if (path === '/manage/api/finance' && method === 'GET') return json(await financeOverview(env, ctx))
   if (path === '/manage/api/finance/campusgroups' && method === 'PUT') {
     try { await saveCampusGroupsTransactions(env, await readBody(request, 2_000_000)) } catch (error) { if (error instanceof HttpError) throw error; throw new HttpError(400, (error as Error).message) }
-    return json(await financeOverview(env))
+    return json(await financeOverview(env, ctx))
   }
   const activityMatch = path.match(/^\/manage\/api\/events\/([^/]+)\/activity$/)
   if (activityMatch && method === 'GET') {
-    const activity = await eventActivity(env, activityMatch[1])
+    const activity = await eventActivity(env, activityMatch[1], ctx)
     if (!activity) throw new HttpError(404, 'Event not found.')
     return json(activity)
   }
@@ -450,7 +450,7 @@ async function route(request: Request, env: Env): Promise<Response> {
 export default {
   async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     let response: Response
-    try { response = await route(request, env) }
+    try { response = await route(request, env, ctx) }
     catch (error) {
       if (error instanceof SheetError) {
         if (error.cause) logError('RSVP sheet operation failed', error.cause)

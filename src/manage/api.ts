@@ -18,3 +18,16 @@ export async function api<T>(path: string, init?: RequestInit, failureMessage = 
   if (!response.ok || !data) throw new ApiError(data?.error || failureMessage, data?.code)
   return data
 }
+
+const SHEET_FRESH_MS = 60_000
+// How long the worker gets to reread Google's sheets in the background.
+const SHEET_REFRESH_WAIT_MS = 4_000
+
+// Shows the saved copy of the club's sheets right away, then the new read if that copy was old.
+export async function loadSheetData<T extends { sheetReadAt: string }>(path: string, failureMessage: string, onData: (data: T) => void, signal?: AbortSignal): Promise<void> {
+  const data = await api<T>(path, { signal }, failureMessage)
+  onData(data)
+  if (Date.now() - Date.parse(data.sheetReadAt) < SHEET_FRESH_MS) return
+  await new Promise(resolve => setTimeout(resolve, SHEET_REFRESH_WAIT_MS))
+  if (!signal?.aborted) onData(await api<T>(path, { signal }, failureMessage))
+}

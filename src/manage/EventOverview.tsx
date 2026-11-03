@@ -3,9 +3,10 @@ import { Card, CardContent } from "../components/ui/card"
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "../components/ui/table"
 import type { RSVP } from "../events/model"
 import type { EventActivity } from "../events/finance"
-import { api, errorMessage } from "./api"
+import { api, errorMessage, loadSheetData } from "./api"
 import { ConfirmButton } from "./ConfirmButton"
 import { CopyButton } from "./CopyButton"
+import { preloadMarkdownEditor } from "./MarkdownEditor"
 import { money } from "./money"
 import { onSheet, TransactionsTable } from "./Transactions"
 
@@ -19,8 +20,9 @@ export function useEventRecords(eventId: string, onRsvpRemoved: () => void) {
   const [rsvpError, setRsvpError] = useState("")
   useEffect(() => {
     if (!eventId) return
+    preloadMarkdownEditor()
     void api<{ rsvps: RSVP[] }>(`/events/${eventId}/rsvps`).then(data => setRsvps(data.rsvps)).catch(err => setRsvpError(errorMessage(err)))
-    void api<EventActivity>(`/events/${eventId}/activity`, {}, "This event's money and check-ins could not be loaded.").then(setActivity).catch(err => setActivityError(errorMessage(err)))
+    void loadSheetData<EventActivity>(`/events/${eventId}/activity`, "This event's money and check-ins could not be loaded.", setActivity).catch(err => setActivityError(errorMessage(err)))
   }, [eventId])
   async function removeRsvp(email: string) {
     setRsvpError("")

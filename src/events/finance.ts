@@ -10,7 +10,7 @@ export type FinanceEvent = { id: string | null; name: string; date: string; earn
 export type TransactionStatus = "in-campusgroups" | "not-in-campusgroups" | "after-export" | "only-campusgroups"
 // One movement of money, in dollars: money in is positive, and fee is what Square kept.
 export type Transaction = { id: string; date: string; description: string; account: string; eventId: string | null; eventName: string | null; amount: number; fee: number; status: TransactionStatus | null }
-export type FinanceOverview = { accounts: FinanceAccount[]; events: FinanceEvent[]; transactions: Transaction[]; campusGroupsUploadedAt: string | null }
+export type FinanceOverview = { accounts: FinanceAccount[]; events: FinanceEvent[]; transactions: Transaction[]; campusGroupsUploadedAt: string | null; sheetReadAt: string }
 export type CampusGroupsRow = { source: string; amount: string; paymentStatus: string; item: string; date: string }
 
 // One event's money and who came. attendance is a headcount for events from before check-ins named their event.
@@ -19,4 +19,5 @@ export type EventActivity = {
   tickets: { name: string; count: number; amount: number }[]
   transactions: Transaction[]
   checkins: { name: string; email: string; time: string; ticket: string | null }[]
+  sheetReadAt: string
 }

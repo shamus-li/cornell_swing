@@ -17,6 +17,7 @@ const env = runtimeEnv as typeof runtimeEnv
 const network = setupNetwork()
 const origin = 'https://swingsyndicate.club'
 let managerToken = ''
+let sheetReads = 0
 let ledger: { range: string; values: unknown[][] }[] = []
 // The fake Transaction History's ID and source columns, by row number; row 1 is the header.
 type SheetRow = { id: string; source: string }
@@ -49,6 +50,7 @@ beforeAll(async () => {
     http.get('https://sheets.googleapis.com/v4/spreadsheets/:id/values:batchGet', ({ request }) => {
       // The Finances tab's read of the Balance Sheet.
       const ranges = new URL(request.url).searchParams.getAll('ranges')
+      if (ranges[0].endsWith('A2:H')) sheetReads++
       if (ranges[0].endsWith('A2:H')) return HttpResponse.json({ valueRanges: [
         { values: [['26-27', 46283, 10, 'Cash', 'Y', 'Fall 26 The Lindy Haunt: Cash Profits', '', 'haunt'], ['26-27', 46286, -400, 'GPSA', 'Y', 'Fall 26 The Lindy Haunt: Ageless Jazz Band']] },
         { values: [['GPSA', 0, 3500, -950, 2550], ['Venmo', 0, 0, 0, 0], ['Cash', 989, 225, 0, 1214], ['Totals', 989, 3725, -950, 3764]] },
@@ -116,6 +118,10 @@ describe('Square feed', () => {
     ])
     expect(overview.transactions.find(item => item.id === 'cash-1')).toMatchObject({ eventId: 'haunt', eventName: 'The Lindy Haunt 👻', amount: 10, account: 'Cash' })
     expect(overview.transactions.some(item => item.description === 'Square Profits')).toBe(false)
+    // The next page gets the saved copy without waiting on Google.
+    expect(sheetReads).toBe(1)
+    await manage('/finance')
+    expect(sheetReads).toBe(1)
     const activity = await (await manage('/events/haunt/activity')).json() as EventActivity
     expect(activity.checkins).toEqual([{ name: 'Maya', email: 'maya@example.edu', time: '7:12 PM', ticket: null }])
     expect(activity.transactions.map(item => item.description)).toContain('Ageless Jazz Band')

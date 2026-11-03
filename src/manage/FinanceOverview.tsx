@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Card } from "../components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table"
 import type { FinanceEvent, FinanceOverview as Overview } from "../events/finance"
-import { api, errorMessage } from "./api"
+import { api, errorMessage, loadSheetData } from "./api"
 import { money } from "./money"
 import { Transactions } from "./Transactions"
 
@@ -44,7 +44,7 @@ export function FinanceOverview() {
 
   useEffect(() => {
     const controller = new AbortController()
-    void api<Overview>("/finance", { signal: controller.signal }, "The Balance Sheet could not be read.").then(setData).catch((err: unknown) => {
+    void loadSheetData<Overview>("/finance", "The Balance Sheet could not be read.", setData, controller.signal).catch((err: unknown) => {
       if (!controller.signal.aborted) setError(errorMessage(err))
     })
     return () => controller.abort()
