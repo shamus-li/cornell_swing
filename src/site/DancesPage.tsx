@@ -1,6 +1,7 @@
 import { Fragment, useState } from "react"
 import { ClockIcon, MapPinIcon } from "lucide-react"
 import { Button } from "../../check-in/src/components/ui/button"
+import { ToggleChoice, ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group"
 import { danceStyles, isUpcoming, formatEventDate, formatEventDayRange, formatEventLocation, formatEventPrices, formatEventTime, hasEventDetails, ithacaArea, nightSpan, type EventRecord } from "../events/model"
 import type { OutsideEvent } from "../events/outside"
 import { LessonTimes } from "../events/LessonTimes"
@@ -25,6 +26,9 @@ type Listing = ReturnType<typeof listing>
 const listings = ({ events, outside, today }: DanceSnapshot) => [...events, ...outside].filter(event => event.date && isUpcoming(event, today)).map(listing)
   .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime) || a.title.localeCompare(b.title))
 
+// Lit when no style is chosen; choosing it clears the others.
+const allStyles = "all"
+
 export function DancesPage(snapshot: DanceSnapshot) {
   const [nearby, setNearby] = useState(true)
   // Nothing chosen shows every dance; an event with several styles shows when any of them is chosen.
@@ -43,14 +47,14 @@ export function DancesPage(snapshot: DanceSnapshot) {
     <div className="dances-heading">
       <h1>Community Dance Events</h1>
       <div className="dances-toolbar">
-        {!snapshot.unavailable && <div className="segmented" role="group" aria-label="Area">
-          <button type="button" aria-pressed={nearby} onClick={() => setNearby(true)}>Ithaca</button>
-          <button type="button" aria-pressed={!nearby} onClick={() => setNearby(false)}>All upstate</button>
-        </div>}
-        {!snapshot.unavailable && styles.length > 1 && <div className="filter-chips" role="group" aria-label="Dance styles">
-        <button type="button" aria-pressed={!chosen.length} onClick={() => setChosen([])}>All</button>
-        {styles.map(name => <button key={name} type="button" aria-pressed={chosen.includes(name)} disabled={!chosen.includes(name) && !all.some(listing => listing.styles.includes(name))} onClick={() => setChosen(current => current.includes(name) ? current.filter(item => item !== name) : [...current, name])}>{name}</button>)}
-        </div>}
+        {!snapshot.unavailable && <ToggleChoice variant="segmented" aria-label="Area" value={nearby ? "ithaca" : "upstate"} onValueChange={area => setNearby(area === "ithaca")}>
+          <ToggleGroupItem value="ithaca">Ithaca</ToggleGroupItem>
+          <ToggleGroupItem value="upstate">All upstate</ToggleGroupItem>
+        </ToggleChoice>}
+        {!snapshot.unavailable && styles.length > 1 && <ToggleGroup variant="chips" multiple aria-label="Dance styles" value={chosen.length ? chosen : [allStyles]} onValueChange={next => setChosen(next.includes(allStyles) && chosen.length ? [] : next.filter(item => item !== allStyles))}>
+        <ToggleGroupItem value={allStyles}>All</ToggleGroupItem>
+        {styles.map(name => <ToggleGroupItem key={name} value={name} disabled={!chosen.includes(name) && !all.some(listing => listing.styles.includes(name))}>{name}</ToggleGroupItem>)}
+        </ToggleGroup>}
         <RequestEvent />
       </div>
     </div>

@@ -3,6 +3,7 @@ import { ClockIcon, MapPinIcon, TicketIcon, XIcon } from "lucide-react"
 import { Input } from "../../../check-in/src/components/ui/input"
 import { FloatingField, floatingInputClass } from "../../../check-in/src/components/ui/floating-field"
 import { Button } from "../../../check-in/src/components/ui/button"
+import { ToggleChoice, ToggleGroupItem } from "../../components/ui/toggle-group"
 import { largeButtonClass } from "../../../check-in/src/lib/sizes"
 import { formatEventDayRange, formatEventLocation, formatEventDate, formatEventPrices, isUpcoming, formatEventTime, hasEventDetails, scheduleTitle, todayInNewYork, type EventRecord } from "../../events/model"
 import { EventLocation } from "../../events/EventLocation"
@@ -113,10 +114,10 @@ export function NextEvent({ events, today }: EventSnapshot) {
 
 // Luma-style switch between upcoming and past events, shown once any event has passed.
 function PastToggle({ showPast, onChange, label }: { showPast: boolean; onChange: (showPast: boolean) => void; label: string }) {
-  return <div className="segmented" role="group" aria-label={label}>
-    <button type="button" aria-pressed={!showPast} onClick={() => onChange(false)}>Upcoming</button>
-    <button type="button" aria-pressed={showPast} onClick={() => onChange(true)}>Past</button>
-  </div>
+  return <ToggleChoice variant="segmented" aria-label={label} value={showPast ? "past" : "upcoming"} onValueChange={choice => onChange(choice === "past")}>
+    <ToggleGroupItem value="upcoming">Upcoming</ToggleGroupItem>
+    <ToggleGroupItem value="past">Past</ToggleGroupItem>
+  </ToggleChoice>
 }
 
 export function EventSections(snapshot: EventSnapshot) {

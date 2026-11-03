@@ -1,6 +1,7 @@
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react"
 import { Button } from "../../check-in/src/components/ui/button"
 import { Input } from "../../check-in/src/components/ui/input"
+import { ToggleChoice, ToggleGroupItem } from "../components/ui/toggle-group"
 import { Textarea } from "../components/ui/textarea"
 import { EventDatePicker } from "./EventDatePicker"
 import { LocationPicker } from "./LocationPicker"
@@ -125,7 +126,7 @@ export function NormalEventRow({ event, editing, onEdit, onSave, onDelete, onCan
         <div className="editor-row"><span>Date</span><EventDatePicker value={date} onChange={setDate} disabled={busy} /></div>
         <div className="editor-row editor-row-top"><span>Location</span><LocationPicker value={location} url={locationUrl} room={room} onRoomChange={setRoom} onChange={(name, url) => { setLocation(name); setLocationUrl(url) }} disabled={busy} /></div>
         <div className="editor-row editor-row-top"><span>Lesson</span><div className="lesson-times">
-          <div className="segmented" role="group" aria-label="Lessons">{lessonModes.map(item => <button key={item.value} type="button" aria-pressed={mode === item.value} disabled={busy} onClick={() => changeMode(item.value)}>{item.label}</button>)}</div>
+          <ToggleChoice variant="segmented" aria-label="Lessons" value={mode} disabled={busy} onValueChange={changeMode}>{lessonModes.map(item => <ToggleGroupItem key={item.value} value={item.value}>{item.label}</ToggleGroupItem>)}</ToggleChoice>
           {mode !== "none" && <div className="time-range"><EventTimePicker label="Lesson start" value={lessonStart} onChange={setLessonStart} disabled={busy} required /><span aria-hidden="true">–</span><EventTimePicker label="Lesson end" value={lessonEnd} onChange={setLessonEnd} disabled={busy} required /></div>}
         </div></div>
         {mode === "one" && <label className="editor-row"><span>Topic</span><Input value={programs.lesson} onChange={e => change("lesson", e.target.value)} disabled={busy} /></label>}

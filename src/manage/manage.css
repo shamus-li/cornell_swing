@@ -20,15 +20,16 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .event-note { color: var(--muted-foreground); line-height: 1.5; margin: 0; }
 
 /* Tabs */
+[data-slot="tabs"] { display: contents; }
 /* Tabs scroll sideways when they do not fit. The rule is a shadow, so the selected tab's underline stays inside the scroll area. */
-.tabs { display: flex; gap: 4px; overflow: auto hidden; touch-action: pan-x; scrollbar-width: none; box-shadow: inset 0 -1px var(--border); }
-.tab { position: relative; flex: none; height: 40px; padding: 0 12px; border: 0; background: none; color: var(--muted-foreground); font: 500 var(--small-font-size) var(--sans); cursor: pointer; }
-.tab:hover { color: var(--foreground); }
-.tab[aria-selected="true"] { color: var(--foreground); }
-.tab[aria-selected="true"]::after { content: ""; position: absolute; inset: auto 12px 0; height: 2px; background: var(--foreground); border-radius: 2px; }
-.tab:first-child { padding-left: 0; }
-.tab:first-child[aria-selected="true"]::after { left: 0; }
-.tab:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; border-radius: var(--radius); }
+[data-slot="tabs-list"] { display: flex; gap: 4px; overflow: auto hidden; touch-action: pan-x; scrollbar-width: none; box-shadow: inset 0 -1px var(--border); }
+[data-slot="tabs-trigger"] { position: relative; flex: none; height: 40px; padding: 0 12px; border: 0; background: none; color: var(--muted-foreground); font: 500 var(--small-font-size) var(--sans); cursor: pointer; }
+[data-slot="tabs-trigger"]:hover { color: var(--foreground); }
+[data-slot="tabs-trigger"][aria-selected="true"] { color: var(--foreground); }
+[data-slot="tabs-trigger"][aria-selected="true"]::after { content: ""; position: absolute; inset: auto 12px 0; height: 2px; background: var(--foreground); border-radius: 2px; }
+[data-slot="tabs-trigger"]:first-child { padding-left: 0; }
+[data-slot="tabs-trigger"]:first-child[aria-selected="true"]::after { left: 0; }
+[data-slot="tabs-trigger"]:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; border-radius: var(--radius); }
 .tab-count { margin-left: 4px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
 
 /* Event lists */
@@ -153,7 +154,6 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .newsletter-field { display: grid; gap: 6px; min-width: 0; margin: 0; padding: 0; border: 0; font-size: var(--small-font-size); font-weight: 500; }
 .newsletter-field > :is(span, legend) { padding: 0; color: var(--muted-foreground); }
 .newsletter-check { display: flex; align-items: center; gap: 8px; font-size: var(--body-font-size); }
-.newsletter-check input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--primary); }
 .newsletter-specials { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; font-weight: 400; }
 .newsletter-specials li { display: flex; align-items: center; gap: 8px; font-size: var(--body-font-size); }
 .newsletter-specials li > span { flex: 1; }
@@ -161,7 +161,7 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .newsletter-community { max-height: 320px; overflow-y: auto; }
 .newsletter-field > .segmented { justify-self: start; }
 .newsletter-community .newsletter-check { align-items: flex-start; font-weight: 400; }
-.newsletter-community .newsletter-check input { margin-top: 4px; }
+.newsletter-community .newsletter-check [data-slot="checkbox"] { margin-top: 4px; }
 .newsletter-status { margin: 0; font-size: var(--small-font-size); }
 .newsletter-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 16px; border-top: 1px solid var(--border); }
 .newsletter-compose { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-card); overflow: clip; }
@@ -220,14 +220,14 @@ html:has(.manage-page) { scroll-behavior: auto; }
   .manage-main { padding-top: 16px; }
   .manage-header .site-name { font-size: 1rem; }
   :is(.event-row-button, .normal-event-summary) { gap: 12px; }
-  .tab { padding: 0 10px; }
+  [data-slot="tabs-trigger"] { padding: 0 10px; }
   .event-name-input { font-size: 1.375rem; }
   /* The date takes its own line above the times. */
   /* Lesson labels sit above their fields, so a start and end time fit side by side. */
   .normal-event-edit .editor-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .normal-event-edit .editor-row-top > span { padding-top: 0; }
   .time-range { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
-  .tab[aria-selected="true"]::after { inset: auto 10px -1px; }
+  [data-slot="tabs-trigger"][aria-selected="true"]::after { inset: auto 10px -1px; }
 }
 
 /* Finances and event pages: black and white with right-aligned figures. Color only marks something to look at. */

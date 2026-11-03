@@ -2,6 +2,8 @@ import { addDays, differenceInCalendarDays, format, parseISO } from "date-fns"
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react"
 import { ArrowLeftIcon, CalendarIcon, MapPinIcon, MusicIcon, TicketIcon, XIcon } from "lucide-react"
 import { Button } from "../../check-in/src/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
+import { ToggleChoice, ToggleGroupItem } from "../components/ui/toggle-group"
 import { Input } from "../../check-in/src/components/ui/input"
 import { StylePicker } from "../events/StylePicker"
 import { isUpcoming, isValidPrice, todayInNewYork, type EventDay, type EventRecord, type EventTicket, type ManagedEvent } from "../events/model"
@@ -20,7 +22,6 @@ import { MarkdownEditor } from "./MarkdownEditor"
 import { SiteBrand } from "../site/components/SiteBrand"
 import { DraftBadge, eventSummary } from "./EventDate"
 import { DateTile } from "../events/DateTile"
-import { Tabs } from "./Tabs"
 import { Newsletter } from "./Newsletter"
 import { AlertEmail } from "./AlertEmail"
 import { DanceFeeds } from "./DanceFeeds"
@@ -160,17 +161,19 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
           {tab === "lessons" && <Button onClick={() => { if (activeNormal !== "") void openEvent(() => setActiveNormal("")) }}>Add lesson</Button>}
           {tab === "newsletter" && <div ref={setTitleActions} className="manage-title-actions" />}
         </div>
-        <Tabs label="Manager sections" tabs={managerTabs} value={tab} onChange={changeTab} />
-        {tab === "special" && <div className="filter-chips manage-filter" role="group" aria-label="Groups">
-          {groupFilters.map(({ value, label }) => <button key={value} type="button" aria-pressed={groupFilter === value} onClick={() => setGroupFilter(value)}>{label}{value === "theirs" && waiting.length > 0 && ` (${waiting.length} to review)`}</button>)}
-        </div>}
+        <Tabs value={tab} onValueChange={changeTab}>
+        <TabsList aria-label="Manager sections">{managerTabs.map(({ value, label }) => <TabsTrigger key={value} value={value}>{label}</TabsTrigger>)}</TabsList>
+        {tab === "special" && <ToggleChoice variant="chips" className="manage-filter" aria-label="Groups" value={groupFilter} onValueChange={setGroupFilter}>
+          {groupFilters.map(({ value, label }) => <ToggleGroupItem key={value} value={value}>{label}{value === "theirs" && waiting.length > 0 && ` (${waiting.length} to review)`}</ToggleGroupItem>)}
+        </ToggleChoice>}
         {notice && <p role="status" className="manage-notice">{notice}</p>}
         {error && <p role="alert" className="event-error manage-notice">{error} <Button variant="link" size="sm" onClick={() => window.location.reload()}>Reload</Button></p>}
-        <div role="tabpanel" className="manage-panel" aria-label={tabLabel}>
+        <TabsContent value={tab} className="manage-panel">
           {tab === "settings" ? <><SheetConnection onSync={load} /><SquareConnection /><CampusGroupsUpload /><DanceFeeds /><AlertEmail /></> : tab === "finances" ? <FinanceOverview /> : loading ? <p role="status" className="event-muted manage-notice">Loading events…</p> : tab === "newsletter" ? <Newsletter outside={outside} events={events} actions={titleActions} /> : tab === "special"
             ? <>{review.length > 0 && <section className="manage-group" aria-label="Waiting for review"><h2>Waiting for review</h2><div className="manage-list">{review.map(outsideRow)}</div></section>}<EventGroups<ManagedEvent | OutsideEvent> events={[...events.filter(event => event.kind === "special" && groupFilter !== "theirs"), ...shownOutside.filter(event => !review.includes(event))].sort(byDate)} render={item => item.kind === "outside" ? outsideRow(item) : specialRow(item)} empty="No special events yet." first={editingOutside === "" && <OutsideEventForm event={blankOutsideEvent()} groups={groups} onSave={acceptOutside} onCancel={() => setEditingOutside(null)} />} /></>
             : <EventGroups events={events.filter(event => event.kind === "normal")} render={lessonRow} empty="No weekly lessons yet." first={activeNormal === "" && <NormalEventRow ref={normalEditor} editing onEdit={() => {}} event={newEvent("normal")} onSave={saveNormal} onCancel={() => setActiveNormal(null)} />} />}
-        </div>
+        </TabsContent>
+        </Tabs>
       </>}
     </main>
   </>
@@ -243,13 +246,7 @@ function EventEditor({ event, leaveGuard, onSave, onReplace, onDelete, onCancel,
     await api(`/events/${event.id}`, { method: "DELETE" })
     await onDelete()
   }
-  return <div className="event-editor-shell">
-    <DiscardChangesDialog open={leaving} onOpenChange={setLeaving} onDiscard={onCancel} />
-    <DiscardChangesButton variant="ghost" className="back-button" dirty={dirty} onDiscard={onCancel} disabled={busy}><ArrowLeftIcon aria-hidden="true" />Events</DiscardChangesButton>
-    {event.id && tab !== "details" && <div className="event-page-title"><DateTile date={event.date} /><h1>{event.title}</h1></div>}
-    {event.id && <Tabs label="Event sections" tabs={[{ value: "overview", label: "Overview" }, { value: "guests", label: <>Guests{guestCount !== null && guestCount !== undefined && <> <span className="tab-count">{guestCount}</span></>}</> }, { value: "details", label: "Details" }]} value={tab} onChange={setTab} />}
-    {tab === "overview" ? <div role="tabpanel" className="guest-panel" aria-label="Overview"><EventOverview records={records} rsvpCount={event.rsvpCount} /></div> : tab === "guests" ? <div role="tabpanel" className="guest-panel" aria-label="Guests"><EventGuests records={records} /></div> :
-    <form role={event.id ? "tabpanel" : undefined} className="event-editor" aria-label={event.id ? "Edit event" : "New event"} onSubmit={e => { e.preventDefault(); if (e.currentTarget.reportValidity()) void save(event.published) }}>
+  const form = <form className="event-editor" aria-label={event.id ? "Edit event" : "New event"} onSubmit={e => { e.preventDefault(); if (e.currentTarget.reportValidity()) void save(event.published) }}>
       <div className="editor-title">
         <DateTile date={draft.date} />
         <TitleInput value={draft.title} disabled={busy} onChange={value => change("title", value)} />
@@ -269,7 +266,19 @@ function EventEditor({ event, leaveGuard, onSave, onReplace, onDelete, onCancel,
         <Button disabled={busy}>{busy ? "Saving…" : "Save"}</Button>
       </div>
       {event.id && <div className="editor-delete"><DeleteEventButton onDelete={remove} disabled={busy} onBusyChange={setBusy} includesRsvps /></div>}
-    </form>}
+    </form>
+  return <div className="event-editor-shell">
+    <DiscardChangesDialog open={leaving} onOpenChange={setLeaving} onDiscard={onCancel} />
+    <DiscardChangesButton variant="ghost" className="back-button" dirty={dirty} onDiscard={onCancel} disabled={busy}><ArrowLeftIcon aria-hidden="true" />Events</DiscardChangesButton>
+    {event.id && tab !== "details" && <div className="event-page-title"><DateTile date={event.date} /><h1>{event.title}</h1></div>}
+    <Tabs value={tab} onValueChange={setTab}>
+    {event.id && <TabsList aria-label="Event sections">
+      <TabsTrigger value="overview">Overview</TabsTrigger>
+      <TabsTrigger value="guests">Guests{guestCount !== null && guestCount !== undefined && <> <span className="tab-count">{guestCount}</span></>}</TabsTrigger>
+      <TabsTrigger value="details">Details</TabsTrigger>
+    </TabsList>}
+    {tab !== "details" ? <TabsContent value={tab} className="guest-panel">{tab === "overview" ? <EventOverview records={records} rsvpCount={event.rsvpCount} /> : <EventGuests records={records} />}</TabsContent> : event.id ? <TabsContent value="details" render={form} /> : form}
+    </Tabs>
   </div>
 }
 

@@ -3,6 +3,8 @@ import { createPortal } from "react-dom"
 import { renderToStaticMarkup } from "react-dom/server"
 import { Bold, Check, Copy, ExternalLink, GripVertical, Italic, Link, Plus, RotateCcw, Save, X } from "lucide-react"
 import { Button } from "../../check-in/src/components/ui/button"
+import { Checkbox } from "../components/ui/checkbox"
+import { ToggleChoice, ToggleGroupItem } from "../components/ui/toggle-group"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../check-in/src/components/ui/select"
 import { formatEventDate, hasEventDetails, isUpcoming, ithacaArea, todayInNewYork, type EventRecord } from "../events/model"
 import type { OutsideEvent } from "../events/outside"
@@ -229,7 +231,7 @@ export function Newsletter({ events, outside, actions }: { events: EventRecord[]
             {lessons.map(event => <SelectItem key={event.id} value={event.id}>{shortDate(event)}</SelectItem>)}
           </SelectContent>
         </Select></label>
-        {lesson && <label className="newsletter-check"><input type="checkbox" checked={theme} onChange={e => setTheme(e.target.checked)} />Secret social dance theme</label>}
+        {lesson && <label className="newsletter-check"><Checkbox checked={theme} onCheckedChange={setTheme} />Secret social dance theme</label>}
       </div>
       {specials.length > 0 && <fieldset className="newsletter-field"><legend>Special events</legend>
         <ul className="newsletter-specials">{specials.map(event => <li key={event.id}>
@@ -241,12 +243,12 @@ export function Newsletter({ events, outside, actions }: { events: EventRecord[]
         </li>)}</ul>
       </fieldset>}
       {communityEvents.length > 0 && <fieldset className="newsletter-field"><legend>Community events</legend>
-        <div className="segmented" role="group" aria-label="Area">
-          <button type="button" aria-pressed={nearby} onClick={() => setNearby(true)}>Ithaca</button>
-          <button type="button" aria-pressed={!nearby} onClick={() => setNearby(false)}>All upstate</button>
-        </div>
+        <ToggleChoice variant="segmented" aria-label="Area" value={nearby ? "ithaca" : "upstate"} onValueChange={area => setNearby(area === "ithaca")}>
+          <ToggleGroupItem value="ithaca">Ithaca</ToggleGroupItem>
+          <ToggleGroupItem value="upstate">All upstate</ToggleGroupItem>
+        </ToggleChoice>
         <ul className="newsletter-specials newsletter-community">{communityEvents.filter(event => !nearby || ithacaArea.includes(event.city) || communityIds.includes(event.id)).map(event => <li key={event.id}>
-          <label className="newsletter-check"><input type="checkbox" checked={communityIds.includes(event.id)} onChange={e => setCommunityIds(current => e.target.checked ? [...current, event.id] : current.filter(id => id !== event.id))} />
+          <label className="newsletter-check"><Checkbox checked={communityIds.includes(event.id)} onCheckedChange={checked => setCommunityIds(current => checked ? [...current, event.id] : current.filter(id => id !== event.id))} />
             <span className="event-row-text"><span>{event.title}</span><span className="event-muted">{shortDate(event)} · {event.groupName}</span></span></label>
         </li>)}</ul>
       </fieldset>}
