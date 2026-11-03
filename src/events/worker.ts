@@ -209,7 +209,7 @@ async function route(request: Request, env: Env): Promise<Response> {
       if (!limit.success) throw new HttpError(429, 'Please wait a minute before trying again.')
       let rsvp: { name: string; email: string }
       try { rsvp = validateRSVP(await readBody(request)) } catch (error) { if (error instanceof HttpError) throw error; throw new HttpError(400, (error as Error).message) }
-      await saveRSVP(env, event, rsvp)
+      await saveRSVP(env, event.id, rsvp)
       return json({ success: true })
     }
     throw new HttpError(405, 'Method not allowed.')
