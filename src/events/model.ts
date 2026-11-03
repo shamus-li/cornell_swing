@@ -71,6 +71,8 @@ export function lessonSchedule({ startTime, endTime, lessonEndTime, socialStartT
 // ["Lesson 8:00–9:00 PM", "Social dance 9:00–10:00 PM"]
 export const formatLessonSchedule = (event: Parameters<typeof lessonSchedule>[0]) => lessonSchedule(event).map(part => part.text)
 // Whether any day of the event is still to come; an event without a date hasn't happened yet.
+// The first day of the academic year holding `today`. Years run August 1 through July 31.
+export const academicYearStart = (today: string) => `${Number(today.slice(0, 4)) - (Number(today.slice(5, 7)) < 8 ? 1 : 0)}-08-01`
 export const isUpcoming = ({ date, lastDate }: Pick<EventRecord, 'date' | 'lastDate'>, today: string) => !date || (lastDate || date) >= today
 // "Fri, Nov 13 – Sun, Nov 15" for an event running several days.
 export function formatEventDayRange({ date, lastDate, moreDays = [] }: Pick<EventRecord, 'date' | 'lastDate' | 'moreDays'>): string {

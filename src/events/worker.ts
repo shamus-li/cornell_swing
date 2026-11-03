@@ -10,7 +10,7 @@ import { isRecord, parseRedirect } from '../redirects/redirect'
 import { alertEmailStatus, AlertEmailError, saveAlertEmail, sendAlert } from './alert-email'
 import { isValidEmail } from '../lib/email'
 import { buildCampusGroups, campusGroupsKey, summarizeCampusGroups, type CampusGroupsData } from './campusgroups'
-import { formatEventDate, formatEventLocation, formatEventTime, formatLessonSchedule, hasEventDetails, isUpcoming, todayInNewYork, validateEvent, validateRSVP, type EventRecord, type ManagedEvent, type RSVP } from './model'
+import { academicYearStart, formatEventDate, formatEventLocation, formatEventTime, formatLessonSchedule, hasEventDetails, isUpcoming, todayInNewYork, validateEvent, validateRSVP, type EventRecord, type ManagedEvent, type RSVP } from './model'
 import { connectSquare, disconnectSquare, squareConnectUrl, squareFeed } from './square'
 import { eventActivity, financeOverview, saveCampusGroupsTransactions } from './finance-data'
 import { listGroupNames, listOutsideEvents, saveOutsideEvent, validateEventRequest, validateOutsideEvent } from './outside'
@@ -82,8 +82,12 @@ async function redirectsApi(request: Request, env: Env, method: string): Promise
 type Row<T> = Omit<T, 'published' | 'tickets' | 'moreDays' | 'styles'> & { published: number; tickets: string; moreDays: string; styles: string }
 const fromRow = <T extends EventRecord>(row: Row<T>) => ({ ...row, published: row.published === 1, tickets: JSON.parse(row.tickets), moreDays: JSON.parse(row.moreDays), styles: JSON.parse(row.styles) }) as T
 
+// The website only shows published events from this academic year on; an undated event hasn't happened yet.
+const SHOWN_ON_SITE = "published = 1 AND (date = '' OR COALESCE(NULLIF(lastDate, ''), date) >= ?)"
+const siteFrom = () => academicYearStart(todayInNewYork())
+
 async function listEvents(env: Env): Promise<EventRecord[]> {
-  const result = await env.EVENTS_DB.prepare("SELECT * FROM events WHERE published = 1 ORDER BY date = '', date, startTime, title").all<Row<EventRecord>>()
+  const result = await env.EVENTS_DB.prepare(`SELECT * FROM events WHERE ${SHOWN_ON_SITE} ORDER BY date = '', date, startTime, title`).bind(siteFrom()).all<Row<EventRecord>>()
   return result.results.map(fromRow)
 }
 
@@ -136,7 +140,7 @@ function calendar(event: EventRecord, origin: string): string {
 // One event's shareable page, with its details in the tags social sites read for link previews. A slug the event
 // used to have redirects to its current one, so links already shared keep working.
 async function eventPage(request: Request, env: Env, url: URL, slug: string): Promise<Response> {
-  const row = await env.EVENTS_DB.prepare('SELECT events.* FROM event_slugs JOIN events ON events.id = eventId WHERE event_slugs.slug = ? AND published = 1').bind(slug).first<Row<EventRecord>>()
+  const row = await env.EVENTS_DB.prepare(`SELECT events.* FROM event_slugs JOIN events ON events.id = eventId WHERE event_slugs.slug = ? AND ${SHOWN_ON_SITE}`).bind(slug, siteFrom()).first<Row<EventRecord>>()
   if (!row) return Response.redirect(new URL('/events', url), 302)
   const event = fromRow(row)
   if (event.slug !== slug) return Response.redirect(new URL(`/events/${event.slug}`, url), 301)
@@ -198,7 +202,7 @@ async function route(request: Request, env: Env, ctx?: ExecutionContext): Promis
   const publicMatch = path.match(/^\/api\/events\/([^/]+)\/(rsvp|calendar)$/)
   if (publicMatch) {
     const [, id, action] = publicMatch
-    const row = await env.EVENTS_DB.prepare('SELECT * FROM events WHERE id = ? AND published = 1').bind(id).first<Row<EventRecord>>()
+    const row = await env.EVENTS_DB.prepare(`SELECT * FROM events WHERE id = ? AND ${SHOWN_ON_SITE}`).bind(id, siteFrom()).first<Row<EventRecord>>()
     const event = row && fromRow(row)
     if (!event || event.kind !== 'special') throw new HttpError(404, 'Special event not found.')
     if (action === 'calendar' && !event.date) throw new HttpError(400, 'The event date has not been announced.')

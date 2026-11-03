@@ -142,10 +142,29 @@ describe('event storage and RSVPs', () => {
     const normal = await create({ kind: 'normal' })
     expect((await call(`/api/events/${normal.id}/rsvp`, 'POST', { name: 'Jane', email: 'jane@example.com' })).status).toBe(404)
     expect((await call(`/api/events/${normal.id}/calendar`)).status).toBe(404)
-    const past = await create({ date: '2000-01-01' })
+    const past = await create({ date: '2099-01-01' })
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2099-06-01T12:00:00Z'))
     expect((await call(`/api/events/${past.id}/rsvp`, 'POST', { name: 'Jane', email: 'jane@example.com' })).status).toBe(400)
+    vi.useRealTimers()
     const tba = await create({ title: 'To be announced', date: '2099-10-11', startTime: '', endTime: '', location: '' })
     expect((await call(`/api/events/${tba.id}/rsvp`, 'POST', { name: 'Jane', email: 'jane@example.com' })).status).toBe(400)
+  })
+  it('leaves published events off the public site once their academic year has ended', async () => {
+    const event = await create({ title: 'Spring dance', date: '2099-03-01' })
+    const listed = async (today: string) => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date(`${today}T16:00:00Z`))
+      await (await caches.open('events-2')).delete(new Request(`${origin}/api/events`))
+      const response = await call('/api/events')
+      const calendar = await call(`/api/events/${event.id}/calendar`)
+      vi.useRealTimers()
+      return [JSON.stringify(await response.json()).includes(event.id), calendar.status]
+    }
+    expect(await listed('2099-07-31')).toEqual([true, 200])
+    expect(await listed('2099-08-01')).toEqual([false, 404])
+    const managed = await (await call('/manage/api/events', 'GET', undefined, true)).json() as { events: { id: string; published: boolean }[] }
+    expect(managed.events.find(item => item.id === event.id)?.published).toBe(true)
   })
   it('keeps unpublished events off the public site until they are published', async () => {
     const draft = await create({ published: false })
