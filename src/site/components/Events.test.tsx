@@ -6,7 +6,7 @@ import { afterEach, expect, it, vi } from "vitest"
 import { EventSections, useEvents, type EventSnapshot } from "./Events"
 import { Markdown } from "../../events/Markdown"
 
-const base = { title: "Swing", date: "2099-10-17", startTime: "18:15", endTime: "22:00", location: "Dance hall", description: "**Live music**", published: true, updatedAt: "2026-09-20T12:00:00.000Z" }
+const base = { city: "Ithaca", styles: ["Swing"], title: "Swing", date: "2099-10-17", startTime: "18:15", endTime: "22:00", location: "Dance hall", description: "**Live music**", published: true, updatedAt: "2026-09-20T12:00:00.000Z" }
 const snapshot: EventSnapshot = { today: "2026-09-20", events: [{ ...base, id: "normal", kind: "normal" }, { ...base, id: "special", kind: "special" }] }
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); document.body.innerHTML = "" })
 
