@@ -84,7 +84,7 @@ time { font-variant-numeric: tabular-nums; }
 .schedule-program .event-markdown p:not(:has(strong)) { color: var(--muted-foreground); }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .segmented { display: inline-flex; flex: none; padding: 2px; border-radius: 8px; background: var(--muted); }
-.segmented button { padding: 4px 12px; border: 0; border-radius: 6px; background: none; color: var(--muted-foreground); font: 500 var(--small-font-size)/1.5 var(--sans); cursor: pointer; }
+.segmented button { touch-action: manipulation; padding: 4px 12px; border: 0; border-radius: 6px; background: none; color: var(--muted-foreground); font: 500 var(--small-font-size)/1.5 var(--sans); cursor: pointer; }
 .segmented button:hover { color: var(--foreground); }
 /* Touch screens get a 44px-tall switch so it is easy to tap. */
 @media (pointer: coarse) { .segmented button { min-height: 40px; padding: 0 16px; } }
@@ -105,8 +105,9 @@ time { font-variant-numeric: tabular-nums; }
 
 /* Toggle buttons that filter a list, wrapping when there are many. */
 .filter-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.filter-chips button { padding: 4px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--background); color: var(--foreground); font: 500 var(--small-font-size)/1.5 var(--sans); cursor: pointer; }
-.filter-chips button:hover { background: var(--muted); }
+.filter-chips button { touch-action: manipulation; padding: 4px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--background); color: var(--foreground); font: 500 var(--small-font-size)/1.5 var(--sans); cursor: pointer; }
+@media (hover: hover) { .filter-chips button:hover:enabled:not([aria-pressed="true"]) { background: var(--muted); } }
+.filter-chips button:disabled { color: var(--muted-foreground); opacity: .5; cursor: default; }
 .filter-chips button[aria-pressed="true"] { border-color: var(--foreground); background: var(--foreground); color: var(--background); }
 .filter-chips button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 @media (pointer: coarse) { .filter-chips button { min-height: 40px; padding-inline: 16px; } }

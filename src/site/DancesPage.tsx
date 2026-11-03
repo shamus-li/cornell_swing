@@ -2,7 +2,7 @@ import { Fragment, useState, type ReactNode } from "react"
 import { ClockIcon, MapPinIcon } from "lucide-react"
 import { Button } from "../../check-in/src/components/ui/button"
 import { isUpcoming, formatEventDate, formatEventLocation, formatEventPrices, formatEventTime, hasEventDetails, mapsSearchUrl, nightSpan, type EventRecord } from "../events/model"
-import type { OutsideEvent } from "../events/outside"
+import { danceStyles, type OutsideEvent } from "../events/outside"
 import { LessonTimes } from "../events/LessonTimes"
 import { DateTile } from "../events/DateTile"
 import { EventLocation } from "../events/EventLocation"
@@ -40,9 +40,10 @@ export function DancesPage(snapshot: DanceSnapshot) {
   const [nearby, setNearby] = useState(true)
   // Nothing chosen shows every dance; an event with several styles shows when any of them is chosen.
   const [chosen, setChosen] = useState<string[]>([])
-  const changeArea = (next: boolean) => { setNearby(next); setChosen([]) }
-  const all = listings(snapshot).filter(listing => !nearby || listing.nearby)
-  const styles = [...new Set(all.flatMap(listing => listing.styles))]
+  const everywhere = listings(snapshot)
+  const all = everywhere.filter(listing => !nearby || listing.nearby)
+  // The buttons stay the same in both areas so nothing moves; styles with nothing in this area are grayed out.
+  const styles = danceStyles.filter(style => everywhere.some(listing => listing.styles.includes(style)))
   const shown = all.filter(listing => !chosen.length || listing.styles.some(style => chosen.includes(style)))
   const months = new Map<string, Listing[]>()
   for (const listing of shown) {
@@ -54,12 +55,12 @@ export function DancesPage(snapshot: DanceSnapshot) {
       <h1>Community Dance Events</h1>
       <div className="dances-toolbar">
         {!snapshot.unavailable && <div className="segmented" role="group" aria-label="Area">
-          <button type="button" aria-pressed={nearby} onClick={() => changeArea(true)}>Ithaca</button>
-          <button type="button" aria-pressed={!nearby} onClick={() => changeArea(false)}>Upstate</button>
+          <button type="button" aria-pressed={nearby} onClick={() => setNearby(true)}>Ithaca</button>
+          <button type="button" aria-pressed={!nearby} onClick={() => setNearby(false)}>All upstate</button>
         </div>}
         {!snapshot.unavailable && styles.length > 1 && <div className="filter-chips" role="group" aria-label="Dance styles">
         <button type="button" aria-pressed={!chosen.length} onClick={() => setChosen([])}>All</button>
-        {styles.map(name => <button key={name} type="button" aria-pressed={chosen.includes(name)} onClick={() => setChosen(current => current.includes(name) ? current.filter(item => item !== name) : [...current, name])}>{name}</button>)}
+        {styles.map(name => <button key={name} type="button" aria-pressed={chosen.includes(name)} disabled={!chosen.includes(name) && !all.some(listing => listing.styles.includes(name))} onClick={() => setChosen(current => current.includes(name) ? current.filter(item => item !== name) : [...current, name])}>{name}</button>)}
         </div>}
         <RequestEvent />
       </div>
