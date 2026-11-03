@@ -10,7 +10,7 @@ import { api, errorMessage } from "./api"
 const blank: DanceFeed = { id: "", name: "", style: "Contra", city: "Ithaca", siteUrl: "", feedUrl: "", skipTitles: "", checkedAt: null, feedError: null }
 const checked = (feed: DanceFeed) => feed.checkedAt ? `Checked ${new Date(feed.checkedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "Not checked yet"
 
-// Other groups' calendars, read every six hours into the Special events list.
+// Other groups' calendars, read each morning into the Special events list.
 export function DanceFeeds() {
   const [feeds, setFeeds] = useState<DanceFeed[] | null>(null)
   const [error, setError] = useState("")

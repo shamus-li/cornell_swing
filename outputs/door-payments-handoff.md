@@ -85,7 +85,7 @@ https://staging.swingsyndicate.club. The whole site redirects to sign-in on ever
 
 ## Cleanup owed
 - **Refunds (user):** in Square Dashboard, Transactions, Nov 3: $2.00 Alan Fakename General, $1.00 Ada T. Student, $1.00 Grace S. Student, $1.00 `door:220c5ae3…` Grace S. Student. Plus any new test sales. Suggest refunding the $1 first and checking the Square balance, because the screen's debit wording is unclear for cash.
-- **Balance Sheet:** the "Cash payments" row for Nov 3 in Transaction History (hidden column H `payments-2026-11-03`) should drop to $0 about 10 minutes after the refunds, and within 3 days of the sales. Then delete the row. Confirm the amount first, then ask.
+- **Balance Sheet:** the "Cash payments" row for Nov 3 in Transaction History (hidden column H `payments-2026-11-03`) should drop to $0 the morning after the refunds, if they are within 3 days of the sales. Then delete the row. Confirm the amount first, then ask.
 - **Hidden $1 event on the real site:** was proposed, not created. The staging test may make it unnecessary.
 - **Square:** the "Swing Syndicate website" app still lists the old `/manage/square/test` return address, which is harmless. The real phone page's address, `https://swingsyndicate.club/check-in/door/`, is registered.
 - **Old price columns:** `studentPrice` and `generalPrice` remain unused in the database, to be dropped once nothing old can deploy.

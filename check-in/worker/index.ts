@@ -59,8 +59,6 @@ const CHECKIN_PATH = "/check-in/api/checkins"
 const CHECKIN_STATUS_PATH = "/check-in/api/checkins/status"
 const WAIVER_PATH = "/check-in/api/waiver"
 const DOOR_PATH = "/check-in/api/door/"
-// The morning cron that checks the CampusGroups waiver form; the others run the attendance sync.
-const WAIVER_CHECK_CRON = "30 11 * * *"
 type AccessTokenProvider = (env: Env) => Promise<string>
 
 // Includes the row's event, which for rows without an Event ID depends on the events in /manage.
@@ -710,8 +708,7 @@ export default {
       : env.ASSETS.fetch(request)
   },
 
-  async scheduled(controller, env): Promise<void> {
-    if (controller.cron === WAIVER_CHECK_CRON) return checkWaiverForm(env)
+  async scheduled(_controller, env): Promise<void> {
     try {
       const result = await runNightlySync(env)
       console.log(JSON.stringify({ message: "nightly attendance sync complete", ...result }))

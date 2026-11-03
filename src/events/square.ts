@@ -7,8 +7,7 @@ import { upsertLedgerRows, type LedgerRow } from './ledger'
 import { logError } from './logging'
 
 // An officer connects the club's Square account from the Finances tab. The site then reads its payments
-// on SQUARE_CRON and files them on the Balance Sheet.
-export const SQUARE_CRON = '*/10 * * * *'
+// each morning and files them on the Balance Sheet.
 const SQUARE = 'https://connect.squareup.com'
 const VERSION = '2025-01-23'
 // Payments are listed again for this long, so refunds and fees that settle later still reach the Balance Sheet.

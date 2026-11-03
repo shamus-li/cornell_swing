@@ -6,8 +6,7 @@ import { exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { resetEventsDb } from '../../check-in/test/events-db'
 import worker from './worker'
 import siteWorker from '../worker'
-import { changeEventWithSheet } from './sheets'
-import { SQUARE_CRON } from './square'
+import { changeEventWithSheet, deliverRSVPs } from './sheets'
 import { todayInNewYork } from './model'
 import { getGoogleAccessToken } from '../../check-in/worker/google'
 import { campusGroupsKey, generalRiskTag } from './campusgroups'
@@ -212,7 +211,7 @@ describe('event storage and RSVPs', () => {
 })
 
 describe('Sheets source of truth', () => {
-  const deliver = () => siteWorker.scheduled({ cron: SQUARE_CRON } as ScheduledController, env)
+  const deliver = () => deliverRSVPs(env)
   async function connect(rows: string[][], failWrites = false) {
     await env.EVENTS_DB.prepare("INSERT INTO rsvp_sheet_connection (id,spreadsheetId,sheetId,tabTitle) VALUES (1,'test-sheet',1,'RSVPs')").run()
     let registry: string[][] = []
@@ -287,6 +286,20 @@ describe('Sheets source of truth', () => {
       expect((await sync()).status).toBe(200)
       expect(token).toHaveBeenCalledTimes(3)
     } finally { clock.mockRestore() }
+  })
+  it('delivers RSVPs on the morning schedule even when another job fails', async () => {
+    const created = await create()
+    const rows = [['Event','Name','Email'],[created.title,'Existing','existing@example.com']]
+    await connect(rows)
+    expect((await call(`/api/events/${created.id}/rsvp`,'POST',{name:'Jane',email:'jane@example.com'})).status).toBe(200)
+    await env.EVENTS_DB.exec("UPDATE dance_groups SET feedUrl = ''")
+    network.use(http.get('https://cornell.campusgroups.com/RMI/survey', () => new HttpResponse(null,{status:502})))
+    const brokenSync = { ...env, ATTENDANCE_SYNC: { getByName: () => ({ run: async () => { throw new Error('attendance failed') } }) } } as unknown as Env
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await expect(siteWorker.scheduled({} as ScheduledController, brokenSync)).rejects.toThrow('attendance failed')
+    } finally { consoleError.mockRestore() }
+    expect(rows).toHaveLength(3)
   })
   it('delivers to the sheet, deduplicates retries, and deletes a freshly reordered row', async () => {
     const created = await create()

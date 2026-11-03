@@ -2,8 +2,7 @@ import { Buffer } from 'node:buffer'
 import { logError } from './logging'
 import { danceStyles, todayInNewYork } from './model'
 
-// Reads other groups' calendar feeds into outside_events every six hours, and when an organizer saves a feed.
-export const FEEDS_CRON = '15 */6 * * *'
+// Reads other groups' calendar feeds into outside_events each morning, and when an organizer saves a feed.
 // Every Cornell club's events in one file of about 5 MB; each CampusGroups feed keeps one club's events from it.
 const campusGroupsCalendar = 'https://cornell.campusgroups.com/ical/cornell/ical_cornell.ics'
 

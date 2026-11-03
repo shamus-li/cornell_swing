@@ -1,5 +1,5 @@
 // A copy of the site with fake data, for trying changes. It has no credentials for Notion or Google, so it
-// can't reach the club's records, and it only runs the Square check on a schedule. Its data comes from
+// can't reach the club's records, and it runs nothing on a schedule. Its data comes from
 // scripts/staging-seed.sql and scripts/staging-members.json. Deploy it with `npm run deploy:staging`.
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
@@ -51,7 +51,7 @@
     "SQUARE_APPLICATION_ID": "sq0idp-0sbVtHk0wTJlna2IymyOcA",
     "STAGING": "1"
   },
-  "triggers": { "crons": ["*/10 * * * *"] },
+  "triggers": { "crons": [] },
   "observability": { "enabled": true, "logs": { "enabled": true, "head_sampling_rate": 1 } },
   "send_email": [{ "name": "ALERT_EMAIL" }],
   "d1_databases": [{
