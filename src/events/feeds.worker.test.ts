@@ -69,6 +69,31 @@ it('keeps a failing feed\'s events and records the problem', async () => {
   expect((await saved()).filter(event => event.groupId === 'ithaca-swing-dance-network')).toHaveLength(1)
 })
 
+const tangoRows = async () => (await saved()).filter(event => event.groupId === 'tango-at-cornell').map(event => [event.title, event.published])
+const milonga = campus('milonga', 'ITHTAN', 'Mistletoe Milonga')
+const tangoClass = campus('class', 'ITHTAN', 'Tango Class')
+
+it('keeps a feed\'s upcoming events when it lists none at all', async () => {
+  campusEvents = [milonga]
+  await readFeeds(env, 'tango-at-cornell')
+  campusEvents = []
+  await readFeeds(env, 'tango-at-cornell')
+  expect(await tangoRows()).toEqual([['Mistletoe Milonga', 1]])
+})
+
+it('keeps an unpublished event unpublished while it is off its feed', async () => {
+  campusEvents = [milonga, campus('mixer', 'ITHTAN', 'Tango Mixer')]
+  await readFeeds(env, 'tango-at-cornell')
+  await env.EVENTS_DB.prepare("UPDATE outside_events SET published = 0 WHERE title = 'Mistletoe Milonga'").run()
+  // The feed still lists something, so the published event that left it is removed.
+  campusEvents = [tangoClass]
+  await readFeeds(env, 'tango-at-cornell')
+  expect(await tangoRows()).toEqual([['Mistletoe Milonga', 0]])
+  campusEvents = [milonga, tangoClass]
+  await readFeeds(env, 'tango-at-cornell')
+  expect(await tangoRows()).toEqual([['Mistletoe Milonga', 0]])
+})
+
 it('reads the city from a calendar location, and leaves it to the group when there is none', () => {
   const located = (location: string) => icsEvents(ics(`UID:a\n  DTSTART:20991114T181500\n  SUMMARY:Dance\n  LOCATION:${location}`))[0]
   expect(located('Flynn Hall\\, 1 Main St\\, Rochester\\, NY 14620\\, United States')).toMatchObject({ location: 'Flynn Hall, 1 Main St', city: 'Rochester' })
