@@ -6,7 +6,8 @@ import { exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { resetEventsDb } from '../../check-in/test/events-db'
 import worker from './worker'
 import siteWorker from '../worker'
-import { changeEventWithSheet, SHEET_CRON } from './sheets'
+import { changeEventWithSheet } from './sheets'
+import { SQUARE_CRON } from './square'
 import { todayInNewYork } from './model'
 import { getGoogleAccessToken } from '../../check-in/worker/google'
 import { campusGroupsKey, generalRiskTag } from './campusgroups'
@@ -211,7 +212,7 @@ describe('event storage and RSVPs', () => {
 })
 
 describe('Sheets source of truth', () => {
-  const deliver = () => siteWorker.scheduled({ cron: SHEET_CRON } as ScheduledController, env)
+  const deliver = () => siteWorker.scheduled({ cron: SQUARE_CRON } as ScheduledController, env)
   async function connect(rows: string[][], failWrites = false) {
     await env.EVENTS_DB.prepare("INSERT INTO rsvp_sheet_connection (id,spreadsheetId,sheetId,tabTitle) VALUES (1,'test-sheet',1,'RSVPs')").run()
     let registry: string[][] = []

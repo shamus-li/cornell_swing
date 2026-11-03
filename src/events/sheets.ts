@@ -2,7 +2,6 @@ import { createCachedGoogleAccessTokenProvider, getGoogleAccessToken } from '../
 import { logError } from './logging'
 import { validateRSVP, type EventRecord } from './model'
 
-export const SHEET_CRON = '* * * * *'
 type Connection = { spreadsheetId: string; sheetId: number; tabTitle: string; error: string | null }
 type Participant = { eventId: string; title: string; name: string; email: string; row: number }
 const failure = 'Could not update Google Sheets. Check spreadsheet sharing and try again.'
