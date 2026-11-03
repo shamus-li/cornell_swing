@@ -64,9 +64,9 @@ export function TransactionsTable({ transactions, showEvent = true }: { transact
 // Every transaction, narrowed by typing an event or description, the time period and the account.
 export function Transactions({ transactions }: { transactions: Transaction[] }) {
   const [search, setSearch] = useState("")
-  const [period, setPeriod] = useState("all")
+  const [period, setPeriod] = useState(() => clubYear(todayInNewYork()))
   const [account, setAccount] = useState("all")
-  const years = [...new Set(transactions.map(item => clubYear(item.date)))].sort().reverse()
+  const years = [...new Set([clubYear(todayInNewYork()), ...transactions.map(item => clubYear(item.date))])].sort().reverse()
   const recent = daysAgo(30)
   const words = search.toLowerCase().split(/\s+/).filter(Boolean)
   const shown = transactions.filter(item => {

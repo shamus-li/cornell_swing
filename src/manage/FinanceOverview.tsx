@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Card } from "../components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table"
 import { clubYear, type FinanceEvent, type FinanceOverview as Overview } from "../events/finance"
+import { todayInNewYork } from "../events/model"
 import { api, errorMessage, loadSheetData } from "./api"
 import { money } from "./money"
 import { Transactions } from "./Transactions"
@@ -34,7 +35,8 @@ export function FinanceOverview() {
   const [data, setData] = useState<Overview | null>(null)
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
-  const [eventYear, setEventYear] = useState("all")
+  const [filing, setFiling] = useState(false)
+  const [eventYear, setEventYear] = useState(() => clubYear(todayInNewYork()))
 
   useEffect(() => {
     const controller = new AbortController()
@@ -43,6 +45,13 @@ export function FinanceOverview() {
     })
     return () => controller.abort()
   }, [])
+
+  async function file() {
+    setFiling(true); setError("")
+    try { setData(await api<Overview>("/finance/file", { method: "POST" }, "Payments could not be filed on the Balance Sheet. Try again.")) }
+    catch (err) { setError(errorMessage(err)) }
+    finally { setFiling(false) }
+  }
 
   async function upload(e: ChangeEvent<HTMLInputElement>) {
     const input = e.currentTarget
@@ -62,7 +71,7 @@ export function FinanceOverview() {
   if (!data) return <p role="alert" className="event-error manage-notice">{error}</p>
 
   const total = data.accounts.reduce((sumSoFar, account) => sumSoFar + account.balance, 0)
-  const years = [...new Set(data.events.map(event => clubYear(event.date)))]
+  const years = [...new Set([clubYear(todayInNewYork()), ...data.events.map(event => clubYear(event.date))])].sort().reverse()
 
   return <div className="finance">
     <section aria-labelledby="finance-total-label">
@@ -75,6 +84,7 @@ export function FinanceOverview() {
         <h2 id="finance-accounts-title">Accounts this year</h2>
         <div className="finance-actions">
           <span className="event-muted">{busy ? "Uploading…" : data.campusGroupsUploadedAt ? `CampusGroups export from ${uploaded.format(new Date(data.campusGroupsUploadedAt))}` : "No CampusGroups export yet"}</span>
+          <Button type="button" variant="outline" size="sm" disabled={filing} onClick={() => void file()}>{filing ? "Filing…" : "File now"}</Button>
           <Button asChild variant="outline" size="sm"><a href={BALANCE_SHEET_URL} target="_blank" rel="noreferrer">Open Balance Sheet</a></Button>
           <Button asChild variant="outline" size="sm"><label>Upload export<input className="sr-only" type="file" accept=".csv,text/csv" disabled={busy} onChange={e => void upload(e)} /></label></Button>
         </div>

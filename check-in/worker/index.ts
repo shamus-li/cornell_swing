@@ -282,7 +282,7 @@ async function handleDoor(request: Request, env: Env, path: string, timestamp = 
     const current = (await findCharge(env, charge.id))!
     return json(isPaid(current)
       ? { status: "paid", next: await nextSteps(env, JSON.parse(current.attendee) as Attendee) }
-      : { status: "pending" })
+      : { status: current.status === "canceled" ? "canceled" : "pending" })
   }
   if (request.method === "DELETE") {
     await cancelCharge(env, charge.id)

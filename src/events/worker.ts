@@ -11,7 +11,7 @@ import { alertEmailStatus, AlertEmailError, saveAlertEmail, sendAlert } from './
 import { isValidEmail } from '../lib/email'
 import { buildCampusGroups, campusGroupsKey, summarizeCampusGroups, type CampusGroupsData } from './campusgroups'
 import { academicYearStart, formatEventDate, formatEventLocation, formatEventTime, formatLessonSchedule, hasEventDetails, isUpcoming, todayInNewYork, validateEvent, validateRSVP, type EventRecord, type ManagedEvent, type RSVP } from './model'
-import { connectSquare, disconnectSquare, squareConnectUrl, squareFeed } from './square'
+import { connectSquare, disconnectSquare, fileNow, squareConnectUrl, squareFeed } from './square'
 import { eventActivity, financeOverview, saveCampusGroupsTransactions } from './finance-data'
 import { listGroupNames, listOutsideEvents, saveOutsideEvent, validateEventRequest, validateOutsideEvent } from './outside'
 import { listFeeds, readFeeds, validateFeed } from './feeds'
@@ -284,6 +284,10 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (path === '/manage/api/finance/campusgroups' && method === 'PUT') {
     try { await saveCampusGroupsTransactions(env, await readBody(request, 2_000_000)) } catch (error) { if (error instanceof HttpError) throw error; throw new HttpError(400, (error as Error).message) }
     return json(await financeOverview(env))
+  }
+  if (path === '/manage/api/finance/file' && method === 'POST') {
+    if (!await fileNow(env)) throw new HttpError(409, 'Filing is already running. Try again in a minute.')
+    return json(await financeOverview(env, true))
   }
   const activityMatch = path.match(/^\/manage\/api\/events\/([^/]+)\/activity$/)
   if (activityMatch && method === 'GET') {

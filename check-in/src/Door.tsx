@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 
+import { Button } from "@/components/ui/button"
 import { formatAmount } from "@/Payment"
 
 const POLL_MS = 2000
@@ -26,7 +27,8 @@ const time = (iso: string) => new Date(iso).toLocaleTimeString("en-US", { timeZo
 
 // Locks the name until Square answers. keepalive lets it finish as Safari switches to Square.
 const tap = (id: string) => void fetch(`/check-in/api/door/charges/${id}/tap`, { method: "POST", keepalive: true }).catch(console.error)
-
+// How long Safari's "Open in Square?" question gets an answer. Leaving the page after that isn't for this tap.
+const PROMPT_MS = 15_000
 
 // The list on the door iPhone of people who checked in on the laptop and owe a card payment.
 export default function Door() {
@@ -34,6 +36,7 @@ export default function Door() {
   const [closing, setClosing] = useState(() => new URLSearchParams(window.location.search).has("data"))
   const [error, setError] = useState(false)
   const returning = useRef(new URLSearchParams(window.location.search).get("data"))
+  const tapped = useRef<{ id: string; at: number } | null>(null)
 
   // Square returns by opening a new Safari tab. That tab reports back, tells the open list to update and
   // closes itself right away, so one tab stays open however many people pay. Confirming a payment can take
@@ -81,6 +84,28 @@ export default function Door() {
     }
   }
 
+  // A name locks only once Square actually opens, so answering Cancel to Safari's question leaves it tappable.
+  useEffect(() => {
+    const leave = () => {
+      if (document.visibilityState !== "hidden" || !tapped.current) return
+      if (Date.now() - tapped.current.at < PROMPT_MS) tap(tapped.current.id)
+      tapped.current = null
+    }
+    document.addEventListener("visibilitychange", leave)
+    return () => document.removeEventListener("visibilitychange", leave)
+  }, [])
+
+  async function cancel(id: string) {
+    try {
+      const response = await fetch(`/check-in/api/door/charges/${id}`, { method: "DELETE" })
+      if (!response.ok) throw new Error(`Cancel failed with ${response.status}`)
+      await refresh()
+    } catch (failure) {
+      console.error(failure)
+      setError(true)
+    }
+  }
+
   // Safari pauses a page while Square's app is open, so it also updates as soon as it's back on screen.
   useEffect(() => {
     if (closing) return
@@ -105,16 +130,18 @@ export default function Door() {
       {queue?.charges.length === 0 && <p className="py-8 text-center text-base text-muted-foreground">Nobody is waiting.</p>}
       <ul className="space-y-2">
         {queue?.charges.map((charge) => (
-          <li key={charge.id}>
+          // Swiping a row left uncovers its Cancel button.
+          <li key={charge.id} className="flex snap-x snap-mandatory gap-2 overflow-x-auto [scrollbar-width:none]">
             {charge.verifying
-              ? <div className="flex min-h-16 items-center justify-between gap-3 rounded-lg border px-4 text-lg">
+              ? <div className="flex min-h-16 w-full shrink-0 snap-start items-center justify-between gap-3 rounded-lg border px-4 text-lg">
                   <span className="min-w-0 truncate font-medium">{charge.label}</span>
                   <span className="text-sm whitespace-nowrap text-muted-foreground" role="status">Confirming…</span>
                 </div>
-              : <a className="flex min-h-16 items-center justify-between gap-3 rounded-lg border px-4 text-lg no-underline" href={squareUrl(queue.applicationId, charge)} onClick={() => tap(charge.id)}>
+              : <a className="flex min-h-16 w-full shrink-0 snap-start items-center justify-between gap-3 rounded-lg border px-4 text-lg no-underline" href={squareUrl(queue.applicationId, charge)} onClick={() => { tapped.current = { id: charge.id, at: Date.now() } }}>
                   <span className="min-w-0"><span className="block truncate font-medium">{charge.label}</span>{queue.charges.some((other) => other !== charge && other.label === charge.label) && <span className="block text-sm text-muted-foreground">Checked in at {time(charge.createdAt)}</span>}</span>
                   <span className="font-semibold">{formatAmount(charge.amount)}</span>
                 </a>}
+            <Button type="button" variant="destructive" className="h-auto w-24 shrink-0 snap-end text-base" aria-label={`Cancel ${charge.label}`} onClick={() => void cancel(charge.id)}>Cancel</Button>
           </li>
         ))}
       </ul>

@@ -40,12 +40,14 @@ export function Payment({ attendee, event, tickets, onPaid, onLeave }: { attende
         const response = await fetch(`/check-in/api/door/charges/${chargeId}`, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
         const payload = (await response.json()) as { status?: string; next?: NextSteps }
         if (payload.status === "paid") onPaid(payload.next ?? null)
+        // The volunteer canceled them on the phone.
+        if (payload.status === "canceled") onLeave()
       } catch (error) {
         console.error(error)
       }
     }, POLL_MS)
     return () => window.clearInterval(interval)
-  }, [chargeId, onPaid])
+  }, [chargeId, onPaid, onLeave])
 
   async function payOnPhone(chosen: DoorTicket) {
     setBusy(true)
