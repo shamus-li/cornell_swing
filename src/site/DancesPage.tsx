@@ -1,12 +1,13 @@
 import { Fragment, useState } from "react"
 import { ClockIcon, MapPinIcon } from "lucide-react"
 import { Button } from "../../check-in/src/components/ui/button"
-import { danceStyles, isUpcoming, formatEventDate, formatEventDayRange, formatEventLocation, formatEventPrices, formatEventTime, hasEventDetails, ithacaArea, nightSpan, type EventRecord } from "../events/model"
+import { isUpcoming, formatEventDate, formatEventDayRange, formatEventLocation, formatEventPrices, formatEventTime, hasEventDetails, ithacaArea, nightSpan, type EventRecord } from "../events/model"
 import type { OutsideEvent } from "../events/outside"
 import { LessonTimes } from "../events/LessonTimes"
 import { DateTile } from "../events/DateTile"
 import { EventLocation } from "../events/EventLocation"
 import { Markdown } from "../events/Markdown"
+import { StyleFilter } from "../events/StylePicker"
 import { RequestEvent } from "./RequestEvent"
 
 // `unavailable` is set when the server could not read the events, so the page says so instead of "no dances".
@@ -31,8 +32,6 @@ export function DancesPage(snapshot: DanceSnapshot) {
   const [chosen, setChosen] = useState<string[]>([])
   const everywhere = listings(snapshot)
   const all = everywhere.filter(listing => !nearby || listing.nearby)
-  // The buttons stay the same in both areas so nothing moves; styles with nothing in this area are grayed out.
-  const styles = danceStyles.filter(style => everywhere.some(listing => listing.styles.includes(style)))
   const shown = all.filter(listing => !chosen.length || listing.styles.some(style => chosen.includes(style)))
   const months = new Map<string, Listing[]>()
   for (const listing of shown) {
@@ -47,10 +46,7 @@ export function DancesPage(snapshot: DanceSnapshot) {
           <button type="button" aria-pressed={nearby} onClick={() => setNearby(true)}>Ithaca</button>
           <button type="button" aria-pressed={!nearby} onClick={() => setNearby(false)}>All upstate</button>
         </div>}
-        {!snapshot.unavailable && styles.length > 1 && <div className="filter-chips" role="group" aria-label="Dance styles">
-        <button type="button" aria-pressed={!chosen.length} onClick={() => setChosen([])}>All</button>
-        {styles.map(name => <button key={name} type="button" aria-pressed={chosen.includes(name)} disabled={!chosen.includes(name) && !all.some(listing => listing.styles.includes(name))} onClick={() => setChosen(current => current.includes(name) ? current.filter(item => item !== name) : [...current, name])}>{name}</button>)}
-        </div>}
+        {!snapshot.unavailable && <StyleFilter events={everywhere} available={all} chosen={chosen} onChange={setChosen} />}
         <RequestEvent />
       </div>
     </div>

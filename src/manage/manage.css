@@ -171,6 +171,13 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .newsletter-field > .segmented { justify-self: start; }
 .newsletter-community .newsletter-check { align-items: flex-start; font-weight: 400; }
 .newsletter-community .newsletter-check input { margin-top: 4px; }
+/* With a mouse, the chips and area switch are as tall as the sidebar's 28px selects. Touch keeps its larger targets.
+   Delete this rule when the design branch merges: the selects go to 32px there, and these should too. */
+@media (pointer: fine) {
+  .newsletter-controls .filter-chips button { height: 28px; padding: 0 10px; font-size: 13px; }
+  .newsletter-controls .segmented button { height: 24px; padding: 0 10px; font-size: 13px; }
+}
+.newsletter-none { margin: 0; font-weight: 400; }
 .newsletter-status { margin: 0; font-size: var(--small-font-size); }
 .newsletter-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 16px; border-top: 1px solid var(--border); }
 .newsletter-compose { min-width: 0; border: 1px solid var(--border); border-radius: 12px; overflow: clip; }

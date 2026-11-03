@@ -6,6 +6,7 @@ import { Button } from "../../check-in/src/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../check-in/src/components/ui/select"
 import { formatEventDate, hasEventDetails, isUpcoming, ithacaArea, todayInNewYork, type EventRecord } from "../events/model"
 import type { OutsideEvent } from "../events/outside"
+import { StyleFilter } from "../events/StylePicker"
 import { api, errorMessage } from "./api"
 import { ConfirmButton } from "./ConfirmButton"
 import { AnnouncementBlock, Card, CommunityBlock, EmailFrame, EventsBlock, FeaturedBlock, FooterBlock, GlanceBlock, GreetingBlock, InvolvedBlock, LessonBlock, longDate, PracticeBlock, SignOffBlock } from "./NewsletterEmail"
@@ -69,6 +70,7 @@ export function Newsletter({ events, outside, actions }: { events: EventRecord[]
   // Other groups' dances stay out until an organizer ticks them.
   const [communityIds, setCommunityIds] = useState<string[]>([])
   const [nearby, setNearby] = useState(true)
+  const [styles, setStyles] = useState<string[]>([])
   const [theme, setTheme] = useState(false)
   const [glanceShown, setGlanceShown] = useState(true)
   const [subject, setSubject] = useState<string | null>(null)
@@ -106,6 +108,9 @@ export function Newsletter({ events, outside, actions }: { events: EventRecord[]
   const listed = specials.filter(event => placement[event.id] === "listed")
   const communityEvents = outside.filter(event => event.published && isUpcoming(event, today))
   const community = communityEvents.filter(event => communityIds.includes(event.id))
+  // The filters only narrow the list to pick from, so ticked events stay listed and stay in the email.
+  const inArea = communityEvents.filter(event => !nearby || ithacaArea.includes(event.city) || communityIds.includes(event.id))
+  const communityShown = inArea.filter(event => !styles.length || event.styles.some(style => styles.includes(style)) || communityIds.includes(event.id))
   // The mailing list adds "[Swing Syndicate]" to every subject.
   const defaultSubject = [lesson && `${longDate(lesson.date)} Dance`, ...featured.map(event => event.title)].filter(Boolean).join(" & ") || "Weekly Newsletter"
   // Each section is one card. The lesson card ends with the etiquette and practice note, which organizers can save for future weeks.
@@ -245,10 +250,11 @@ export function Newsletter({ events, outside, actions }: { events: EventRecord[]
           <button type="button" aria-pressed={nearby} onClick={() => setNearby(true)}>Ithaca</button>
           <button type="button" aria-pressed={!nearby} onClick={() => setNearby(false)}>All upstate</button>
         </div>
-        <ul className="newsletter-specials newsletter-community">{communityEvents.filter(event => !nearby || ithacaArea.includes(event.city) || communityIds.includes(event.id)).map(event => <li key={event.id}>
+        <StyleFilter events={communityEvents} available={inArea} chosen={styles} onChange={setStyles} />
+        {communityShown.length ? <ul className="newsletter-specials newsletter-community">{communityShown.map(event => <li key={event.id}>
           <label className="newsletter-check"><input type="checkbox" checked={communityIds.includes(event.id)} onChange={e => setCommunityIds(current => e.target.checked ? [...current, event.id] : current.filter(id => id !== event.id))} />
             <span className="event-row-text"><span>{event.title}</span><span className="event-muted">{shortDate(event)} · {event.groupName}</span></span></label>
-        </li>)}</ul>
+        </li>)}</ul> : <p className="event-muted newsletter-none">No matching events.</p>}
       </fieldset>}
       <div className="newsletter-actions">
         <Button variant="outline" onClick={() => addNote(present.length)}><Plus />Add announcement</Button>
