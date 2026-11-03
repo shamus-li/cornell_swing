@@ -90,6 +90,7 @@ typography:
     lineHeight: 1
     letterSpacing: 0.04em
 rounded:
+  checkbox: 4px
   control: 8px
   inner: 6px
   card: 12px
@@ -246,6 +247,7 @@ Controls have 8px corners, parts inside a control (segments, menu rows, calendar
 - **Icons:** 14 in small buttons and table status, 16 by default, 20 only for the next event's pin.
 - **Tabs:** underlined line style, on Base UI.
 - **Switches and chips:** Toggle Group on Base UI. Segmented switch for one choice, chips for filters and multiple choices.
+- **Checkboxes:** 16px with 4px corners, inside a label that takes the click. On Base UI.
 - **Check-in:** 44 buttons, 56 fields and 64 rows. Payment screens leave out the site header so each shows a single question.
 
 ## Do's and Don'ts
