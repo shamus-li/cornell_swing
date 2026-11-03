@@ -93,13 +93,13 @@ function EditRow({ draft, saving, error, onChange, onSave, onCancel }: { draft: 
     <div className="redirect-fields">
       <label className="redirect-field"><span>Short link</span><Input autoFocus disabled={saving} placeholder="/new-link" value={draft.source} onChange={event => onChange({ ...draft, source: event.target.value })} /></label>
       <label className="redirect-field"><span>Destination</span><Input disabled={saving} placeholder="https://example.com" value={draft.destination} onChange={event => onChange({ ...draft, destination: event.target.value })} /></label>
-      <div className="redirect-field"><span id="redirect-type">Type</span><Select disabled={saving} value={draft.code} onValueChange={code => onChange({ ...draft, code })}>
-        <SelectTrigger aria-labelledby="redirect-type" className="w-full"><SelectValue /></SelectTrigger>
+      <label className="redirect-field"><span>Type</span><Select disabled={saving} value={draft.code} onValueChange={code => onChange({ ...draft, code })}>
+        <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
         <SelectContent>
           <SelectItem value="301">301 Permanent</SelectItem>
           <SelectItem value="302">302 Temporary</SelectItem>
         </SelectContent>
-      </Select></div>
+      </Select></label>
     </div>
     {error && <p role="alert" className="event-error">{error}</p>}
     <div className="normal-event-actions">

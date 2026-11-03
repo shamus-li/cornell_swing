@@ -123,8 +123,8 @@ export function NormalEventRow({ event, editing, onEdit, onSave, onDelete, onCan
   return <article className="normal-event-row">
     {editing ? <form ref={form} className="normal-event-edit" onSubmit={e => { e.preventDefault(); void save() }}>
       <div className="normal-event-fields">
-        <div className="editor-row"><span>Date</span><EventDatePicker value={date} onChange={setDate} disabled={busy} /></div>
-        <div className="editor-row editor-row-top"><span>Location</span><LocationPicker value={location} url={locationUrl} room={room} onRoomChange={setRoom} onChange={(name, url) => { setLocation(name); setLocationUrl(url) }} disabled={busy} /></div>
+        <label className="editor-row"><span>Date</span><EventDatePicker value={date} onChange={setDate} disabled={busy} /></label>
+        <label className="editor-row editor-row-top"><span>Location</span><LocationPicker value={location} url={locationUrl} room={room} onRoomChange={setRoom} onChange={(name, url) => { setLocation(name); setLocationUrl(url) }} disabled={busy} /></label>
         <div className="editor-row editor-row-top"><span>Lesson</span><div className="lesson-times">
           <ToggleChoice variant="segmented" aria-label="Lessons" value={mode} disabled={busy} onValueChange={changeMode}>{lessonModes.map(item => <ToggleGroupItem key={item.value} value={item.value}>{item.label}</ToggleGroupItem>)}</ToggleChoice>
           {mode !== "none" && <div className="time-range"><EventTimePicker label="Lesson start" value={lessonStart} onChange={setLessonStart} disabled={busy} required /><span aria-hidden="true">–</span><EventTimePicker label="Lesson end" value={lessonEnd} onChange={setLessonEnd} disabled={busy} required /></div>}
@@ -134,7 +134,7 @@ export function NormalEventRow({ event, editing, onEdit, onSave, onDelete, onCan
           <label className="editor-row"><span>Beginner</span><Input value={programs.beginner} onChange={e => change("beginner", e.target.value)} disabled={busy} /></label>
           <label className="editor-row"><span>Advanced</span><Input value={programs.advanced} onChange={e => change("advanced", e.target.value)} disabled={busy} /></label>
         </>}
-        <div className="editor-row"><span>Social</span><div className="time-range"><EventTimePicker label="Social dance start" value={socialStart} onChange={setSocialStart} disabled={busy} required={mode !== "none"} /><span aria-hidden="true">–</span><EventTimePicker label="Social dance end" value={endTime} onChange={setEndTime} disabled={busy} /></div></div>
+        <label className="editor-row"><span>Social</span><div className="time-range"><EventTimePicker label="Social dance start" value={socialStart} onChange={setSocialStart} disabled={busy} required={mode !== "none"} /><span aria-hidden="true">–</span><EventTimePicker label="Social dance end" value={endTime} onChange={setEndTime} disabled={busy} /></div></label>
         <label className="editor-row editor-row-top"><span>Notes</span><Textarea rows={2} placeholder="Optional" value={programs.notes} onChange={e => change("notes", e.target.value)} disabled={busy} /></label>
       </div>
       {error && <p role="alert" className="event-error">{error}</p>}

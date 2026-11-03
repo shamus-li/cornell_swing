@@ -35,11 +35,11 @@ export function OutsideEventForm({ event, groups, onSave, onCancel, onDelete }: 
       <label className="editor-row"><span>Group</span><Input required maxLength={120} list="dance-groups" value={draft.groupName} onChange={e => change("groupName", e.target.value)} disabled={busy} /></label>
       <datalist id="dance-groups">{groups.map(name => <option key={name} value={name} />)}</datalist>
       <div className="editor-row"><span>Styles</span><StylePicker value={draft.styles} onChange={styles => setDraft(current => ({ ...current, styles }))} disabled={busy} /></div>
-      <div className="editor-row"><span>When</span><div className="editor-when">
+      <label className="editor-row"><span>When</span><div className="editor-when">
         <EventDatePicker icon={false} disabled={busy} value={draft.date} onChange={value => change("date", value)} />
         {!draft.lastDate && <><EventTimePicker label="Start time" disabled={busy} value={draft.startTime} onChange={value => change("startTime", value)} /><span aria-hidden="true">–</span><EventTimePicker label="End time" disabled={busy} value={draft.endTime} onChange={value => change("endTime", value)} /></>}
-      </div></div>
-      <div className="editor-row"><span>Last day</span><EventDatePicker icon={false} clearable placeholder="One day" label="Last day" after={draft.date} disabled={busy} value={draft.lastDate} onChange={value => change("lastDate", value)} /></div>
+      </div></label>
+      <label className="editor-row"><span>Last day</span><EventDatePicker icon={false} clearable placeholder="One day" label="Last day" after={draft.date} disabled={busy} value={draft.lastDate} onChange={value => change("lastDate", value)} /></label>
       <label className="editor-row"><span>Place</span><Input maxLength={300} placeholder="Memorial Room, Willard Straight Hall" value={draft.location} onChange={e => change("location", e.target.value)} disabled={busy} /></label>
       <label className="editor-row"><span>City</span><Input maxLength={80} value={draft.city} onChange={e => change("city", e.target.value)} disabled={busy} /></label>
       <label className="editor-row"><span>Price</span><Input maxLength={100} placeholder="Students free · $15" value={draft.price} onChange={e => change("price", e.target.value)} disabled={busy} /></label>

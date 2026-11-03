@@ -44,7 +44,7 @@ export function TransactionsTable({ transactions, showEvent = true }: { transact
       <TableHead className="text-right">Amount</TableHead>
     </TableRow></TableHeader>
     <TableBody>{transactions.map(item => <TableRow key={item.id}>
-      <TableCell className="whitespace-nowrap">{dateLabel.format(new Date(`${item.date}T00:00:00Z`))}</TableCell>
+      <TableCell className="whitespace-nowrap tabular-nums">{dateLabel.format(new Date(`${item.date}T00:00:00Z`))}</TableCell>
       <TableCell>{item.description}</TableCell>
       {showEvent && <TableCell className={wide}>{item.eventId ? <a href={`/manage/?event=${item.eventId}`}>{item.eventName}</a> : item.eventName}</TableCell>}
       <TableCell className={`${wide} whitespace-nowrap`}>{item.account}</TableCell>

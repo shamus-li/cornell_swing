@@ -64,7 +64,7 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .normal-event-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
 /* Event editor */
-.event-editor-shell { display: grid; gap: 16px; }
+.event-editor-shell { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .event-editor { display: grid; gap: 16px; padding-top: 8px; }
 /* An event's date and name, in the same place on every tab. An undated tile stays the height of a dated one, so setting the date moves nothing below it. */
 .event-page-title { display: flex; align-items: center; gap: 12px; }
@@ -202,7 +202,7 @@ html:has(.manage-page) { scroll-behavior: auto; }
   .newsletter-canvas .newsletter-insert { display: none; }
 }
 /* The bar under a clicked link opens it in a new tab, edits it, or removes it. */
-.newsletter-canvas .newsletter-link { position: absolute; z-index: 2; display: flex; align-items: center; gap: 4px; max-width: min(480px, calc(100% - 16px)); padding: 4px 4px 4px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); box-shadow: 0 4px 12px rgb(0 0 0 / .08); font: 400 var(--small-font-size) var(--sans); }
+.newsletter-canvas .newsletter-link { position: absolute; z-index: 2; display: flex; align-items: center; gap: 4px; max-width: min(480px, calc(100% - 16px)); padding: 4px 4px 4px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); font: 400 var(--small-font-size) var(--sans); }
 .newsletter-canvas .newsletter-link a { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; color: var(--primary); text-overflow: ellipsis; white-space: nowrap; }
 .newsletter-canvas .newsletter-link svg { flex: none; width: 14px; height: 14px; }
 .newsletter-canvas .newsletter-section[data-drop="before"] { box-shadow: 0 -2px 0 var(--primary); }

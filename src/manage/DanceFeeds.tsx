@@ -59,10 +59,10 @@ function FeedForm({ feed, onSave, onCancel, onRemove }: { feed: DanceFeed; onSav
   return <form className="normal-event-edit" aria-label={feed.id ? `Edit ${feed.name} feed` : "New feed"} onSubmit={e => { e.preventDefault(); void save() }}>
     <div className="normal-event-fields">
       <label className="editor-row"><span>Group</span><Input required maxLength={120} value={draft.name} onChange={e => change("name", e.target.value)} disabled={busy} /></label>
-      <div className="editor-row"><span>Style</span><Select value={draft.style} onValueChange={value => change("style", value)} disabled={busy}>
+      <label className="editor-row"><span>Style</span><Select value={draft.style} onValueChange={value => change("style", value)} disabled={busy}>
         <SelectTrigger aria-label="Dance style"><SelectValue /></SelectTrigger>
         <SelectContent>{danceStyles.map(style => <SelectItem key={style} value={style}>{style}</SelectItem>)}</SelectContent>
-      </Select></div>
+      </Select></label>
       <label className="editor-row"><span>City</span><Input maxLength={80} value={draft.city} onChange={e => change("city", e.target.value)} disabled={busy} /></label>
       <label className="editor-row"><span>Calendar</span><Input type="url" required maxLength={2000} placeholder="Calendar (.ics) link or CampusGroups club page" value={draft.feedUrl} onChange={e => change("feedUrl", e.target.value)} disabled={busy} /></label>
       <label className="editor-row"><span>Website</span><Input type="url" maxLength={2000} placeholder="https://" value={draft.siteUrl} onChange={e => change("siteUrl", e.target.value)} disabled={busy} /></label>

@@ -81,8 +81,8 @@ export function EventGuests({ records: { rsvps, activityError, rsvpError, guests
         <TableBody>{guests.map(({ email, rsvp, checkin }) => <TableRow key={email}>
           <TableCell className="font-medium">{rsvp?.name ?? checkin!.name}</TableCell>
           <TableCell className="hidden sm:table-cell">{email}</TableCell>
-          <TableCell className="whitespace-nowrap">{rsvp ? day.format(new Date(rsvp.createdAt)) : "No"}</TableCell>
-          <TableCell className="whitespace-nowrap">{checkin ? checkin.time : "No"}</TableCell>
+          <TableCell className="whitespace-nowrap tabular-nums">{rsvp ? day.format(new Date(rsvp.createdAt)) : "No"}</TableCell>
+          <TableCell className="whitespace-nowrap tabular-nums">{checkin ? checkin.time : "No"}</TableCell>
           <TableCell className="hidden sm:table-cell">{checkin?.ticket ?? ""}</TableCell>
           <TableCell className="text-right">{rsvp && <ConfirmButton size="sm" aria-label={`Remove RSVP for ${rsvp.name}`} confirmLabel="Confirm" busyLabel="Removing…" onConfirm={() => removeRsvp(email)}>Remove RSVP</ConfirmButton>}</TableCell>
         </TableRow>)}</TableBody>

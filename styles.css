@@ -189,33 +189,26 @@ h3:not([data-slot]) {
 
 .hero-carousel-dots {
   position: absolute;
-  left: 14px;
+  left: 6px;
   bottom: 6px;
   z-index: 1;
   display: flex;
   align-items: center;
-  gap: 6px;
 }
 
+/* A 24px tap target around each small dot. */
 .hero-carousel-dot {
-  width: 8px;
-  height: 8px;
-  /* Taller tap area without spreading the dots apart. */
-  box-sizing: content-box;
+  width: 24px;
+  height: 24px;
   margin: 0;
-  padding: 8px 0;
-  position: relative;
-  display: block;
+  padding: 0;
+  display: grid;
+  place-items: center;
   appearance: none;
   background: transparent;
   border: 0;
   border-radius: var(--radius-pill);
   cursor: pointer;
-  transition: width 500ms ease;
-}
-
-.hero-carousel-dot[data-active] {
-  width: 18px;
 }
 
 .hero-carousel-dot:focus-visible {
@@ -228,18 +221,23 @@ h3:not([data-slot]) {
 }
 
 .hero-carousel-dot-track {
-  width: 100%;
-  height: 100%;
+  width: 8px;
+  height: 8px;
   position: relative;
   display: block;
   overflow: hidden;
   background: rgb(255 255 255 / 55%);
   border-radius: var(--radius-pill);
   box-shadow: 0 1px 3px rgb(0 0 0 / 25%);
-  transition: background-color 500ms ease;
+  transition: width 500ms ease, background-color 500ms ease;
+}
+
+.hero-carousel-dot:hover .hero-carousel-dot-track {
+  background: rgb(255 255 255 / 85%);
 }
 
 .hero-carousel-dot[data-active] .hero-carousel-dot-track {
+  width: 18px;
   background: rgb(255 255 255 / 35%);
 }
 
@@ -399,7 +397,6 @@ body > .site-footer {
     scroll-behavior: auto;
   }
 
-  .hero-carousel-dot,
   .hero-carousel-dot-track {
     transition: none;
   }

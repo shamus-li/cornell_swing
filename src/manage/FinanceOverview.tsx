@@ -112,7 +112,7 @@ export function FinanceOverview() {
             <TableRow className="bg-muted/50 font-medium"><TableCell>{year}</TableCell><TableCell className="hidden sm:table-cell" /><EventFigures events={inYear} /></TableRow>
             {inYear.map(event => <TableRow key={`${event.name}-${event.date}`}>
               <TableCell>{event.id ? <a href={`/manage/?event=${event.id}`}>{event.name}</a> : event.name}</TableCell>
-              <TableCell className="hidden whitespace-nowrap sm:table-cell">{longDate.format(dateOf(event.date))}</TableCell>
+              <TableCell className="hidden whitespace-nowrap tabular-nums sm:table-cell">{longDate.format(dateOf(event.date))}</TableCell>
               <EventFigures events={[event]} />
             </TableRow>)}
           </TableBody>

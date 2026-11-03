@@ -26,14 +26,14 @@
 @media (pointer: coarse) {
   .dialog-close { top: 4px; right: 4px; }
 }
-.calendar-menu { inset: auto; position-area: bottom span-right; position-try-fallbacks: flip-block; margin: 4px 0; min-width: 12rem; padding: 4px; color: var(--foreground); background: var(--background); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 8px 24px color-mix(in srgb, var(--foreground) 10%, transparent); }
+.calendar-menu { inset: auto; position-area: bottom span-right; position-try-fallbacks: flip-block; margin: 4px 0; min-width: 12rem; padding: 4px; color: var(--foreground); background: var(--background); border: 1px solid var(--border); border-radius: var(--radius); }
 .calendar-menu a { display: flex; align-items: center; min-height: var(--menu-row-height); padding-inline: 8px; border-radius: var(--radius-inner); text-decoration: none; }
 .calendar-menu a:is(:hover, :focus-visible) { background: var(--muted); outline: none; }
 [data-slot="button"]:has(+ .calendar-menu:popover-open) { background: var(--muted); }
 [data-slot] { font-family: var(--sans); }
 [data-slot="button"] { text-decoration: none; }
 .is-past { color: var(--muted-foreground); }
-.event-dialog { width: min(440px, calc(100% - 32px)); max-height: calc(100dvh - 40px); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 0; color: var(--foreground); font-family: var(--sans); box-shadow: 0 24px 100px color-mix(in srgb, var(--foreground) 13%, transparent); }
+.event-dialog { width: min(440px, calc(100% - 32px)); max-height: calc(100dvh - 40px); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 0; color: var(--foreground); font-family: var(--sans); }
 .event-dialog-body { padding: 36px; }
 .event-dialog::backdrop { background: color-mix(in srgb, var(--foreground) 40%, transparent); }
 .event-dialog [data-slot="input"] { background: var(--background); }
@@ -82,7 +82,7 @@ time { font-variant-numeric: tabular-nums; }
 .segmented button { touch-action: manipulation; height: var(--segment-height); padding: 0 12px; border: 0; border-radius: var(--radius-inner); background: none; color: var(--muted-foreground); font: 500 var(--small-font-size)/1.5 var(--sans); cursor: pointer; }
 .segmented button:hover { color: var(--foreground); }
 @media (pointer: coarse) { .segmented button { padding: 0 16px; } }
-.segmented button[aria-pressed="true"] { color: var(--foreground); background: var(--background); box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 12%, transparent); }
+.segmented button[aria-pressed="true"] { color: var(--foreground); background: var(--background); }
 .segmented button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 
 .event-table-scroll { max-width: 100%; overflow-x: auto; }
