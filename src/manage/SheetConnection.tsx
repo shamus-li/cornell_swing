@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react"
-import { Button } from "../../check-in/src/components/ui/button"
+import { Button } from "../components/ui/button"
 import { api, errorMessage } from "./api"
 import { ConfirmButton } from "./ConfirmButton"
-import { Input } from "../../check-in/src/components/ui/input"
+import { Input } from "../components/ui/input"
 
 type SheetStatus = {
   connection: { url: string; error: string | null } | null

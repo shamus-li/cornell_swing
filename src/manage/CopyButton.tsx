@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Check, Copy } from "lucide-react"
-import { Button } from "../../check-in/src/components/ui/button"
+import { Button } from "../components/ui/button"
 
 // Tab-separated rows paste into Google Sheets as Name and Email columns.
 export function CopyButton({ text, label }: { text: string; label: string }) {

@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Button } from "../../check-in/src/components/ui/button"
+import { Button } from "../components/ui/button"
 
 // Asks for a second click in place; both labels share one width so the row never shifts.
 export function ConfirmButton({ children, confirmLabel, busyLabel, onConfirm, disabled = false, size, "aria-label": ariaLabel }: {

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ChangeEvent } from "react"
 import Papa from "papaparse"
 import { api, errorMessage } from "./api"
-import { Input } from "../../check-in/src/components/ui/input"
+import { Input } from "../components/ui/input"
 import type { CampusGroupsSummary } from "../events/campusgroups"
 
 const uploadedDate = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })

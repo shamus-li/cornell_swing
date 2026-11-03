@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { ArrowLeftIcon, ClockIcon, MapPinIcon, TicketIcon } from "lucide-react"
-import { Button } from "../../check-in/src/components/ui/button"
+import { Button } from "../components/ui/button"
 import { formatEventDate, formatEventDayRange, formatEventPrices, formatEventTime, hasEventDetails, isUpcoming, type EventRecord } from "../events/model"
 import { LessonTimes } from "../events/LessonTimes"
 import { EventLocation } from "../events/EventLocation"

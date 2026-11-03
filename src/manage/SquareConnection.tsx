@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Button } from "../../check-in/src/components/ui/button"
+import { Button } from "../components/ui/button"
 import type { SquareFeed } from "../events/finance"
 import { api, errorMessage } from "./api"
 import { ConfirmButton } from "./ConfirmButton"

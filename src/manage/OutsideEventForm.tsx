@@ -1,6 +1,6 @@
 import { useState } from "react"
-import { Button } from "../../check-in/src/components/ui/button"
-import { Input } from "../../check-in/src/components/ui/input"
+import { Button } from "../components/ui/button"
+import { Input } from "../components/ui/input"
 import { formatEventDate, formatEventTime, todayInNewYork } from "../events/model"
 import { type OutsideEvent } from "../events/outside"
 import { StylePicker } from "../events/StylePicker"

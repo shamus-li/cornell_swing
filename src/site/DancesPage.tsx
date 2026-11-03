@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react"
 import { ClockIcon, MapPinIcon } from "lucide-react"
-import { Button } from "../../check-in/src/components/ui/button"
+import { Button } from "../components/ui/button"
 import { ToggleChoice, ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group"
 import { danceStyles, isUpcoming, formatEventDate, formatEventDayRange, formatEventLocation, formatEventPrices, formatEventTime, hasEventDetails, ithacaArea, nightSpan, type EventRecord } from "../events/model"
 import type { OutsideEvent } from "../events/outside"

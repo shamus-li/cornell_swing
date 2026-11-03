@@ -3,12 +3,12 @@ import { FormEvent, useEffect, useRef, useState } from "react"
 import participantWaiverQrUrl from "../../assets/participant-waiver-qr.png"
 import generalRiskQrUrl from "../../assets/waiver-qr.png"
 
-import { Button } from "@/components/ui/button"
-import { FloatingField, floatingInputClass } from "@/components/ui/floating-field"
-import { Input } from "@/components/ui/input"
-import { QrCallout } from "@/components/ui/qr-callout"
+import { Button } from "@shared/components/ui/button"
+import { FloatingField, floatingInputClass } from "@shared/components/ui/floating-field"
+import { Input } from "@shared/components/ui/input"
+import { QrCallout } from "@shared/components/ui/qr-callout"
 import { isConnectionError, REQUEST_TIMEOUT_MS, signatureMatchesName, type WaiverBlock } from "@/lib/checkin"
-import { largeButtonClass } from "@/lib/sizes"
+import { largeButtonClass } from "@shared/lib/sizes"
 
 type WaiverText = { blocks: WaiverBlock[]; eventName: string }
 type WaiverResult = { waiver: WaiverText } | { formChanged: true } | { unavailable: true }

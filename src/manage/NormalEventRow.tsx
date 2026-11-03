@@ -1,6 +1,6 @@
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react"
-import { Button } from "../../check-in/src/components/ui/button"
-import { Input } from "../../check-in/src/components/ui/input"
+import { Button } from "../components/ui/button"
+import { Input } from "../components/ui/input"
 import { ToggleChoice, ToggleGroupItem } from "../components/ui/toggle-group"
 import { Textarea } from "../components/ui/textarea"
 import { EventDatePicker } from "./EventDatePicker"

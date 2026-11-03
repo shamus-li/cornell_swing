@@ -3,10 +3,10 @@
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities) source(none);
 @import "./src/theme.css";
-@source "./check-in/src/components/ui/button.tsx";
-@source "./check-in/src/components/ui/input.tsx";
-@source "./check-in/src/components/ui/floating-field.tsx";
-@source "./check-in/src/lib/sizes.ts";
+@source "./src/components/ui/button.tsx";
+@source "./src/components/ui/input.tsx";
+@source "./src/components/ui/floating-field.tsx";
+@source "./src/lib/sizes.ts";
 @source "./src/site/App.tsx";
 @source "./src/site/components/Events.tsx";
 @source "./src/site/RequestEvent.tsx";

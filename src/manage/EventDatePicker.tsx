@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { addDays, format, parseISO } from "date-fns"
 import { CalendarIcon, XIcon } from "lucide-react"
-import { Button } from "../../check-in/src/components/ui/button"
+import { Button } from "../components/ui/button"
 import { Calendar } from "../components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover"
 

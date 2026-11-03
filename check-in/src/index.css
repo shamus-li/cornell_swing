@@ -1,5 +1,7 @@
 @import "tailwindcss" source("./");
 @import "../../src/theme.css";
+@source "../../src/components/ui";
+@source "../../src/lib/sizes.ts";
 @import "tw-animate-css";
 
 @layer base {

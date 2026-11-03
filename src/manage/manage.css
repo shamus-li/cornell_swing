@@ -3,10 +3,6 @@
 @import "tw-animate-css";
 @source "./";
 @source "../components/ui";
-@source "../../check-in/src/components/ui/select.tsx";
-@source "../../check-in/src/components/ui/combobox.tsx";
-@source "../../check-in/src/components/ui/input-group.tsx";
-@source "../../check-in/src/components/ui/person.tsx";
 
 /* Page */
 html:has(.manage-page) { scroll-behavior: auto; }

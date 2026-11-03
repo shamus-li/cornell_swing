@@ -3,19 +3,19 @@ import { FormEvent, useEffect, useRef, useState } from "react"
 import campusGroupsQrUrl from "../../assets/campusgroups-qr.png"
 
 import { SiteBrand } from "@shared/site/components/SiteBrand"
-import { Button } from "@/components/ui/button"
-import { largeButtonClass } from "@/lib/sizes"
+import { Button } from "@shared/components/ui/button"
+import { largeButtonClass } from "@shared/lib/sizes"
 import {
   Combobox,
   ComboboxContent,
   ComboboxInput,
   ComboboxItem,
   ComboboxList,
-} from "@/components/ui/combobox"
-import { FloatingField, floatingInputClass } from "@/components/ui/floating-field"
-import { Input } from "@/components/ui/input"
-import { Person } from "@/components/ui/person"
-import { QrCallout } from "@/components/ui/qr-callout"
+} from "@shared/components/ui/combobox"
+import { FloatingField, floatingInputClass } from "@shared/components/ui/floating-field"
+import { Input } from "@shared/components/ui/input"
+import { Person } from "@shared/components/ui/person"
+import { QrCallout } from "@shared/components/ui/qr-callout"
 import PhoneInput from "react-phone-number-input/input"
 import { Payment } from "@/Payment"
 import { TimedButton } from "@/TimedButton"
@@ -26,7 +26,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
+} from "@shared/components/ui/select"
 import {
   AFFILIATION_LABELS,
   AFFILIATIONS,

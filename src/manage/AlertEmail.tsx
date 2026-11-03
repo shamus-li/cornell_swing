@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react"
-import { Button } from "../../check-in/src/components/ui/button"
-import { Input } from "../../check-in/src/components/ui/input"
+import { Button } from "../components/ui/button"
+import { Input } from "../components/ui/input"
 import { api, errorMessage } from "./api"
 
 type Status = { email: string; verified: boolean }

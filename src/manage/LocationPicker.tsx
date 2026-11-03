@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react"
 import { ExternalLink, MapPin } from "lucide-react"
-import { InputGroupAddon } from "../../check-in/src/components/ui/input-group"
-import { Input } from "../../check-in/src/components/ui/input"
-import { Combobox, ComboboxContent, ComboboxInput, ComboboxItem, ComboboxList } from "../../check-in/src/components/ui/combobox"
+import { InputGroupAddon } from "../components/ui/input-group"
+import { Input } from "../components/ui/input"
+import { Combobox, ComboboxContent, ComboboxInput, ComboboxItem, ComboboxList } from "../components/ui/combobox"
 import type { PlaceResult } from "../events/locations"
 import { api, errorMessage } from "./api"
 

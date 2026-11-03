@@ -1,7 +1,7 @@
 import { useEffect } from "react"
 
-import { Button } from "@/components/ui/button"
-import { largeButtonClass } from "@/lib/sizes"
+import { Button } from "@shared/components/ui/button"
+import { largeButtonClass } from "@shared/lib/sizes"
 
 export const KIOSK_TIMEOUT_MS = 30_000
 

@@ -1,5 +1,5 @@
-import { Button } from "@/components/ui/button"
-import { largeButtonClass } from "@/lib/sizes"
+import { Button } from "@shared/components/ui/button"
+import { largeButtonClass } from "@shared/lib/sizes"
 
 import { HeroCarousel } from "./components/HeroCarousel"
 import { EventSections, NextEvent, useEvents, type EventSnapshot } from "./components/Events"

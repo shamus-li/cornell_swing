@@ -1,5 +1,5 @@
 import { useState, type ComponentProps } from "react"
-import { Button } from "../../check-in/src/components/ui/button"
+import { Button } from "../components/ui/button"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../components/ui/alert-dialog"
 
 export function DiscardChangesButton({ dirty, onDiscard, children, ...props }: Omit<ComponentProps<typeof Button>, "onClick"> & { dirty: boolean; onDiscard: () => void }) {

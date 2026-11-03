@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react"
 
-import { Button } from "@/components/ui/button"
+import { Button } from "@shared/components/ui/button"
 import { isConnectionError, REQUEST_TIMEOUT_MS, type Attendee, type DoorTicket, type NextSteps } from "@/lib/checkin"
-import { largeButtonClass } from "@/lib/sizes"
+import { largeButtonClass } from "@shared/lib/sizes"
 import { TimedButton } from "@/TimedButton"
 
 export const formatAmount = (cents: number) => cents ? `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}` : "Free"

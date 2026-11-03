@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import { XIcon } from "lucide-react"
-import { Button } from "../../check-in/src/components/ui/button"
-import { Input } from "../../check-in/src/components/ui/input"
-import { largeButtonClass } from "../../check-in/src/lib/sizes"
+import { Button } from "../components/ui/button"
+import { Input } from "../components/ui/input"
+import { largeButtonClass } from "../lib/sizes"
 import { StylePicker } from "../events/StylePicker"
 
 const blank = { title: "", groupName: "", date: "", startTime: "", endTime: "", location: "", city: "Ithaca", price: "", url: "", email: "" }

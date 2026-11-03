@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react"
 import { formatTime } from "../events/model"
 import { XIcon } from "lucide-react"
-import { InputGroupAddon, InputGroupButton } from "../../check-in/src/components/ui/input-group"
-import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList } from "../../check-in/src/components/ui/combobox"
+import { InputGroupAddon, InputGroupButton } from "../components/ui/input-group"
+import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList } from "../components/ui/combobox"
 
 const timeSlots = ["tba", ...Array.from({ length: 96 }, (_, index) => `${String(Math.floor(index / 4)).padStart(2, "0")}:${String(index % 4 * 15).padStart(2, "0")}`)]
 
