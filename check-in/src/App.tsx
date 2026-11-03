@@ -71,7 +71,7 @@ function MemberResults() {
     <ComboboxContent>
       <ComboboxList>
         {(member: Member) => (
-          <ComboboxItem key={member.id} value={member} className="items-start px-3 py-2.5 text-base">
+          <ComboboxItem key={member.id} value={member} className="items-start px-3 py-2.5">
             <Person
               name={member.name}
               detail={[member.email, member.affiliation && AFFILIATION_LABELS[member.affiliation]]
@@ -587,7 +587,7 @@ export default function App() {
               </SelectTrigger>
               <SelectContent position="popper" align="start">
                 {AFFILIATIONS.map((option) => (
-                  <SelectItem key={option} value={option} className="py-2 text-base">
+                  <SelectItem key={option} value={option} className="py-2">
                     {AFFILIATION_LABELS[option]}
                   </SelectItem>
                 ))}

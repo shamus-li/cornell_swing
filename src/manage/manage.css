@@ -40,6 +40,9 @@ html:has(.manage-page) { scroll-behavior: auto; }
 :is(.event-row-button, .normal-event-summary):focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .event-row-text { display: grid; gap: 2px; min-width: 0; }
 .event-row-text > .event-muted { font-size: var(--small-font-size); }
+.normal-event-summary { line-height: 1.4; }
+.normal-event-summary .schedule-times { margin: 0; }
+.normal-event-summary .schedule-program .event-markdown p + p { margin-top: 2px; }
 .event-row-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .event-row-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .manage-list strong { font-weight: 600; }
