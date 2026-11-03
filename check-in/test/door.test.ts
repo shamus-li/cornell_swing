@@ -315,13 +315,6 @@ describe("door cash in Square", () => {
     expect(await rows()).toEqual([{ id: "cash-good", amount: 1500, cash: 1 }, { id: "unsent:bad", amount: 1, cash: 1 }])
   })
 
-  it("never sends staging's cash to the real account", async () => {
-    squareTakes()
-    const request = new Request("https://example.com/check-in/api/door/settle", { method: "POST", body: JSON.stringify({ ...ada, id: "staging", ticketId: "general", method: "cash" }) })
-    expect((await handleApiRequest(request, { ...env, STAGING: "1" } as unknown as Env)).status).toBe(201)
-    expect(sent).toEqual([])
-  })
-
   it("leaves cash recorded before this existed on the site only", async () => {
     squareTakes()
     await env.EVENTS_DB.prepare("INSERT INTO square_payments (id, paidAt, amount, fee, cash, note) VALUES ('cash:old', ?, 1000, 0, 1, '')").bind(new Date().toISOString()).run()

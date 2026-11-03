@@ -75,8 +75,6 @@ async function linkCash(env: Env, chargeId: string, paymentId: string): Promise<
 // A 403 here must not disconnect Square the way a failed read does: a connection made before this permission
 // existed can still read payments until an officer connects it again.
 export async function sendUnsentCash(env: Env): Promise<void> {
-  // Staging shares the club's real Square account.
-  if (env.STAGING) return
   const token = await env.EVENTS_DB.prepare('SELECT accessToken FROM square_connection').first<string>('accessToken')
   if (!token) return
   const { results } = await env.EVENTS_DB.prepare('SELECT id, amount, note FROM square_payments WHERE id LIKE ?').bind(`${UNSENT_CASH}%`).all<{ id: string; amount: number; note: string }>()

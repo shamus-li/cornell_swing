@@ -349,8 +349,6 @@ async function handleWaiver(request: Request, env: Env): Promise<Response> {
   if (!signatureMatchesName(signature, name)) {
     return json({ message: `Sign with your full name: ${name}` }, 400)
   }
-  // A waiver signed on staging must not reach the real CampusGroups form.
-  if (env.STAGING) return json({ message: "Waiver signed" }, 201)
   const timestamp = Date.now()
   const now = await eventNow(request, env, timestamp)
   if (now instanceof Response) return now
