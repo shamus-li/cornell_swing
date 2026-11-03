@@ -10,6 +10,7 @@ export function StylePicker({ value, onChange, disabled }: { value: string[]; on
 
 type Styled = { styles: string[] }
 
+// Lit when no style is chosen; choosing it clears the others.
 const allStyles = "all"
 
 // Filters a list by style; nothing chosen shows everything. The buttons come from `events`, so they stay put when another

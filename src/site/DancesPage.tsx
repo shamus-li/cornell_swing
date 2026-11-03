@@ -27,8 +27,6 @@ type Listing = ReturnType<typeof listing>
 const listings = ({ events, outside, today }: DanceSnapshot) => [...events, ...outside].filter(event => event.date && isUpcoming(event, today)).map(listing)
   .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime) || a.title.localeCompare(b.title))
 
-// Lit when no style is chosen; choosing it clears the others.
-
 export function DancesPage(snapshot: DanceSnapshot) {
   const [nearby, setNearby] = useState(true)
   // Nothing chosen shows every dance; an event with several styles shows when any of them is chosen.
