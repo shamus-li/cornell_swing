@@ -157,8 +157,9 @@ function stylesFrom(title: string, usual: string) {
   return named.length ? danceStyles.filter(style => named.includes(style)) : [usual]
 }
 
-// Adds and updates the feed's upcoming events and removes upcoming ones the feed dropped. Events an organizer hid
-// stay unpublished, and a place typed in for an event the feed lists without one is kept.
+// Adds and updates the feed's upcoming events and removes upcoming published ones the feed dropped. A feed listing
+// nothing removes nothing, since that usually means a calendar problem. An unpublished event keeps its row, so it stays
+// unpublished if the feed lists it again, and a place typed in for an event the feed lists without one is kept.
 function saveEvents(db: D1Database, feed: DanceFeed, events: FeedEvent[], today: string, checkedAt: string) {
   const skip = feed.skipTitles.toLowerCase().split(',').map(word => word.trim()).filter(Boolean)
   const kept = events.filter(event => event.date >= today && !skip.some(word => event.title.toLowerCase().includes(word)))
@@ -168,7 +169,7 @@ function saveEvents(db: D1Database, feed: DanceFeed, events: FeedEvent[], today:
       SELECT lower(hex(randomblob(16))), ?1, value ->> 'sourceId', value ->> 'title', value ->> 'date', value ->> 'startTime', value ->> 'endTime', value ->> 'location', iif(value ->> 'city' = '', ?2, value ->> 'city'), value ->> 'styles', value ->> 'url', 1, ?3 FROM json_each(?4) WHERE true
       ON CONFLICT (groupId, sourceId) DO UPDATE SET title = excluded.title, date = excluded.date, startTime = excluded.startTime, endTime = excluded.endTime,
         location = CASE excluded.location WHEN '' THEN location ELSE excluded.location END, city = CASE excluded.location WHEN '' THEN outside_events.city ELSE excluded.city END, url = excluded.url, updatedAt = excluded.updatedAt`).bind(feed.id, feed.city, checkedAt, rows),
-    db.prepare(`DELETE FROM outside_events WHERE groupId = ? AND sourceId IS NOT NULL AND date >= ? AND sourceId NOT IN (SELECT value ->> 'sourceId' FROM json_each(?))`).bind(feed.id, today, rows),
+    ...(events.length ? [db.prepare(`DELETE FROM outside_events WHERE groupId = ? AND sourceId IS NOT NULL AND published = 1 AND date >= ? AND sourceId NOT IN (SELECT value ->> 'sourceId' FROM json_each(?))`).bind(feed.id, today, rows)] : []),
     db.prepare('UPDATE dance_groups SET checkedAt = ?, feedError = NULL WHERE id = ?').bind(checkedAt, feed.id),
   ])
 }
