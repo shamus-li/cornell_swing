@@ -44,3 +44,19 @@ it("replaces the site's batched rows with each payment and links rows to events"
 it("totals each event from the sheet, including its batched rows", () => {
   expect(buildEvents(rows, events).find(event => event.id === "haunt")).toEqual({ id: "haunt", name: "The Lindy Haunt", date: "2026-10-17", earned: 151, spent: 400, grant: 400 })
 })
+
+it("pairs one CampusGroups payment with the sheet lines that add up to it", () => {
+  const split = parseSheetRows([
+    sheetRow(45950, -1400, "GPSA", "Fall 25 Sweater Weather Swing: Gaby Cook Instructor Fee"),
+    sheetRow(45950, -83.85, "GPSA", "Fall 25 Sweater Weather Swing: Gaby Cook Transportation from NYC"),
+    sheetRow(45950, -400, "GPSA", "Fall 25 Sweater Weather Swing: Mike Thibult Instructor Fee"),
+    sheetRow(45950, -210, "GPSA", "Fall 25 Sweater Weather Swing: Room Rental"),
+  ])
+  const list = buildTransactions(split, [], { uploadedAt: "2026-11-03T00:00:00.000Z", rows: [{ source: "GPSAFC - FY26", amount: "-1483.85", paymentStatus: "Approved", item: "Instructor with transport", date: "10/20/2025 10:04:05 AM" }] }, events)
+  expect(list.map(item => [item.description, item.status])).toEqual([
+    ["Gaby Cook Instructor Fee", "in-campusgroups"],
+    ["Gaby Cook Transportation from NYC", "in-campusgroups"],
+    ["Mike Thibult Instructor Fee", "not-in-campusgroups"],
+    ["Room Rental", "not-in-campusgroups"],
+  ])
+})

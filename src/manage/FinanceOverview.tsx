@@ -5,7 +5,7 @@ import { Button } from "../../check-in/src/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../check-in/src/components/ui/select"
 import { Card } from "../components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table"
-import type { FinanceEvent, FinanceOverview as Overview } from "../events/finance"
+import { clubYear, type FinanceEvent, type FinanceOverview as Overview } from "../events/finance"
 import { api, errorMessage, loadSheetData } from "./api"
 import { money } from "./money"
 import { Transactions } from "./Transactions"
@@ -19,12 +19,6 @@ const dateOf = (date: string) => new Date(`${date}T00:00:00Z`)
 const sum = (events: FinanceEvent[], amount: (event: FinanceEvent) => number) => events.reduce((total, event) => total + amount(event), 0)
 // What the event did to the club's own money, since GPSA money can't be kept.
 const netAfterGrant = (event: FinanceEvent) => event.earned - event.spent + event.grant
-
-// "2026–27": the club's year runs August through July.
-function clubYear(date: string): string {
-  const start = Number(date.slice(0, 4)) - (Number(date.slice(5, 7)) < 8 ? 1 : 0)
-  return `${start}–${String(start + 1).slice(2)}`
-}
 
 function EventFigures({ events }: { events: FinanceEvent[] }) {
   return <>

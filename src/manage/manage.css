@@ -251,6 +251,8 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .finance-check.is-off svg { color: #ab570a; }
 .event-page-title { display: flex; align-items: center; gap: 12px; margin: 8px 0 16px; }
 .finance-search { width: 16rem; max-width: 100%; }
+/* A minus sign is a place the browser would otherwise wrap. */
+[data-slot="table-cell"].tabular-nums { white-space: nowrap; }
 .event-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 .event-stat { margin-top: 4px; font: 600 20px/28px var(--sans); letter-spacing: -0.6px; }
 @media (max-width: 640px) {

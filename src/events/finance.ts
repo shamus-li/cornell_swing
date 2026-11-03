@@ -20,3 +20,9 @@ export type EventActivity = {
   transactions: Transaction[]
   checkins: { name: string; email: string; time: string; ticket: string | null }[]
 }
+
+// "2026–27": the club's year runs August through July.
+export function clubYear(date: string): string {
+  const start = Number(date.slice(0, 4)) - (Number(date.slice(5, 7)) < 8 ? 1 : 0)
+  return `${start}–${String(start + 1).slice(2)}`
+}

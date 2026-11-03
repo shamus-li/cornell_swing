@@ -18,6 +18,7 @@ const DAY_MS = 86_400_000
 const accessToken = createCachedGoogleAccessTokenProvider(getGoogleAccessToken)
 // How far apart CampusGroups and the sheet can date the same transaction.
 const MATCH_DAYS = 14
+const MAX_SPLIT_LINES = 4
 const SHEET_EPOCH_MS = Date.UTC(1899, 11, 30)
 const round = (amount: number) => Math.round(amount * 100) / 100
 const cornellAccount = (source: string) => /^GPSA/i.test(source.trim()) ? 'GPSA' : /^Outside/i.test(source.trim()) ? 'Outside Funding' : null
@@ -48,6 +49,23 @@ export function parseSheetRows(values: unknown[][]): SheetRow[] {
   })
 }
 
+// The fewest lines, two or more, that add up to the amount, or none.
+function linesAddingUpTo(lines: SheetRow[], amount: number): SheetRow[] {
+  for (let size = 2; size <= Math.min(lines.length, MAX_SPLIT_LINES); size++) {
+    const pick = (from: number, left: number, chosen: SheetRow[]): SheetRow[] | null => {
+      if (chosen.length === size) return Math.abs(left) < 0.005 ? chosen : null
+      for (let at = from; at < lines.length; at++) {
+        const found = pick(at + 1, left - lines[at].amount, [...chosen, lines[at]])
+        if (found) return found
+      }
+      return null
+    }
+    const found = pick(0, amount, [])
+    if (found) return found
+  }
+  return []
+}
+
 // The sheet labels an event with its plain name; a year in the site's title only keeps titles unique.
 const sheetLabel = (event: EventRow) => eventLabel(event.title.replace(/ 20\d\d$/, ''), event.date)
 
@@ -67,6 +85,12 @@ export function buildTransactions(rows: SheetRow[], payments: Payment[], stored:
     const match = rows.find(sheet => !paired.has(sheet.index) && sheet.account === row.account && Math.abs(sheet.amount - row.amount) < 0.005 && Math.abs(Date.parse(sheet.date) - Date.parse(row.date)) <= MATCH_DAYS * DAY_MS)
     if (match) paired.add(match.index)
     return !match
+  }).filter(row => {
+    // One CampusGroups payment can be several lines on the sheet, like an instructor's fee and travel.
+    const nearby = rows.filter(sheet => !paired.has(sheet.index) && sheet.account === row.account && sheet.amount * row.amount > 0 && Math.abs(Date.parse(sheet.date) - Date.parse(row.date)) <= MATCH_DAYS * DAY_MS)
+    const parts = linesAddingUpTo(nearby, row.amount)
+    for (const part of parts) paired.add(part.index)
+    return !parts.length
   })
   const fromSheet = rows.filter(row => !row.siteRow).map((row): Transaction => {
     const event = row.label && byLabel.get(row.label.key)
