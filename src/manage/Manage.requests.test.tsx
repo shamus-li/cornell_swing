@@ -6,7 +6,7 @@ import Manage from "./Manage"
 import type { ManagedEvent } from "../events/model"
 
 vi.mock("./MarkdownEditor", () => ({ MarkdownEditor: () => null }))
-const event: ManagedEvent = { id: "dance", kind: "special", title: "Autumn dance", date: "2099-10-17", startTime: "18:00", endTime: "22:00", location: "Hall", description: "", published: true, updatedAt: "2026-09-21", rsvpCount: 1 }
+const event: ManagedEvent = { city: "Ithaca", styles: ["Swing"], id: "dance", kind: "special", title: "Autumn dance", date: "2099-10-17", startTime: "18:00", endTime: "22:00", location: "Hall", description: "", published: true, updatedAt: "2026-09-21", rsvpCount: 1 }
 let root: Root
 
 afterEach(async () => {

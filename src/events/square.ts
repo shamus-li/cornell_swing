@@ -5,7 +5,6 @@ import { dateKeyInTimeZone, timestampForSheet } from '../../check-in/worker/goog
 import type { SquareFeed, SquarePayment } from './finance'
 import { upsertLedgerRows, type LedgerRow } from './ledger'
 import { logError } from './logging'
-import { nightSpan } from './model'
 
 // An officer connects the club's Square account from the Finances tab. The site then reads its payments
 // on SQUARE_CRON and files them on the Balance Sheet.
@@ -19,7 +18,6 @@ type Connection = { merchantId: string; accessToken: string; refreshToken: strin
 type Money = { amount: number }
 type Payment = { id: string; created_at: string; status: string; source_type: string; amount_money: Money; refunded_money?: Money; processing_fee?: { amount_money: Money }[]; note?: string }
 type Tokens = { access_token: string; refresh_token: string; expires_at: string; merchant_id: string }
-type Event = { id: string; date: string; startTime: string; endTime: string; lessonEndTime: string; socialStartTime: string }
 
 class SquareAuthError extends Error {}
 

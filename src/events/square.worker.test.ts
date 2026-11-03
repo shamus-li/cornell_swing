@@ -3,16 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { setupNetwork } from '@msw/cloudflare'
 import { http, HttpResponse } from 'msw'
 import { exportJWK, generateKeyPair, SignJWT } from 'jose'
-import eventsMigration from '../../migrations/events/0001_events.sql?raw'
-import roomMigration from '../../migrations/events/0004_event_room.sql?raw'
-import publishedMigration from '../../migrations/events/0005_event_published.sql?raw'
-import pricesMigration from '../../migrations/events/0006_event_prices.sql?raw'
-import lessonEndMigration from '../../migrations/events/0010_lesson_end.sql?raw'
-import socialStartMigration from '../../migrations/events/0018_social_start.sql?raw'
-import venmoMigration from '../../migrations/events/0008_venmo.sql?raw'
-import gmailMigration from '../../migrations/events/0012_gmail.sql?raw'
-import squareMigration from '../../migrations/events/0013_square.sql?raw'
-import doorMigration from '../../migrations/events/0020_door_charges.sql?raw'
+import { resetEventsDb } from '../../check-in/test/events-db'
 import worker from './worker'
 import { syncSquare } from './square'
 
@@ -72,7 +63,7 @@ beforeAll(async () => {
     }),
   )
   managerToken = await new SignJWT({}).setProtectedHeader({ alg: 'RS256', kid: 'test-key' }).setIssuer(`https://${env.ACCESS_TEAM_DOMAIN}`).setAudience(env.ACCESS_AUD).setExpirationTime('1h').sign(privateKey)
-  for (const sql of [eventsMigration, roomMigration, publishedMigration, pricesMigration, lessonEndMigration, socialStartMigration, venmoMigration, gmailMigration, squareMigration, doorMigration]) await env.EVENTS_DB.exec(sql.replace(/^--.*$/gm, '').replaceAll('\n', ' '))
+  await resetEventsDb()
 })
 afterAll(() => { network.disable(); vi.useRealTimers() })
 beforeEach(async () => {

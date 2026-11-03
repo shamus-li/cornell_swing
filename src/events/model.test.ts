@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { formatLessonSchedule, nightSpan, scheduleTitle, todayInNewYork, validateEvent, validateRSVP } from './model'
+import { formatEventLocation, formatLessonSchedule, nightSpan, scheduleTitle, todayInNewYork, validateEvent, validateRSVP } from './model'
 
 const event = { kind: 'special', title: 'Swing dance', date: '2026-10-10', startTime: '18:15', endTime: '22:00', location: 'Willard Straight Hall', description: '**Everyone welcome.**', published: true }
+
+it('names the city only when it is not Ithaca and the place does not say it', () => {
+  expect(formatEventLocation({ location: 'Barn', room: 'Loft', city: 'Ithaca' })).toBe('Loft, Barn')
+  expect(formatEventLocation({ location: 'Flynn Hall', city: 'Rochester' })).toBe('Flynn Hall, Rochester')
+  expect(formatEventLocation({ location: 'Rochester Elks', city: 'Rochester' })).toBe('Rochester Elks')
+  expect(formatEventLocation({ location: '', city: 'Syracuse' })).toBe('Syracuse')
+  expect(formatEventLocation({ location: '', city: 'Ithaca' })).toBe('TBA')
+})
 
 describe('event validation', () => {
   it('accepts markdown and a date with unknown times', () => {

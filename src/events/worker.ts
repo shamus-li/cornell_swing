@@ -77,9 +77,9 @@ async function redirectsApi(request: Request, env: Env, method: string): Promise
   return json({ success: true })
 }
 
-// D1 stores booleans as 0 or 1, and ticket types and extra days as JSON.
-type Row<T> = Omit<T, 'published' | 'tickets' | 'moreDays'> & { published: number; tickets: string; moreDays: string }
-const fromRow = <T extends EventRecord>(row: Row<T>) => ({ ...row, published: row.published === 1, tickets: JSON.parse(row.tickets), moreDays: JSON.parse(row.moreDays) }) as T
+// D1 stores booleans as 0 or 1, and ticket types, extra days and styles as JSON.
+type Row<T> = Omit<T, 'published' | 'tickets' | 'moreDays' | 'styles'> & { published: number; tickets: string; moreDays: string; styles: string }
+const fromRow = <T extends EventRecord>(row: Row<T>) => ({ ...row, published: row.published === 1, tickets: JSON.parse(row.tickets), moreDays: JSON.parse(row.moreDays), styles: JSON.parse(row.styles) }) as T
 
 async function listEvents(env: Env): Promise<EventRecord[]> {
   const result = await env.EVENTS_DB.prepare("SELECT * FROM events WHERE published = 1 ORDER BY date = '', date, startTime, title").all<Row<EventRecord>>()
@@ -92,9 +92,10 @@ async function listManagedEvents(env: Env): Promise<ManagedEvent[]> {
 }
 
 // Published events are cached at the edge briefly; manager edits clear the cache. The page itself is
-// rendered per request so it always references the deployed scripts.
+// rendered per request so it always references the deployed scripts. Copies outlive a deploy, so the cache gets a
+// new name when the shape of a saved event changes.
 const eventsCacheKey = (url: URL) => new Request(new URL('/api/events', url))
-const eventsCache = () => caches.open('events')
+const eventsCache = () => caches.open('events-2')
 const clearEventsCache = async (url: URL) => (await eventsCache()).delete(eventsCacheKey(url))
 
 async function cachedEvents(env: Env, url: URL): Promise<EventRecord[]> {
@@ -354,10 +355,10 @@ async function route(request: Request, env: Env): Promise<Response> {
     try { input = validateEvent(body) } catch (error) { throw new HttpError(400, (error as Error).message) }
     const id = method === 'POST' ? crypto.randomUUID() : managerMatch![1]
     let updatedAt = new Date().toISOString()
-    const values = [input.kind, input.title, input.date, input.startTime, input.endTime, input.location, input.description, updatedAt, input.locationUrl || '', input.room || '', input.published ? 1 : 0, JSON.stringify(input.tickets), input.lessonEndTime, input.socialStartTime, input.lastDate, JSON.stringify(input.moreDays)]
+    const values = [input.kind, input.title, input.date, input.startTime, input.endTime, input.location, input.description, updatedAt, input.locationUrl || '', input.room || '', input.published ? 1 : 0, JSON.stringify(input.tickets), input.lessonEndTime, input.socialStartTime, input.lastDate, JSON.stringify(input.moreDays), JSON.stringify(input.styles), input.city]
     if (method === 'POST') {
       const create = async () => {
-      await env.EVENTS_DB.prepare('INSERT INTO events (kind, title, date, startTime, endTime, location, description, updatedAt, locationUrl, room, published, tickets, lessonEndTime, socialStartTime, lastDate, moreDays, id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(...values, id).run()
+      await env.EVENTS_DB.prepare('INSERT INTO events (kind, title, date, startTime, endTime, location, description, updatedAt, locationUrl, room, published, tickets, lessonEndTime, socialStartTime, lastDate, moreDays, styles, city, id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(...values, id).run()
       }
       if (input.kind === 'special') await createEventWithSheet(env, input.title, create)
       else await create()
@@ -369,7 +370,7 @@ async function route(request: Request, env: Env): Promise<Response> {
       const current = await env.EVENTS_DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first<EventRecord>()
       if (!current || current.updatedAt !== previous) throw new HttpError(409, 'Someone else saved this event after you opened it.', 'stale')
       const update = async () => {
-      const result = await env.EVENTS_DB.prepare('UPDATE events SET kind = ?, title = ?, date = ?, startTime = ?, endTime = ?, location = ?, description = ?, updatedAt = ?, locationUrl = ?, room = ?, published = ?, tickets = ?, lessonEndTime = ?, socialStartTime = ?, lastDate = ?, moreDays = ? WHERE id = ?17 AND updatedAt = ? AND (?1 = \'special\' OR NOT EXISTS (SELECT 1 FROM rsvps WHERE eventId = ?17))').bind(...values, id, previous).run()
+      const result = await env.EVENTS_DB.prepare('UPDATE events SET kind = ?, title = ?, date = ?, startTime = ?, endTime = ?, location = ?, description = ?, updatedAt = ?, locationUrl = ?, room = ?, published = ?, tickets = ?, lessonEndTime = ?, socialStartTime = ?, lastDate = ?, moreDays = ?, styles = ?, city = ? WHERE id = ?19 AND updatedAt = ? AND (?1 = \'special\' OR NOT EXISTS (SELECT 1 FROM rsvps WHERE eventId = ?19))').bind(...values, id, previous).run()
       if (result.meta.changes) return
       throw new EventConflict(input.kind === 'normal' ? 'This night changed after you opened it. Refresh and try again.' : 'The event changed. Refresh before saving.')
       }

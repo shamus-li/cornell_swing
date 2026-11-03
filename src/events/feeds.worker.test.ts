@@ -2,12 +2,7 @@ import { env } from 'cloudflare:workers'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { setupNetwork } from '@msw/cloudflare'
 import { http, HttpResponse } from 'msw'
-import eventsMigration from '../../migrations/events/0001_events.sql?raw'
-import outsideMigration from '../../migrations/events/0011_outside_events.sql?raw'
-import feedsMigration from '../../migrations/events/0014_dance_feeds.sql?raw'
-import sourceNoteMigration from '../../migrations/events/0015_outside_source_note.sql?raw'
-import stylesMigration from '../../migrations/events/0016_outside_styles.sql?raw'
-import cityMigration from '../../migrations/events/0021_outside_city.sql?raw'
+import { resetEventsDb } from '../../check-in/test/events-db'
 import { icsEvents, readFeeds } from './feeds'
 
 const network = setupNetwork()
@@ -37,32 +32,33 @@ beforeAll(async () => {
     http.get('https://www.hands4dancers.org/upcoming-dances', () => HttpResponse.json({ upcoming: [{ id: 'h4', title: 'An evening of Contra  Dancing', startDate: Date.UTC(2099, 10, 21, 0, 0), endDate: Date.UTC(2099, 10, 21, 3, 30), fullUrl: '/upcoming-dances/2099/11/20/contra', location: { addressTitle: 'Lehman Alternative Community School' } }] })),
     http.get('https://example.org/broken.ics', () => new HttpResponse(null, { status: 500 })),
   )
-  for (const migration of [eventsMigration, outsideMigration, feedsMigration, sourceNoteMigration, stylesMigration, cityMigration]) await env.EVENTS_DB.exec(migration.replace(/--.*$/gm, '').replaceAll('\n', ' '))
+  await resetEventsDb()
+  await env.EVENTS_DB.exec("DELETE FROM outside_events; UPDATE dance_groups SET feedUrl = '' WHERE city != 'Ithaca';")
 })
 afterAll(() => network.disable())
 
-const saved = async () => (await env.EVENTS_DB.prepare('SELECT groupId, title, date, startTime, endTime, venue, styles, url, status FROM outside_events ORDER BY date, title').all()).results
+const saved = async () => (await env.EVENTS_DB.prepare('SELECT groupId, title, date, startTime, endTime, location, styles, url, published FROM outside_events ORDER BY date, title').all()).results
 
 it('reads calendar, Squarespace and CampusGroups feeds into upcoming published events', async () => {
   await readFeeds(env)
   expect(await saved()).toEqual([
-    { groupId: 'ithaca-swing-dance-network', title: 'Dance with Djug Django & Friends', date: '2099-11-14', startTime: '18:15', endTime: '21:30', venue: 'TreeHouse Studio, 119 S Cayuga St', styles: '["Swing"]', url: 'https://ithacaswing.org/calendar/dance-with-djug-django/', status: 'published' },
+    { groupId: 'ithaca-swing-dance-network', title: 'Dance with Djug Django & Friends', date: '2099-11-14', startTime: '18:15', endTime: '21:30', location: 'TreeHouse Studio, 119 S Cayuga St', styles: '["Swing"]', url: 'https://ithacaswing.org/calendar/dance-with-djug-django/', published: 1 },
     // 00:30 UTC is 7:30 PM the evening before in Ithaca. Tango Class is skipped by its group's words, Sabor's event is private.
-    { groupId: 'tango-at-cornell', title: 'Mistletoe Milonga', date: '2099-11-14', startTime: '19:30', endTime: '23:00', venue: '', styles: '["Tango"]', url: 'https://cornell.campusgroups.com/rsvp?id=milonga', status: 'published' },
-    { groupId: 'tango-at-cornell', title: 'Tango Mixer', date: '2099-11-14', startTime: '19:30', endTime: '23:00', venue: '', styles: '["Tango"]', url: 'https://cornell.campusgroups.com/rsvp?id=mixer', status: 'published' },
-    { groupId: 'hands-four', title: 'An evening of Contra Dancing', date: '2099-11-20', startTime: '19:00', endTime: '22:30', venue: 'Lehman Alternative Community School', styles: '["Contra"]', url: 'https://www.hands4dancers.org/upcoming-dances/2099/11/20/contra', status: 'published' },
+    { groupId: 'tango-at-cornell', title: 'Mistletoe Milonga', date: '2099-11-14', startTime: '19:30', endTime: '23:00', location: '', styles: '["Tango"]', url: 'https://cornell.campusgroups.com/rsvp?id=milonga', published: 1 },
+    { groupId: 'tango-at-cornell', title: 'Tango Mixer', date: '2099-11-14', startTime: '19:30', endTime: '23:00', location: '', styles: '["Tango"]', url: 'https://cornell.campusgroups.com/rsvp?id=mixer', published: 1 },
+    { groupId: 'hands-four', title: 'An evening of Contra Dancing', date: '2099-11-20', startTime: '19:00', endTime: '22:30', location: 'Lehman Alternative Community School', styles: '["Contra"]', url: 'https://www.hands4dancers.org/upcoming-dances/2099/11/20/contra', published: 1 },
   ])
 
-  // Organizers' choices survive the next reading: a hidden event stays hidden and a typed-in venue is kept.
-  await env.EVENTS_DB.prepare("UPDATE outside_events SET status = 'hidden' WHERE groupId = 'hands-four'").run()
-  await env.EVENTS_DB.prepare("UPDATE outside_events SET venue = 'Memorial Room' WHERE title = 'Mistletoe Milonga'").run()
+  // Organizers' choices survive the next reading: an unpublished event stays unpublished and a typed-in place is kept.
+  await env.EVENTS_DB.prepare("UPDATE outside_events SET published = 0 WHERE groupId = 'hands-four'").run()
+  await env.EVENTS_DB.prepare("UPDATE outside_events SET location = 'Memorial Room' WHERE title = 'Mistletoe Milonga'").run()
   // An upcoming event that leaves its feed is removed.
   campusEvents = campusEvents.filter(event => !event.includes('UID:mixer'))
   await readFeeds(env)
-  expect((await saved()).map(event => [event.title, event.venue, event.status])).toEqual([
-    ['Dance with Djug Django & Friends', 'TreeHouse Studio, 119 S Cayuga St', 'published'],
-    ['Mistletoe Milonga', 'Memorial Room', 'published'],
-    ['An evening of Contra Dancing', 'Lehman Alternative Community School', 'hidden'],
+  expect((await saved()).map(event => [event.title, event.location, event.published])).toEqual([
+    ['Dance with Djug Django & Friends', 'TreeHouse Studio, 119 S Cayuga St', 1],
+    ['Mistletoe Milonga', 'Memorial Room', 1],
+    ['An evening of Contra Dancing', 'Lehman Alternative Community School', 0],
   ])
 })
 
@@ -75,8 +71,8 @@ it('keeps a failing feed\'s events and records the problem', async () => {
 
 it('reads the city from a calendar location, and leaves it to the group when there is none', () => {
   const located = (location: string) => icsEvents(ics(`UID:a\n  DTSTART:20991114T181500\n  SUMMARY:Dance\n  LOCATION:${location}`))[0]
-  expect(located('Flynn Hall\\, 1 Main St\\, Rochester\\, NY 14620\\, United States')).toMatchObject({ venue: 'Flynn Hall, 1 Main St', city: 'Rochester' })
-  expect(located('Flynn Hall')).toMatchObject({ venue: 'Flynn Hall', city: '' })
+  expect(located('Flynn Hall\\, 1 Main St\\, Rochester\\, NY 14620\\, United States')).toMatchObject({ location: 'Flynn Hall, 1 Main St', city: 'Rochester' })
+  expect(located('Flynn Hall')).toMatchObject({ location: 'Flynn Hall', city: '' })
 })
 
 it('expands weekly series, skipping removed dates and applying changed ones', () => {

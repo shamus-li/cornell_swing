@@ -5,7 +5,7 @@ import { Input } from "../../check-in/src/components/ui/input"
 import { largeButtonClass } from "../../check-in/src/lib/sizes"
 import { StylePicker } from "../events/StylePicker"
 
-const blank = { title: "", groupName: "", date: "", startTime: "", endTime: "", venue: "", city: "Ithaca", price: "", url: "", email: "" }
+const blank = { title: "", groupName: "", date: "", startTime: "", endTime: "", location: "", city: "Ithaca", price: "", url: "", email: "" }
 
 // Lets anyone ask for a dance to be listed. Requests wait for an organizer in /manage.
 export function RequestEvent() {
@@ -61,7 +61,7 @@ function RequestDialog({ onClose }: { onClose: () => void }) {
           <label>Ends<Input type="time" {...field("endTime")} /></label>
         </div>
         <div className="request-times">
-          <label>Place<Input maxLength={300} {...field("venue")} /></label>
+          <label>Place<Input maxLength={300} {...field("location")} /></label>
           <label>City<Input maxLength={80} {...field("city")} /></label>
         </div>
         <label>Price<Input maxLength={100} {...field("price")} /></label>

@@ -3,20 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { setupNetwork } from '@msw/cloudflare'
 import { http, HttpResponse } from 'msw'
 import { exportJWK, generateKeyPair, SignJWT } from 'jose'
-import migration from '../../migrations/events/0001_events.sql?raw'
-import sheetMigration from '../../migrations/events/0002_rsvp_sheets.sql?raw'
-import sourceMigration from '../../migrations/events/0003_sheet_source.sql?raw'
-import roomMigration from '../../migrations/events/0004_event_room.sql?raw'
-import publishedMigration from '../../migrations/events/0005_event_published.sql?raw'
-import pricesMigration from '../../migrations/events/0006_event_prices.sql?raw'
-import alertEmailMigration from '../../migrations/events/0007_alert_email.sql?raw'
-import lessonEndMigration from '../../migrations/events/0010_lesson_end.sql?raw'
-import socialStartMigration from '../../migrations/events/0018_social_start.sql?raw'
-import slugsMigration from '../../migrations/events/0019_event_slugs.sql?raw'
-import venmoMigration from '../../migrations/events/0008_venmo.sql?raw'
-import gmailMigration from '../../migrations/events/0012_gmail.sql?raw'
-import squareMigration from '../../migrations/events/0013_square.sql?raw'
-import doorMigration from '../../migrations/events/0020_door_charges.sql?raw'
+import { resetEventsDb } from '../../check-in/test/events-db'
 import worker from './worker'
 import siteWorker from '../worker'
 import { changeEventWithSheet } from './sheets'
@@ -54,20 +41,19 @@ beforeAll(async () => {
   const sign = (audience: string) => new SignJWT({ email: 'manager@example.com' }).setProtectedHeader({ alg: 'RS256', kid: 'test-key' }).setIssuer(`https://${env.ACCESS_TEAM_DOMAIN}`).setAudience(audience).setExpirationTime('1h').sign(privateKey)
   managerToken = await sign(env.ACCESS_AUD)
   wrongAudienceToken = await sign('wrong-application')
-  await env.EVENTS_DB.exec(migration.replaceAll('\n', ' '))
-  await env.EVENTS_DB.exec(sheetMigration.replaceAll('\n', ' '))
-  await env.EVENTS_DB.exec(sourceMigration.replaceAll('\n', ' '))
-  await env.EVENTS_DB.exec(roomMigration.replaceAll('\n', ' '))
-  await env.EVENTS_DB.exec(publishedMigration.replaceAll('\n', ' '))
-  await env.EVENTS_DB.exec(pricesMigration.replaceAll('\n', ' '))
-  await env.EVENTS_DB.exec(alertEmailMigration.replaceAll('\n', ' '))
-  await env.EVENTS_DB.exec(lessonEndMigration.replace(/^--.*$/gm, '').replaceAll('\n', ' '))
-  await env.EVENTS_DB.exec(socialStartMigration.replace(/^--.*$/gm, '').replaceAll('\n', ' '))
-  await env.EVENTS_DB.exec(slugsMigration.replace(/^--.*$/gm, '').replaceAll('\n', ' '))
-  for (const sql of [venmoMigration, gmailMigration, squareMigration, doorMigration]) await env.EVENTS_DB.exec(sql.replace(/^--.*$/gm, '').replaceAll('\n', ' '))
+  await resetEventsDb()
 })
 afterAll(() => network.disable())
 beforeEach(async () => { await env.EVENTS_DB.exec('DELETE FROM rsvp_sheet_connection; DELETE FROM rsvps; DELETE FROM events;') })
+
+it('saves an event\'s styles and city, and defaults to swing in Ithaca', async () => {
+  expect(await create()).toMatchObject({ styles: ['Swing'], city: 'Ithaca' })
+  const created = await create({ title: 'Blues Trip', styles: ['Blues'], city: 'Rochester' })
+  const saved = await call(`/manage/api/events/${created.id}`, 'PUT', { ...created, styles: ['Blues', 'Swing'], city: 'Syracuse' }, true)
+  expect(saved.status).toBe(200)
+  const { events } = await (await call('/manage/api/events', 'GET', undefined, true)).json() as { events: import('./model').EventRecord[] }
+  expect(events.find(item => item.id === created.id)).toMatchObject({ styles: ['Swing', 'Blues'], city: 'Syracuse' })
+})
 
 describe('manager authorization', () => {
   it('reuses signing keys while verifying every request audience', async () => {
@@ -117,7 +103,7 @@ describe('event storage and RSVPs', () => {
     expect(response.headers.get('cache-control')).toBe('no-store')
   })
   it('still serves the homepage with a notice when the events database fails', async () => {
-    await (await caches.open('events')).delete(new Request(`${origin}/api/events`))
+    await (await caches.open('events-2')).delete(new Request(`${origin}/api/events`))
     const response = await worker.fetch(request('/'), {
       ...env,
       EVENTS_DB: { prepare: () => { throw new Error('D1 unavailable') } } as unknown as D1Database,
