@@ -1,7 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react"
 
 import campusGroupsQrUrl from "../../assets/campusgroups-qr.png"
-import waiverQrUrl from "../../assets/waiver-qr.png"
 
 import { SiteBrand } from "@shared/site/components/SiteBrand"
 import { Button } from "@/components/ui/button"
@@ -19,7 +18,8 @@ import { Person } from "@/components/ui/person"
 import { QrCallout } from "@/components/ui/qr-callout"
 import PhoneInput from "react-phone-number-input/input"
 import { Payment } from "@/Payment"
-import { forgetWaiver, NonCornellWaiver, preloadWaiver } from "@/Waiver"
+import { TimedButton } from "@/TimedButton"
+import { forgetWaiver, GeneralRiskWaiver, NonCornellWaiver, preloadWaiver } from "@/Waiver"
 import {
   Select,
   SelectContent,
@@ -52,7 +52,6 @@ type MembersResponse = {
 
 const MEMBER_SEARCH_DELAY_MS = 75
 const MEMBER_SEARCH_CACHE_LIMIT = 12
-const CONFIRMATION_TIMEOUT_MS = 30_000
 const IDLE_RESET_MS = 90_000
 const NO_RESULTS = { key: "", members: [], failed: false }
 
@@ -225,22 +224,25 @@ export default function App() {
       affiliation,
     }
     setIsSubmitting(true)
-    // Someone already checked in tonight goes straight to "Already checked in" instead of signing the waiver again.
-    if (PARTICIPANT_WAIVER_AFFILIATIONS.includes(affiliation)) {
-      const checkedIn = await isCheckedIn(attendee)
-      setIsSubmitting(false)
-      if (typeof checkedIn === "string") setMessage(checkedIn)
-      else if (checkedIn) setConfirmation("Already checked in")
-      else setWaiverAttendee(attendee)
-      return
+    // Someone already checked in tonight goes straight to "Already checked in" instead of seeing a waiver again.
+    const status = await checkinStatus(attendee)
+    if (typeof status === "string") {
+      setMessage(status)
+    } else if (status.checkedIn) {
+      setNext(status.next)
+      setConfirmation("Already checked in")
+    } else if (status.next.waiver === "cornell" || PARTICIPANT_WAIVER_AFFILIATIONS.includes(affiliation)) {
+      setWaiverAttendee(attendee)
+    } else {
+      const error = await checkIn(attendee)
+      if (error) setMessage(error)
     }
-    const error = await checkIn(attendee)
-    if (error) setMessage(error)
     setIsSubmitting(false)
   }
 
-  // Asks whether the attendee already checked in tonight; returns an error message when it can't tell.
-  async function isCheckedIn(attendee: Attendee): Promise<boolean | string> {
+  // Asks whether the attendee already checked in tonight and what they still need to do; returns an
+  // error message when it can't tell.
+  async function checkinStatus(attendee: Attendee): Promise<{ checkedIn: boolean; next: NextSteps } | string> {
     try {
       const response = await fetch("api/checkins/status", {
         method: "POST",
@@ -248,9 +250,9 @@ export default function App() {
         body: JSON.stringify(attendee),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       })
-      const payload = (await response.json().catch(() => ({}))) as { message?: string; checkedIn?: boolean }
+      const payload = (await response.json().catch(() => ({}))) as { message?: string; checkedIn: boolean; next: NextSteps }
       if (!response.ok) throw new Error(payload.message || "Check-in failed")
-      return payload.checkedIn === true
+      return payload
     } catch (error) {
       console.error(error)
       return isConnectionError(error)
@@ -335,24 +337,10 @@ export default function App() {
     }
   }, [confirmation, hasEntry])
 
-  // Nobody taps "Check in another person", so the kiosk returns to a blank form on its own.
-  useEffect(() => {
-    if (!confirmation) return
-    const timeout = window.setTimeout(resetForm, CONFIRMATION_TIMEOUT_MS)
-    return () => window.clearTimeout(timeout)
-  }, [confirmation])
-
   if (confirmation) {
     return (
       <main className="mx-auto flex min-h-svh w-full max-w-[540px] flex-col items-center justify-center gap-6 px-5 py-12 text-center sm:gap-8">
         <h1 className="text-[1.75rem] leading-tight font-semibold">{confirmation}</h1>
-        {next?.waiver === "cornell" && (
-          <QrCallout
-            title="Sign the General Risk waiver"
-            detail="Scan to sign with your NetID."
-            src={waiverQrUrl}
-          />
-        )}
         {next?.joinCampusGroups && (
           <QrCallout
             title="Join Swing Syndicate on CampusGroups"
@@ -360,15 +348,7 @@ export default function App() {
             src={campusGroupsQrUrl}
           />
         )}
-        <Button className={`relative overflow-hidden ${largeButtonClass}`} onClick={resetForm}>
-          {/* Lightens the button from the right over the 30 seconds before the kiosk returns to the form. */}
-          <span
-            aria-hidden="true"
-            className="absolute inset-0 origin-right bg-white/35"
-            style={{ animation: `confirmation-timer ${CONFIRMATION_TIMEOUT_MS}ms linear forwards` }}
-          />
-          <span className="relative">Check in another person</span>
-        </Button>
+        <TimedButton onClick={resetForm}>Check in another person</TimedButton>
       </main>
     )
   }
@@ -392,13 +372,20 @@ export default function App() {
           <SiteBrand link={false} />
         </header>
         <main className="pt-12">
-          <NonCornellWaiver
-            name={waiverAttendee.name}
-            email={waiverAttendee.email}
-            phone={waiverAttendee.phone}
-            onBack={() => setWaiverAttendee(null)}
-            onComplete={() => checkIn(waiverAttendee)}
-          />
+          {PARTICIPANT_WAIVER_AFFILIATIONS.includes(waiverAttendee.affiliation) ? (
+            <NonCornellWaiver
+              name={waiverAttendee.name}
+              email={waiverAttendee.email}
+              phone={waiverAttendee.phone}
+              onBack={() => setWaiverAttendee(null)}
+              onComplete={() => checkIn(waiverAttendee)}
+            />
+          ) : (
+            <GeneralRiskWaiver
+              onBack={() => setWaiverAttendee(null)}
+              onComplete={() => checkIn(waiverAttendee)}
+            />
+          )}
         </main>
       </div>
     )

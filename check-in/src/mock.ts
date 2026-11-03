@@ -5,6 +5,7 @@ import { searchMembers } from "@/lib/member-search"
 // Notion, or CampusGroups. Add &waiver=changed to see the kiosk skip the waiver when the form
 // changed, &waiver=down for the sign-on-your-phone fallback when CampusGroups is down, or
 // &waiver=refuses for that fallback after signing. Add &priced for an event with tickets to buy.
+// Jeff Bishop still needs the General Risk waiver and Ada Lovelace has signed it.
 
 const MEMBERS: Member[] = [
   { id: "mock-ada", name: "Ada Lovelace", email: "ada@cornell.edu", phone: "(607) 555-0101", affiliation: "Undergraduate Student" },
@@ -85,8 +86,8 @@ const MOCK_TICKETS = [
   { id: "general", name: "General", amount: 1500, days: 1 },
 ]
 const doorCharges = new Map<string, { id: string; body: Record<string, string>; ticketName: string; amount: number; createdAt: string; verifying: boolean }>([
-  ["mock-a", { id: "mock-a", body: { name: "Maya R." }, ticketName: "Student", amount: 1000, createdAt: new Date().toISOString(), verifying: false }],
-  ["mock-b", { id: "mock-b", body: { name: "Ben K." }, ticketName: "General", amount: 1500, createdAt: new Date().toISOString(), verifying: false }],
+  ["mock-a", { id: "mock-a", body: { name: "Maya Rivera" }, ticketName: "Student", amount: 1000, createdAt: new Date().toISOString(), verifying: false }],
+  ["mock-b", { id: "mock-b", body: { name: "Ben Kim" }, ticketName: "General", amount: 1500, createdAt: new Date().toISOString(), verifying: false }],
 ])
 const waiverMode = new URLSearchParams(window.location.search).get("waiver")
 
@@ -108,10 +109,10 @@ async function respond(path: string, init: RequestInit = {}): Promise<Response> 
   }
   if (path.endsWith("api/checkins/status")) {
     await wait(300)
-    return json({ checkedIn: checkedIn.has(body.email) })
+    return json({ checkedIn: checkedIn.has(body.email), next: nextSteps(body.email, body.affiliation) })
   }
   if (path.endsWith("api/door/queue")) {
-    return json({ applicationId: "mock-app", charges: [...doorCharges.values()].map(({ id, body: person, ticketName, amount, verifying }) => ({ id, label: person.name, ticketName, amount, verifying })) })
+    return json({ applicationId: "mock-app", justPaid: [], charges: [...doorCharges.values()].map(({ id, body: person, ticketName, amount, createdAt, verifying }) => ({ id, label: person.name, ticketName, amount, createdAt, verifying })) })
   }
   if (path.endsWith("api/door/charges")) {
     const id = `mock-${doorCharges.size + 1}`

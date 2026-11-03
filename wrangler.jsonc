@@ -89,7 +89,9 @@
     // The club Balance Sheet. The Square feed writes to its Transaction History tab, so the service account needs edit access.
     "FINANCE_SPREADSHEET_ID": "1VvZ_LG8_fNkqCuVqp_-3MBQPVFsAHl5mVo450IX1y00",
     // The Square app an officer authorizes to connect the club's Square account.
-    "SQUARE_APPLICATION_ID": "sq0idp-WTsAAemQr8eJ8XnHx4JIGg"
+    "SQUARE_APPLICATION_ID": "sq0idp-WTsAAemQr8eJ8XnHx4JIGg",
+    // Set in the staging environment, where nothing may reach the club's real records.
+    "STAGING": ""
   },
   "secrets": {
     "required": [

@@ -1,0 +1,63 @@
+// A copy of the site with fake data, for trying changes. It has no credentials for Notion or Google, so it
+// can't reach the club's records, and it only runs the Square check on a schedule. Its data comes from
+// scripts/staging-seed.sql and scripts/staging-members.json. Deploy it with `npm run deploy:staging`.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "swing-syndicate-staging",
+  "account_id": "826a8805e6c445803da24e740d6912e3",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-08-26",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "staging.swingsyndicate.club", "custom_domain": true }],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "none",
+    "run_worker_first": ["/*", "!/assets/*"]
+  },
+  "kv_namespaces": [{ "binding": "MEMBER_CACHE", "id": "58ce879efcb34b01b119d57c5b0e52f0" }],
+  "durable_objects": {
+    "bindings": [
+      { "name": "CHECKIN_GUARD", "class_name": "CheckinGuard" },
+      { "name": "ATTENDANCE_SYNC", "class_name": "AttendanceSync" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["CheckinGuard"] },
+    { "tag": "v2", "new_sqlite_classes": ["AttendanceSync"] }
+  ],
+  "ratelimits": [
+    { "name": "MEMBER_SEARCH_RATE_LIMITER", "namespace_id": "20261103", "simple": { "limit": 300, "period": 60 } },
+    { "name": "RSVP_RATE_LIMITER", "namespace_id": "20261104", "simple": { "limit": 10, "period": 60 } }
+  ],
+  "vars": {
+    "NOTION_MEMBERS_DATA_SOURCE_ID": "",
+    "NOTION_EVENTS_DATA_SOURCE_ID": "",
+    "NOTION_REQUESTS_PER_SECOND": "3",
+    "GOOGLE_SPREADSHEET_ID": "",
+    "GOOGLE_SHEET_NAME": "Check-ins",
+    "TIME_ZONE": "America/New_York",
+    "ACCESS_TEAM_DOMAIN": "swing-syndicate-cornell.cloudflareaccess.com",
+    // The Access application that protects staging.swingsyndicate.club.
+    "ACCESS_AUD": "8d7e26dc077aa0c599c3fb0e9ece88feb18c5338604651da872f8202add5ba0d",
+    "CLOUDFLARE_ACCOUNT_ID": "826a8805e6c445803da24e740d6912e3",
+    "REDIRECT_HOSTNAME": "staging.swingsyndicate.club",
+    "REDIRECT_LIST_ID": "",
+    "FINANCE_SPREADSHEET_ID": "",
+    // The Square app for staging, whose return address is this site.
+    "SQUARE_APPLICATION_ID": "sq0idp-0sbVtHk0wTJlna2IymyOcA",
+    "STAGING": "1"
+  },
+  "triggers": { "crons": ["*/10 * * * *"] },
+  "observability": { "enabled": true, "logs": { "enabled": true, "head_sampling_rate": 1 } },
+  "send_email": [{ "name": "ALERT_EMAIL" }],
+  "d1_databases": [{
+    "binding": "EVENTS_DB",
+    "database_name": "swing-events-staging",
+    "database_id": "0507309a-0511-44f9-a30d-db6260f31631",
+    "migrations_dir": "migrations/events"
+  }]
+}

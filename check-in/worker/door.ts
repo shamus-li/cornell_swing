@@ -6,9 +6,11 @@ import { timestampForSheet } from "./google"
 // Tickets at the door. A check-in at a paid event waits here until the attendee picks a ticket and pays,
 // and a ticket covering several days checks them in on that many of the event's days without paying again.
 export type DoorStatus = "pending" | "card" | "cash" | "free" | "waived" | "canceled"
-export type DoorCharge = { id: string; eventId: string; sessionDate: string; email: string; attendee: string; ticketName: string; amount: number; days: number; status: DoorStatus; tappedAt: string | null; callbackAt: string | null; createdAt: string }
+export type DoorCharge = { id: string; eventId: string; sessionDate: string; email: string; attendee: string; ticketName: string; amount: number; days: number; status: DoorStatus; paymentId: string | null; tappedAt: string | null; createdAt: string }
 
 const SETTLED = "('card', 'cash', 'free', 'waived')"
+// How long a trip to Square keeps being checked.
+const VERIFY_MS = 10 * 60_000
 
 // Every ticket type for the event; none means the event is free to enter.
 function eventTickets(event: CheckinEvent): DoorTicket[] {
@@ -48,7 +50,7 @@ export async function useHeldTicket(env: Env, session: EventSession, email: stri
 // its Square link, while a different ticket replaces it, so an old link can't pay for the new ticket.
 export async function openCardCharge(env: Env, session: EventSession, attendee: Attendee, ticket: Pick<DoorTicket, "name" | "amount" | "days">): Promise<DoorCharge> {
   const now = new Date().toISOString()
-  const same = await env.EVENTS_DB.prepare("UPDATE door_charges SET attendee = ?, sessionDate = ?, createdAt = ?, tappedAt = NULL, callbackAt = NULL WHERE eventId = ? AND email = ? AND status = 'pending' AND ticketName = ? AND amount = ? AND days = ? RETURNING *")
+  const same = await env.EVENTS_DB.prepare("UPDATE door_charges SET attendee = ?, sessionDate = ?, createdAt = ?, tappedAt = NULL WHERE eventId = ? AND email = ? AND status = 'pending' AND ticketName = ? AND amount = ? AND days = ? RETURNING *")
     .bind(JSON.stringify(attendee), session.sessionDate, now, session.id, attendee.email, ticket.name, ticket.amount, ticket.days).first<DoorCharge>()
   if (same) return same
   const [, inserted] = await env.EVENTS_DB.batch<DoorCharge>([
@@ -68,8 +70,8 @@ export const cancelCharge = (env: Env, id: string) =>
 const checkInOn = (env: Env, sessionDate: string, attendee: Attendee, eventId: string, timestamp: number) =>
   env.CHECKIN_GUARD.getByName(sessionDate).checkin(attendee, eventId, timestampForSheet(timestamp, env.TIME_ZONE))
 
-// A card payment found in Square. Records the check-in first, so a failure before the charge is marked paid
-// is retried on the next sync and finds the check-in already there.
+// A card payment found in Square. Records the check-in first, so if that fails the payment isn't saved and
+// the next sync tries again, and a retry after a later failure finds the check-in already there.
 export async function settleCardCharge(env: Env, charge: DoorCharge, paymentId: string, paidAt: number): Promise<void> {
   await checkInOn(env, charge.sessionDate, JSON.parse(charge.attendee) as Attendee, charge.eventId, paidAt)
   await env.EVENTS_DB.batch([
@@ -78,33 +80,39 @@ export async function settleCardCharge(env: Env, charge: DoorCharge, paymentId: 
   ])
 }
 
-// Cash, a free ticket or a volunteer, confirmed on the laptop. The laptop picks the ID, so retrying after a
-// lost response changes nothing, and any card charge still waiting is canceled. Cash goes on the Balance Sheet
-// with the event's Square payments.
-export async function settleAtDoor(env: Env, id: string, session: EventSession, attendee: Attendee, ticket: Pick<DoorTicket, "name" | "amount" | "days">, status: "cash" | "free" | "waived", timestamp: number): Promise<void> {
+// Cash, a free ticket or a volunteer, confirmed on a laptop. The laptop picks the ID, so retrying after a lost
+// response changes nothing, and any card charge still waiting is canceled. If another laptop already settled
+// this person for this day, nothing is recorded, even when both ask at once, and this returns false. Cash goes
+// on the Balance Sheet with the event's Square payments.
+export async function settleAtDoor(env: Env, id: string, session: EventSession, attendee: Attendee, ticket: Pick<DoorTicket, "name" | "amount" | "days">, status: "cash" | "free" | "waived", timestamp: number): Promise<boolean> {
   const now = new Date(timestamp).toISOString()
   await env.EVENTS_DB.batch([
-    env.EVENTS_DB.prepare("UPDATE door_charges SET status = 'canceled' WHERE eventId = ? AND email = ? AND status = 'pending'").bind(session.id, attendee.email),
-    env.EVENTS_DB.prepare("INSERT OR IGNORE INTO door_charges (id, eventId, sessionDate, email, attendee, ticketName, amount, days, status, createdAt, settledAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .bind(id, session.id, session.sessionDate, attendee.email, JSON.stringify(attendee), ticket.name, ticket.amount, ticket.days, status, now, now),
-    env.EVENTS_DB.prepare("INSERT OR IGNORE INTO door_ticket_days (chargeId, date) VALUES (?, ?)").bind(id, session.sessionDate),
+    env.EVENTS_DB.prepare(`INSERT OR IGNORE INTO door_charges (id, eventId, sessionDate, email, attendee, ticketName, amount, days, status, createdAt, settledAt) SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10 WHERE NOT EXISTS (SELECT 1 FROM door_charges c JOIN door_ticket_days d ON d.chargeId = c.id WHERE c.eventId = ?2 AND c.email = ?4 AND d.date = ?3 AND c.status IN ${SETTLED})`)
+      .bind(id, session.id, session.sessionDate, attendee.email, JSON.stringify(attendee), ticket.name, ticket.amount, ticket.days, status, now),
+    env.EVENTS_DB.prepare("UPDATE door_charges SET status = 'canceled' WHERE eventId = ? AND email = ? AND status = 'pending' AND EXISTS (SELECT 1 FROM door_charges WHERE id = ?)").bind(session.id, attendee.email, id),
+    env.EVENTS_DB.prepare("INSERT OR IGNORE INTO door_ticket_days (chargeId, date) SELECT id, ? FROM door_charges WHERE id = ?").bind(session.sessionDate, id),
     ...(status === "cash"
-      ? [env.EVENTS_DB.prepare("INSERT OR IGNORE INTO square_payments (id, paidAt, amount, fee, cash, note, eventId) VALUES (?, ?, ?, 0, 1, ?, ?)").bind(`cash:${id}`, now, ticket.amount, `Door cash: ${ticket.name}`, session.id)]
+      ? [env.EVENTS_DB.prepare("INSERT OR IGNORE INTO square_payments (id, paidAt, amount, fee, cash, note, eventId) SELECT ?, ?, amount, 0, 1, ?, ? FROM door_charges WHERE id = ?").bind(`cash:${id}`, now, `Door cash: ${ticket.name}`, session.id, id)]
       : []),
   ])
+  if (!await findCharge(env, id)) return false
   await checkInOn(env, session.sessionDate, attendee, session.id, timestamp)
+  return true
 }
 
-// How long someone stays on the iPhone's list, and how long a trip to Square keeps being checked.
+// How long someone stays on the iPhone's list.
 const QUEUE_MS = 30 * 60_000
-const VERIFY_MS = 5 * 60_000
 
 export async function queuedCharges(env: Env): Promise<DoorCharge[]> {
   return (await env.EVENTS_DB.prepare("SELECT * FROM door_charges WHERE status = 'pending' AND createdAt > ? ORDER BY createdAt")
     .bind(new Date(Date.now() - QUEUE_MS).toISOString()).all<DoorCharge>()).results
 }
 
-export const isVerifying = ({ tappedAt, callbackAt }: DoorCharge) => {
-  const since = callbackAt ?? tappedAt
-  return !!since && Date.now() - Date.parse(since) < VERIFY_MS
+// Who just paid by card, for the iPhone to confirm. Finding a payment can take a little while after it's made.
+const JUST_PAID_MS = 30_000
+export async function justPaidCharges(env: Env): Promise<DoorCharge[]> {
+  return (await env.EVENTS_DB.prepare("SELECT * FROM door_charges WHERE status = 'card' AND settledAt > ? ORDER BY settledAt DESC LIMIT 1")
+    .bind(new Date(Date.now() - JUST_PAID_MS).toISOString()).all<DoorCharge>()).results
 }
+
+export const isVerifying = ({ tappedAt }: DoorCharge) => !!tappedAt && Date.now() - Date.parse(tappedAt) < VERIFY_MS

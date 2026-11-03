@@ -14,7 +14,8 @@
     "hero:image": "node scripts/prepare-hero-image.mjs",
     "worker:types": "wrangler types worker-configuration.d.ts --config wrangler.jsonc --include-runtime false",
     "worker:check": "npm run build && wrangler deploy --dry-run --config wrangler.jsonc",
-    "deploy": "npm run worker:check && wrangler deploy --config wrangler.jsonc"
+    "deploy": "npm run worker:check && wrangler deploy --config wrangler.jsonc",
+    "deploy:staging": "npm run build && wrangler deploy --config wrangler.staging.jsonc"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

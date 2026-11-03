@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { isConnectionError, REQUEST_TIMEOUT_MS, type Attendee, type DoorTicket, type NextSteps } from "@/lib/checkin"
 import { largeButtonClass } from "@/lib/sizes"
+import { TimedButton } from "@/TimedButton"
 
 export const formatAmount = (cents: number) => cents ? `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}` : "Free"
 const POLL_MS = 2000
@@ -46,11 +47,12 @@ export function Payment({ attendee, event, tickets, onPaid, onLeave }: { attende
     return () => window.clearInterval(interval)
   }, [chargeId, onPaid])
 
-  async function payByCard(chosen: DoorTicket) {
+  async function payOnPhone(chosen: DoorTicket) {
     setBusy(true)
     setMessage("")
     try {
       const response = await post("charges", { ...attendee, ticketId: chosen.id })
+      if (response.status === 409) return onPaid(((await response.json()) as { next?: NextSteps }).next ?? null)
       if (!response.ok) throw new Error(`Charge failed with ${response.status}`)
       setChargeId(((await response.json()) as { id: string }).id)
       setMethod("card")
@@ -74,7 +76,7 @@ export function Payment({ attendee, event, tickets, onPaid, onLeave }: { attende
     setMessage("")
     try {
       const response = await post("settle", { ...attendee, id: settleId.current, method: settleMethod, ticketId })
-      if (!response.ok) throw new Error(`Settle failed with ${response.status}`)
+      if (!response.ok && response.status !== 409) throw new Error(`Settle failed with ${response.status}`)
       return onPaid(((await response.json()) as { next?: NextSteps }).next ?? null)
     } catch (error) {
       console.error(error)
@@ -123,7 +125,7 @@ export function Payment({ attendee, event, tickets, onPaid, onLeave }: { attende
         </div>
         <div className="flex flex-col gap-3">
           <Button variant="outline" className={largeButtonClass} onClick={() => void backFromCard()}>Pay another way</Button>
-          <Button variant="ghost" className={largeButtonClass} onClick={onLeave}>Check in another person</Button>
+          <TimedButton onClick={onLeave}>Check in another person</TimedButton>
         </div>
       </main>
     )
@@ -146,7 +148,7 @@ export function Payment({ attendee, event, tickets, onPaid, onLeave }: { attende
     <main className={main}>
       <div><p className="text-base text-muted-foreground">{event}{tickets.length > 1 && ` · ${ticket.name}`}</p><h1 className={heading}>Pay {price}</h1></div>
       <div className="flex flex-col gap-3">
-        <Button className={largeButtonClass} disabled={busy} onClick={() => void payByCard(ticket)}>Card or phone</Button>
+        <Button className={largeButtonClass} disabled={busy} onClick={() => void payOnPhone(ticket)}>Card or phone</Button>
         <Button variant="outline" className={largeButtonClass} disabled={busy} onClick={() => setMethod("cash")}>Cash</Button>
         {tickets.length > 1
           ? <Button variant="ghost" className={largeButtonClass} disabled={busy} onClick={() => { settleId.current = crypto.randomUUID(); setTicket(null) }}>Choose a different ticket</Button>

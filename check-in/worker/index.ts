@@ -14,7 +14,7 @@ import {
 } from "../src/lib/checkin"
 import type { CheckinStats } from "../src/lib/member-search"
 import { cachedMembers, searchCachedMembers, storeCheckinStats, storeMemberCache } from "./cache"
-import { cancelCharge, findCharge, findTicket, isVerifying, openCardCharge, queuedCharges, settleAtDoor, ticketsToOffer, useHeldTicket, volunteerTicket, type DoorCharge } from "./door"
+import { cancelCharge, findCharge, findTicket, isVerifying, justPaidCharges, openCardCharge, queuedCharges, settleAtDoor, ticketsToOffer, useHeldTicket, volunteerTicket, type DoorCharge } from "./door"
 import { eventAtSheetTimestamp, findCheckinEvent, type EventSession } from "./events"
 import {
   type CheckinRow,
@@ -205,21 +205,17 @@ export async function handleCheckin(request: Request, env: Env, timestamp = Date
 const firstName = (charge: DoorCharge) => (JSON.parse(charge.attendee) as Attendee).name.split(/\s+/)[0]
 const isPaid = (charge: DoorCharge) => charge.status !== "pending" && charge.status !== "canceled"
 
-// "Ada L."
-function queueLabel(charge: DoorCharge): string {
-  const parts = (JSON.parse(charge.attendee) as Attendee).name.split(/\s+/)
-  return parts.length > 1 ? `${parts[0]} ${parts.at(-1)![0]}.` : parts[0]
-}
-
 async function syncSquareQuietly(env: Env): Promise<void> {
   await syncPayments(env).catch((error: unknown) => console.error(JSON.stringify({ message: "Square sync failed", error: errorMessage(error) })))
 }
 
-// The iPhone asks every few seconds while someone is paying; Square only needs asking now and then.
-const SYNC_EVERY_MS = 15_000
+// Several laptops and the phone all ask while someone is paying, so only one of them gets to look at Square
+// every few seconds. Moving syncedAt early is safe because each sync lists the last few days again.
+const SYNC_EVERY_MS = 5_000
 async function syncSquareIfStale(env: Env): Promise<void> {
-  const syncedAt = await env.EVENTS_DB.prepare("SELECT syncedAt FROM square_connection").first<string>("syncedAt")
-  if (syncedAt && Date.now() - Date.parse(syncedAt) >= SYNC_EVERY_MS) await syncSquareQuietly(env)
+  const claimed = await env.EVENTS_DB.prepare("UPDATE square_connection SET syncedAt = ? WHERE syncedAt < ?")
+    .bind(new Date().toISOString(), new Date(Date.now() - SYNC_EVERY_MS).toISOString()).run()
+  if (claimed.meta.changes) await syncSquareQuietly(env)
 }
 
 // The laptop's payment step and the iPhone's list. A card charge is settled when its payment shows up
@@ -233,7 +229,8 @@ async function handleDoor(request: Request, env: Env, path: string, timestamp = 
     }
     return json({
       applicationId: env.SQUARE_APPLICATION_ID,
-      charges: charges.map((charge) => ({ id: charge.id, label: queueLabel(charge), ticketName: charge.ticketName, amount: charge.amount, verifying: isVerifying(charge) })),
+      justPaid: (await justPaidCharges(env)).map(firstName),
+      charges: charges.map((charge) => ({ id: charge.id, label: (JSON.parse(charge.attendee) as Attendee).name, ticketName: charge.ticketName, amount: charge.amount, createdAt: charge.createdAt, verifying: isVerifying(charge) })),
     })
   }
   if (path === "charges" && request.method === "POST") {
@@ -243,6 +240,9 @@ async function handleDoor(request: Request, env: Env, path: string, timestamp = 
     const { event } = await eventNow(env, timestamp)
     const ticket = findTicket(event, ticketId)
     if (!ticket?.amount) return json({ message: "Choose a ticket" }, 400)
+    if (await env.CHECKIN_GUARD.getByName(event.sessionDate).isCheckedIn(attendee, event.id)) {
+      return json({ message: "Already checked in", next: await nextSteps(env, attendee) }, 409)
+    }
     const charge = await openCardCharge(env, event, attendee, ticket)
     return json({ id: charge.id, amount: charge.amount }, 201)
   }
@@ -255,8 +255,12 @@ async function handleDoor(request: Request, env: Env, path: string, timestamp = 
     const { event } = await eventNow(env, timestamp)
     const ticket = method === "waived" ? volunteerTicket(event) : findTicket(event, ticketId)
     if (!ticket || (method === "cash") !== ticket.amount > 0) return json({ message: "Choose a ticket" }, 400)
-    await settleAtDoor(env, id, event, attendee, ticket, method, timestamp)
-    return json({ message: "Checked in", next: await nextSteps(env, attendee) }, 201)
+    // Another laptop already checked them in, unless this is a retry of the same payment.
+    if (!await findCharge(env, id) && await env.CHECKIN_GUARD.getByName(event.sessionDate).isCheckedIn(attendee, event.id)) {
+      return json({ message: "Already checked in", next: await nextSteps(env, attendee) }, 409)
+    }
+    const recorded = await settleAtDoor(env, id, event, attendee, ticket, method, timestamp)
+    return json({ message: recorded ? "Checked in" : "Already checked in", next: await nextSteps(env, attendee) }, recorded ? 201 : 409)
   }
   const match = path.match(/^charges\/([^/]+)(?:\/(tap|return))?$/)
   const charge = match && await findCharge(env, match[1])
@@ -268,18 +272,17 @@ async function handleDoor(request: Request, env: Env, path: string, timestamp = 
   }
   if (match[2] === "return" && request.method === "POST") {
     const { ok } = (await request.json()) as { ok?: boolean }
-    if (ok) {
-      await env.EVENTS_DB.prepare("UPDATE door_charges SET callbackAt = ? WHERE id = ? AND status = 'pending'").bind(new Date(timestamp).toISOString(), charge.id).run()
-      await syncSquareQuietly(env)
-    } else {
-      await env.EVENTS_DB.prepare("UPDATE door_charges SET tappedAt = NULL, callbackAt = NULL WHERE id = ?").bind(charge.id).run()
-    }
+    if (ok) await syncSquareIfStale(env)
+    else await env.EVENTS_DB.prepare("UPDATE door_charges SET tappedAt = NULL WHERE id = ? AND status = 'pending'").bind(charge.id).run()
     const current = (await findCharge(env, charge.id))!
     return json({ status: isPaid(current) ? "paid" : "pending", name: firstName(current) })
   }
+  // The laptop asks too, because the phone's page stops while Square's app is open.
   if (request.method === "GET") {
-    return json(isPaid(charge)
-      ? { status: "paid", next: await nextSteps(env, JSON.parse(charge.attendee) as Attendee) }
+    if (isVerifying(charge)) await syncSquareIfStale(env)
+    const current = (await findCharge(env, charge.id))!
+    return json(isPaid(current)
+      ? { status: "paid", next: await nextSteps(env, JSON.parse(current.attendee) as Attendee) }
       : { status: "pending" })
   }
   if (request.method === "DELETE") {
@@ -289,16 +292,16 @@ async function handleDoor(request: Request, env: Env, path: string, timestamp = 
   return json({ message: "Method not allowed" }, 405)
 }
 
-// Whether the attendee already checked into tonight's event, asked before the participant waiver.
+// Whether the attendee already checked into tonight's event and what they still need to do, asked before the waivers.
 export async function handleCheckinStatus(request: Request, env: Env, timestamp = Date.now()): Promise<Response> {
   const attendee = await readCheckinAttendee(request, env)
   if (attendee instanceof Response) return attendee
   const { event } = await eventNow(env, timestamp)
   const guard = env.CHECKIN_GUARD.getByName(event.sessionDate)
-  return json({ checkedIn: await guard.isCheckedIn(attendee, event.id) })
+  return json({ checkedIn: await guard.isCheckedIn(attendee, event.id), next: await nextSteps(env, attendee) })
 }
 
-// What the attendee still needs to do after checking in, from the latest CampusGroups member upload.
+// What the attendee still needs to do, from the latest CampusGroups member upload.
 async function nextSteps(env: Env, attendee: Attendee): Promise<NextSteps> {
   if (PARTICIPANT_WAIVER_AFFILIATIONS.includes(attendee.affiliation)) return { waiver: null, joinCampusGroups: false }
   const campusGroups = await env.MEMBER_CACHE.get<CampusGroupsData>(campusGroupsKey, "json")
@@ -325,6 +328,8 @@ async function handleWaiver(request: Request, env: Env): Promise<Response> {
   if (!signatureMatchesName(signature, name)) {
     return json({ message: `Sign with your full name: ${name}` }, 400)
   }
+  // A waiver signed on staging must not reach the real CampusGroups form.
+  if (env.STAGING) return json({ message: "Waiver signed" }, 201)
   const timestamp = Date.now()
   const event = await eventAtSheetTimestamp(env, timestampForSheet(timestamp, env.TIME_ZONE))
   const eventName = waiverEventName(event)

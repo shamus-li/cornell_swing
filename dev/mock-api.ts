@@ -5,7 +5,7 @@ import { DancesPage } from "../src/site/DancesPage"
 import { EventPage } from "../src/site/EventPage"
 import { todayInNewYork, validateEvent, type ManagedEvent } from "../src/events/model"
 import { baseSlug } from "../src/events/slugs"
-import { events as sampleEvents, outsideEvents, square } from "./mock-data"
+import { events as sampleEvents, finance, outsideEvents, square } from "./mock-data"
 
 // Stands in for the Worker under `npm run dev`, so every page has data without signing in.
 // Saves run the real event validation and last until this code changes or the dev server restarts.
@@ -70,6 +70,8 @@ async function respond(req: IncomingMessage, path: string): Promise<object | nul
   }
   if (route.startsWith("/locations")) return { places: [] }
   if (route === "/square") return square
+  if (route === "/finance") return finance
+  if (route === "/finance/campusgroups") return { ...finance, campusGroupsUploadedAt: new Date().toISOString() }
   if (route === "/alert-email") return { email: "alerts@example.com", verified: true }
   if (route.startsWith("/rsvp-sheet")) return { connection: null, serviceAccountEmail: null }
   if (route === "/campusgroups") return { uploadedAt: null, count: null, members: null, generalRisk: null }

@@ -40,7 +40,13 @@ const isCheckedIn = async (timestamp = Date.now()) =>
 const queue = async () => ((await (await get("door/queue")).json()) as { charges: { id: string; label: string; ticketName: string; amount: number; verifying: boolean }[] }).charges
 
 let payments: Record<string, unknown>[] = []
-const squarePayment = (chargeId: string, amount = 1500) => ({ id: "square-1", created_at: new Date().toISOString(), status: "COMPLETED", source_type: "CARD", amount_money: { amount, currency: "USD" }, processing_fee: [{ amount_money: { amount: 54, currency: "USD" } }], note: `door:${chargeId} Ada L.` })
+let orders: Record<string, object> = {}
+// A sale from a door phone keeps the charge's ID in a note on its order.
+const squarePayment = (chargeId: string | null, amount = 1500, id = "square-1") => {
+  orders[`order-${id}`] = { order: { id: `order-${id}`, line_items: [{ name: "Custom Amount", note: chargeId ? `door:${chargeId} Ada L. General` : "T-shirt" }] } }
+  return { id, order_id: `order-${id}`, created_at: new Date().toISOString(), status: "COMPLETED", source_type: "CARD", amount_money: { amount, currency: "USD" }, processing_fee: [{ amount_money: { amount: 54, currency: "USD" } }] }
+}
+const tap = (id: string) => post(`door/charges/${id}/tap`, {})
 
 beforeEach(async () => {
   await resetEventsDb()
@@ -53,11 +59,13 @@ beforeEach(async () => {
     })
   }
   payments = []
+  orders = {}
   await env.EVENTS_DB.prepare("INSERT INTO events (id, kind, title, date, moreDays, lastDate, startTime, endTime, tickets, updatedAt) VALUES ('weekend', 'special', 'Sweater Weather Swing', ?1, ?2, ?3, '00:00', '23:59', ?4, '')")
     .bind(today(), JSON.stringify([{ date: tomorrow(), startTime: "00:00", endTime: "23:59" }]), tomorrow(), JSON.stringify(tickets)).run()
-  await env.EVENTS_DB.prepare("INSERT INTO square_connection (id, merchantId, name, accessToken, refreshToken, expiresAt, syncedAt) VALUES (1, 'club', 'Club', 'token', 'refresh', '2099-01-01T00:00:00Z', ?)").bind(new Date().toISOString()).run()
+  await env.EVENTS_DB.prepare("INSERT INTO square_connection (id, merchantId, name, accessToken, refreshToken, expiresAt, syncedAt) VALUES (1, 'club', 'Club', 'token', 'refresh', '2099-01-01T00:00:00Z', ?)").bind(new Date(Date.now() - 60_000).toISOString()).run()
   network.use(
     http.get("https://connect.squareup.com/v2/payments", () => HttpResponse.json({ payments })),
+    http.get("https://connect.squareup.com/v2/orders/:id", ({ params }) => HttpResponse.json(orders[params.id as string])),
     http.get("https://sheets.googleapis.com/v4/spreadsheets/:id/values:batchGet", () => HttpResponse.json({ valueRanges: [{}, {}, {}] })),
     http.post("https://sheets.googleapis.com/v4/spreadsheets/:id/values:batchUpdate", () => HttpResponse.json({})),
   )
@@ -122,15 +130,44 @@ describe("door tickets", () => {
 
   it("settles a card charge when Square has the payment", async () => {
     const { id } = (await (await post("door/charges", general)).json()) as { id: string }
-    expect(await queue()).toMatchObject([{ id, label: "Ada L.", ticketName: "General", amount: 1500, verifying: false }])
+    expect(await queue()).toMatchObject([{ id, label: "Ada Lovelace", ticketName: "General", amount: 1500, verifying: false }])
     expect(await (await get(`door/charges/${id}`)).json()).toEqual({ status: "pending" })
 
+    await tap(id)
     payments.push(squarePayment(id))
     expect(await (await post(`door/charges/${id}/return`, { ok: true })).json()).toEqual({ status: "paid", name: "Ada" })
     expect(await isCheckedIn()).toBe(true)
     expect(await queue()).toEqual([])
+    expect(await (await get("door/queue")).json()).toMatchObject({ justPaid: ["Ada"] })
     expect(await (await get(`door/charges/${id}`)).json()).toMatchObject({ status: "paid" })
     expect(await env.EVENTS_DB.prepare("SELECT eventId, fee FROM square_payments").first()).toEqual({ eventId: "weekend", fee: 54 })
+  })
+
+  it("gives each payment to its own person when two phones finish in the opposite order", async () => {
+    const first = (await (await post("door/charges", general)).json()) as { id: string }
+    const second = (await (await post("door/charges", { ...ada, email: "grace@example.com", name: "Grace Hopper", ticketId: "general" })).json()) as { id: string }
+    await tap(first.id)
+    await tap(second.id)
+    payments.push(squarePayment(second.id, 1500, "paid-second"), squarePayment(first.id, 1500, "paid-first"))
+    await syncPayments(env)
+    expect(await env.EVENTS_DB.prepare("SELECT paymentId FROM door_charges WHERE id = ?").bind(first.id).first("paymentId")).toBe("paid-first")
+    expect(await env.EVENTS_DB.prepare("SELECT paymentId FROM door_charges WHERE id = ?").bind(second.id).first("paymentId")).toBe("paid-second")
+  })
+
+  it("leaves other Square sales alone, even for the same amount while someone is paying", async () => {
+    const { id } = (await (await post("door/charges", general)).json()) as { id: string }
+    await tap(id)
+    payments.push(squarePayment(null))
+    await syncPayments(env)
+    expect(await isCheckedIn()).toBe(false)
+    expect(await env.EVENTS_DB.prepare("SELECT status FROM door_charges").first("status")).toBe("pending")
+  })
+
+  it("asks to connect again when the connection lacks permission to read orders", async () => {
+    payments.push({ ...squarePayment(null), order_id: "no-access" })
+    network.use(http.get("https://connect.squareup.com/v2/orders/no-access", () => HttpResponse.json({ errors: [{ code: "INSUFFICIENT_SCOPES" }] }, { status: 403 })))
+    await syncPayments(env)
+    expect(await env.EVENTS_DB.prepare("SELECT COUNT(*) AS count FROM square_connection").first("count")).toBe(0)
   })
 
   it("refuses a card charge for a ticket the event doesn't have", async () => {
@@ -138,10 +175,12 @@ describe("door tickets", () => {
     expect((await post("door/charges", { ...ada, ticketId: "kid" })).status).toBe(400)
   })
 
-  it("settles a card charge even when the return from Square is lost", async () => {
+  it("settles a card charge without any return from Square, when the laptop asks", async () => {
     const { id } = (await (await post("door/charges", general)).json()) as { id: string }
+    await tap(id)
     payments.push(squarePayment(id))
-    await syncSquare(env)
+    await env.EVENTS_DB.prepare("UPDATE square_connection SET syncedAt = ?").bind(new Date(Date.now() - 60_000).toISOString()).run()
+    expect(await (await get(`door/charges/${id}`)).json()).toMatchObject({ status: "paid" })
     expect(await isCheckedIn()).toBe(true)
   })
 
@@ -155,6 +194,7 @@ describe("door tickets", () => {
 
   it("takes someone off the queue when they pay another way, and doesn't settle a card payment that lands afterward", async () => {
     const { id } = (await (await post("door/charges", general)).json()) as { id: string }
+    await tap(id)
     await handleApiRequest(new Request(`https://example.com/check-in/api/door/charges/${id}`, { method: "DELETE" }), env)
     expect(await queue()).toEqual([])
     payments.push(squarePayment(id))
@@ -176,6 +216,7 @@ describe("door tickets", () => {
     const second = (await (await post("door/charges", { ...ada, ticketId: "weekend" })).json()) as { id: string }
     expect(second.id).not.toBe(first.id)
     expect(await queue()).toMatchObject([{ id: second.id, ticketName: "Weekend pass", amount: 2500 }])
+    await tap(first.id)
     payments.push(squarePayment(first.id))
     await syncPayments(env)
     expect(await isCheckedIn()).toBe(false)
@@ -183,6 +224,7 @@ describe("door tickets", () => {
 
   it("doesn't settle a payment for the wrong amount", async () => {
     const { id } = (await (await post("door/charges", general)).json()) as { id: string }
+    await tap(id)
     payments.push(squarePayment(id, 100))
     await syncPayments(env)
     expect(await isCheckedIn()).toBe(false)
@@ -191,6 +233,7 @@ describe("door tickets", () => {
 
   it("settles once Square has the payment after a return that says paid", async () => {
     const { id } = (await (await post("door/charges", general)).json()) as { id: string }
+    await tap(id)
     await post(`door/charges/${id}/return`, { ok: true })
     expect(await queue()).toMatchObject([{ id, verifying: true }])
     payments.push(squarePayment(id))

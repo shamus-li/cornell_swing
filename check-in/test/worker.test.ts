@@ -317,14 +317,33 @@ describe("check-in", () => {
     const status = async (overrides: Record<string, unknown> = {}) =>
       (await (await handleCheckinStatus(statusRequest(overrides), env, TEST_TIMESTAMP)).json()) as { checkedIn: boolean }
 
-    expect(await status()).toEqual({ checkedIn: false })
+    expect(await status()).toMatchObject({ checkedIn: false })
     expect((await handleCheckin(checkinRequest(), env, TEST_TIMESTAMP)).status).toBe(201)
-    expect(await status()).toEqual({ checkedIn: true })
+    expect(await status()).toMatchObject({ checkedIn: true })
 
     const newcomer = { memberId: null, name: "New Dancer", email: "new@example.com" }
-    expect(await status(newcomer)).toEqual({ checkedIn: false })
+    expect(await status(newcomer)).toMatchObject({ checkedIn: false })
     expect((await handleCheckin(checkinRequest(newcomer), env, TEST_TIMESTAMP)).status).toBe(201)
-    expect(await status(newcomer)).toEqual({ checkedIn: true })
+    expect(await status(newcomer)).toMatchObject({ checkedIn: true })
+  })
+
+  it("reports who still needs the General Risk waiver before they check in", async () => {
+    useFakes()
+    await env.MEMBER_CACHE.put("campusgroups:v1", JSON.stringify({
+      uploadedAt: "2026-10-01T00:00:00.000Z",
+      people: { "signed@cornell.edu": { member: true, generalRisk: true } },
+    }))
+    const status = async (email: string) => {
+      const request = new Request("https://example.com/check-in/api/checkins/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: checkinRequestBody({ memberId: null, email, affiliation: "Staff" }),
+      })
+      return (await handleCheckinStatus(request, env, TEST_TIMESTAMP)).json()
+    }
+
+    expect(await status("unknown@cornell.edu")).toMatchObject({ checkedIn: false, next: { waiver: "cornell" } })
+    expect(await status("signed@cornell.edu")).toMatchObject({ checkedIn: false, next: { waiver: null } })
   })
 
   it("records a first-time attendee with a generated durable member ID and tonight's event", async () => {

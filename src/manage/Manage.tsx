@@ -21,6 +21,7 @@ import { Tabs } from "./Tabs"
 import { Newsletter } from "./Newsletter"
 import { AlertEmail } from "./AlertEmail"
 import { DanceFeeds } from "./DanceFeeds"
+import { FinanceOverview } from "./FinanceOverview"
 import { Finances } from "./Finances"
 import { blankOutsideEvent, OutsideEventForm, outsideSummary } from "./OutsideEventForm"
 import type { OutsideEvent } from "../events/outside"
@@ -164,7 +165,7 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
         {notice && <p role="status" className="manage-notice">{notice}</p>}
         {error && <p role="alert" className="event-error manage-notice">{error} <Button variant="link" size="sm" onClick={() => window.location.reload()}>Reload</Button></p>}
         <div role="tabpanel" className="manage-panel" aria-label={tabLabel}>
-          {tab === "settings" ? <><SheetConnection onSync={load} /><CampusGroupsUpload /><DanceFeeds /><AlertEmail /></> : tab === "finances" ? <Finances /> : loading ? <p role="status" className="event-muted manage-notice">Loading events…</p> : tab === "newsletter" ? <Newsletter events={events} actions={titleActions} /> : tab === "special"
+          {tab === "settings" ? <><SheetConnection onSync={load} /><CampusGroupsUpload /><DanceFeeds /><AlertEmail /></> : tab === "finances" ? <><FinanceOverview /><Finances /></> : loading ? <p role="status" className="event-muted manage-notice">Loading events…</p> : tab === "newsletter" ? <Newsletter events={events} actions={titleActions} /> : tab === "special"
             ? <>{review.length > 0 && <section className="manage-group" aria-label="Waiting for review"><h2>Waiting for review</h2><div className="manage-list">{review.map(outsideRow)}</div></section>}<EventGroups<ManagedEvent | OutsideEvent> events={[...events.filter(event => event.kind === "special" && groupFilter !== "theirs"), ...shownOutside.filter(event => !review.includes(event))].sort(byDate)} render={item => "groupName" in item ? outsideRow(item) : specialRow(item)} empty="No special events yet." first={editingOutside === "" && <OutsideEventForm event={blankOutsideEvent()} groups={groups} onSave={acceptOutside} onCancel={() => setEditingOutside(null)} />} /></>
             : <EventGroups events={events.filter(event => event.kind === "normal")} render={lessonRow} empty="No weekly lessons yet." first={activeNormal === "" && <NormalEventRow ref={normalEditor} editing onEdit={() => {}} event={newEvent("normal")} onSave={saveNormal} onCancel={() => setActiveNormal(null)} />} />}
         </div>

@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react"
 
 import participantWaiverQrUrl from "../../assets/participant-waiver-qr.png"
+import generalRiskQrUrl from "../../assets/waiver-qr.png"
 
 import { Button } from "@/components/ui/button"
 import { FloatingField, floatingInputClass } from "@/components/ui/floating-field"
@@ -37,6 +38,72 @@ export function preloadWaiver(): Promise<WaiverResult> {
 // The event name changes by day, so each attendee gets a fresh load.
 export function forgetWaiver(): void {
   pendingWaiver = null
+}
+
+// A waiver signed by scanning a QR code. The confirm button only moves on: nothing records or verifies the signature.
+function SignOnPhone({
+  title,
+  detail,
+  src,
+  confirm,
+  onBack,
+  onComplete,
+}: {
+  title: string
+  detail: string
+  src: string
+  confirm: string
+  onBack: () => void
+  // Records the check-in; returns an error message when it fails.
+  onComplete: () => Promise<string | null>
+}) {
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [message, setMessage] = useState("")
+
+  async function complete() {
+    setMessage("")
+    setIsSubmitting(true)
+    const error = await onComplete()
+    if (error) setMessage(error)
+    setIsSubmitting(false)
+  }
+
+  return (
+    <div className="space-y-4">
+      <QrCallout title={title} detail={detail} src={src} />
+      <Button className={`w-full ${largeButtonClass}`} onClick={complete} disabled={isSubmitting}>
+        {isSubmitting ? "Checking in…" : confirm}
+      </Button>
+      <Button className={`w-full ${largeButtonClass}`} variant="outline" onClick={onBack} disabled={isSubmitting}>
+        Back
+      </Button>
+      <p className="text-destructive text-base" role="alert">
+        {message}
+      </p>
+    </div>
+  )
+}
+
+// Cornell's General Risk waiver, signed with a NetID, shown to Cornell attendees missing from the
+// latest CampusGroups upload.
+export function GeneralRiskWaiver({
+  onBack,
+  onComplete,
+}: {
+  onBack: () => void
+  // Records the check-in; returns an error message when it fails.
+  onComplete: () => Promise<string | null>
+}) {
+  return (
+    <SignOnPhone
+      title="Sign the General Risk waiver"
+      detail="Scan to sign with your NetID."
+      src={generalRiskQrUrl}
+      confirm="I signed it!"
+      onBack={onBack}
+      onComplete={onComplete}
+    />
+  )
 }
 
 // Cornell's non-Cornell participant waiver, signed on the kiosk before the check-in is recorded and
@@ -127,32 +194,16 @@ export function NonCornellWaiver({
     }
   }
 
-  async function checkInAfterSigningOnPhone() {
-    setMessage("")
-    setIsSubmitting(true)
-    const error = await onComplete()
-    if (error) setMessage(error)
-    setIsSubmitting(false)
-  }
-
   if (signOnPhone) {
     return (
-      <div className="space-y-4">
-        <QrCallout
-          title="Sign the participant waiver"
-          detail="The waiver can't be signed on this screen right now. Scan to sign it on your phone, then check in."
-          src={participantWaiverQrUrl}
-        />
-        <Button className={`w-full ${largeButtonClass}`} onClick={checkInAfterSigningOnPhone} disabled={isSubmitting}>
-          {isSubmitting ? "Checking in…" : "Check in"}
-        </Button>
-        <Button className={`w-full ${largeButtonClass}`} variant="outline" onClick={onBack} disabled={isSubmitting}>
-          Back
-        </Button>
-        <p className="text-destructive text-base" role="alert">
-          {message}
-        </p>
-      </div>
+      <SignOnPhone
+        title="Sign the participant waiver"
+        detail="The waiver can't be signed on this screen right now. Scan to sign it on your phone, then check in."
+        src={participantWaiverQrUrl}
+        confirm="Check in"
+        onBack={onBack}
+        onComplete={onComplete}
+      />
     )
   }
 

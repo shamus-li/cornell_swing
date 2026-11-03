@@ -1,4 +1,4 @@
-import type { SquareFeed } from "../src/events/finance"
+import type { FinanceOverview, SquareFeed } from "../src/events/finance"
 import { todayInNewYork, type ManagedEvent } from "../src/events/model"
 import type { OutsideEvent } from "../src/events/outside"
 
@@ -42,3 +42,25 @@ export const outsideEvents: OutsideEvent[] = [
 
 const paid = (id: string, days: number, amount: number, cash: boolean, event: string) => ({ id, paidAt: `${daysFromToday(days)}T00:30:00Z`, amount, cash, note: "", event })
 export const square: SquareFeed = { square: "Swing Syndicate", payments: [paid("mock-payment-1", -1, 1000, false, "Monday Night Swing"), paid("mock-payment-2", -1, 500, true, "Monday Night Swing")] }
+
+export const finance: FinanceOverview = {
+  accounts: [
+    { name: "GPSA", note: "Doesn't carry over", start: 0, moneyIn: 3500, moneyOut: 950, balance: 2550, check: { source: "CampusGroups", amount: 3100, difference: 550 } },
+    { name: "Outside Funding", note: "Held at Cornell, carries over", start: 0, moneyIn: 208.37, moneyOut: 0, balance: 208.37, check: { source: "CampusGroups", amount: 208.37, difference: 0 } },
+    { name: "Square Checking", note: "Door card sales and the old Venmo balance", start: 1149.35, moneyIn: 150.82, moneyOut: 0, balance: 1300.17, check: { source: "Square sales", amount: 0.82, difference: 0 } },
+    { name: "Cash box", note: "Balance is what the box should hold", start: 989, moneyIn: 225, moneyOut: 0, balance: 1214, check: { source: "Last count", amount: 1214.78, difference: 0.78 } },
+  ],
+  events: [
+    { name: "Sweater Weather Swing", date: "2026-11-13", people: null, earned: 0, spent: 550, grant: 550 },
+    { name: "The Lindy Haunt", date: "2026-10-17", people: null, earned: 375, spent: 400, grant: 400 },
+    { name: "Pre-Spring Swing Fling", date: "2026-03-13", people: null, earned: 464, spent: 512.5, grant: 112.5 },
+    { name: "Sweater Weather Swing", date: "2025-11-08", people: null, earned: 1546, spent: 2986.42, grant: 2093.85 },
+    { name: "Back-2-Skool Swing", date: "2025-09-20", people: null, earned: 812, spent: 1710, grant: 1210 },
+    { name: "Lindy Bloom", date: "2025-04-20", people: null, earned: 1970, spent: 6330, grant: 1417.5 },
+    { name: "CU Jazz Event", date: "2024-12-10", people: null, earned: 150, spent: 0, grant: 0 },
+    { name: "Sweater Weather Swing", date: "2024-11-10", people: null, earned: 1301, spent: 2564.88, grant: 2082.5 },
+  ],
+  unassigned: { count: 4, amount: 133.8 },
+  grantExpires: "2027-07-31",
+  campusGroupsUploadedAt: "2026-09-27T20:47:00.000Z",
+}

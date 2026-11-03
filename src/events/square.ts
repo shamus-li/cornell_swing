@@ -17,7 +17,7 @@ const RELIST_MS = 3 * 86_400_000
 
 type Connection = { merchantId: string; accessToken: string; refreshToken: string; expiresAt: string; syncedAt: string }
 type Money = { amount: number }
-type Payment = { id: string; created_at: string; status: string; source_type: string; amount_money: Money; refunded_money?: Money; processing_fee?: { amount_money: Money }[]; note?: string }
+type Payment = { id: string; created_at: string; status: string; source_type: string; amount_money: Money; refunded_money?: Money; processing_fee?: { amount_money: Money }[]; note?: string; order_id?: string }
 type Tokens = { access_token: string; refresh_token: string; expires_at: string; merchant_id: string }
 type Event = { id: string; date: string; startTime: string; endTime: string; lessonEndTime: string; socialStartTime: string }
 
@@ -27,7 +27,7 @@ const redirectUri = (origin: string) => `${origin}/manage/square/callback`
 
 export function squareConnectUrl(env: Env, origin: string, state: string): string {
   const url = new URL(`${SQUARE}/oauth2/authorize`)
-  url.search = new URLSearchParams({ client_id: env.SQUARE_APPLICATION_ID, scope: 'PAYMENTS_READ MERCHANT_PROFILE_READ', redirect_uri: redirectUri(origin), state }).toString()
+  url.search = new URLSearchParams({ client_id: env.SQUARE_APPLICATION_ID, scope: 'PAYMENTS_READ MERCHANT_PROFILE_READ ORDERS_READ', redirect_uri: redirectUri(origin), state }).toString()
   return url.toString()
 }
 
@@ -40,7 +40,8 @@ async function oauth(env: Env, params: Record<string, string>): Promise<Tokens> 
 
 async function api<T>(token: string, path: string): Promise<T> {
   const response = await fetch(`${SQUARE}${path}`, { headers: { Authorization: `Bearer ${token}`, 'Square-Version': VERSION } })
-  if (response.status === 401) throw new SquareAuthError(await response.text())
+  // 403 means the connection lacks a permission the site now needs, so it has to be made again.
+  if (response.status === 401 || response.status === 403) throw new SquareAuthError(await response.text())
   if (!response.ok) throw new Error(`Square returned ${response.status}`)
   return response.json() as Promise<T>
 }
@@ -60,21 +61,37 @@ export async function disconnectSquare(env: Env): Promise<void> {
   if (merchantId) await fetch(`${SQUARE}/oauth2/revoke`, { method: 'POST', headers: { Authorization: `Client ${env.SQUARE_APPLICATION_SECRET}`, 'Content-Type': 'application/json', 'Square-Version': VERSION }, body: JSON.stringify({ client_id: env.SQUARE_APPLICATION_ID, merchant_id: merchantId }) })
 }
 
-async function savePayment(env: Env, payment: Payment): Promise<void> {
+type SeenPayment = { amount: number; fee: number }
+
+// The door phone sends its charge's ID as a note on the sale. Square keeps that note on the sale's order, not
+// on the payment, so this finds which charge a payment is for, whichever phone took it.
+async function doorChargeId(token: string, payment: Payment): Promise<string | undefined> {
+  if (!payment.order_id) return undefined
+  const order = await api<unknown>(token, `/v2/orders/${payment.order_id}`)
+  return JSON.stringify(order).match(/door:([0-9a-f-]{36})/)?.[1]
+}
+
+async function savePayment(env: Env, token: string, payment: Payment, seen?: SeenPayment): Promise<void> {
   const amount = payment.amount_money.amount - (payment.refunded_money?.amount ?? 0)
   const fee = (payment.processing_fee ?? []).reduce((sum, item) => sum + item.amount_money.amount, 0)
-  // The door queue puts its charge's ID in the note, which ties the payment to that person and event.
-  const chargeId = payment.note?.match(/door:(\S+)/)?.[1]
-  const charge = chargeId ? await findCharge(env, chargeId) : null
-  const known = await env.EVENTS_DB.prepare('SELECT 1 FROM square_payments WHERE id = ?').bind(payment.id).first()
+  // Listing a payment again only picks up refunds and fees.
+  if (seen) {
+    if (seen.amount !== amount || seen.fee !== fee) await env.EVENTS_DB.prepare('UPDATE square_payments SET amount = ?, fee = ?, synced = 0 WHERE id = ?').bind(amount, fee, payment.id).run()
+    return
+  }
   const paidAt = Date.parse(payment.created_at)
+  const chargeId = await doorChargeId(token, payment)
+  const charge = chargeId ? await findCharge(env, chargeId) : null
+  const settles = charge?.status === 'pending' && payment.amount_money.amount === charge.amount
+  // This runs first so a failed check-in leaves the payment unsaved, and the next sync tries it again.
+  if (settles) await settleCardCharge(env, charge, payment.id, paidAt)
   const eventId = charge?.eventId ?? (await findSession(env, timestampForSheet(paidAt, env.TIME_ZONE)))?.id ?? null
-  await env.EVENTS_DB.prepare('INSERT INTO square_payments (id, paidAt, amount, fee, cash, note, eventId) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET amount = excluded.amount, fee = excluded.fee, synced = 0 WHERE amount != excluded.amount OR fee != excluded.fee')
+  await env.EVENTS_DB.prepare('INSERT OR IGNORE INTO square_payments (id, paidAt, amount, fee, cash, note, eventId) VALUES (?, ?, ?, ?, ?, ?, ?)')
     .bind(payment.id, payment.created_at, amount, fee, payment.source_type === 'CASH' ? 1 : 0, payment.note ?? '', eventId).run()
-  if (!charge) return
-  if (charge.status === 'pending' && payment.amount_money.amount === charge.amount) return settleCardCharge(env, charge, payment.id, paidAt)
-  // Money came in that doesn't match what the person owes, or they had already paid another way.
-  if (!known) await sendAlert(env, 'A door payment needs checking', [
+  // Another sync may have just settled this same payment.
+  if (!charge || settles || charge.paymentId === payment.id) return
+  // Money came in for this person, but it doesn't match what they owe or they had already paid.
+  await sendAlert(env, 'A door payment needs checking', [
     `Square took $${(payment.amount_money.amount / 100).toFixed(2)} for ${charge.email}, whose ${charge.ticketName} ticket costs $${(charge.amount / 100).toFixed(2)} and was ${charge.status === 'pending' ? 'still waiting for payment' : `already marked ${charge.status}`}.`,
     'They may need a refund in Square, or to be checked in by hand.',
   ]).catch((error: unknown) => logError('Door payment alert failed', error))
@@ -93,11 +110,12 @@ export async function syncPayments(env: Env): Promise<void> {
       await env.EVENTS_DB.prepare('UPDATE square_connection SET accessToken = ?, expiresAt = ? WHERE id = 1').bind(tokens.access_token, tokens.expires_at).run()
     }
     const begin = new Date(Date.parse(connection.syncedAt) - RELIST_MS).toISOString()
+    const seen = new Map((await env.EVENTS_DB.prepare('SELECT id, amount, fee FROM square_payments WHERE paidAt >= ?').bind(begin).all<SeenPayment & { id: string }>()).results.map(row => [row.id, row]))
     let cursor: string | undefined
     do {
       const query = new URLSearchParams({ begin_time: begin, sort_order: 'ASC', limit: '100', ...cursor && { cursor } })
       const page = await api<{ payments?: Payment[]; cursor?: string }>(token, `/v2/payments?${query}`)
-      for (const payment of page.payments ?? []) if (payment.status === 'COMPLETED') await savePayment(env, payment)
+      for (const payment of page.payments ?? []) if (payment.status === 'COMPLETED') await savePayment(env, token, payment, seen.get(payment.id))
       cursor = page.cursor
     } while (cursor)
   } catch (error) {
@@ -157,5 +175,5 @@ export async function squareFeed(env: Env): Promise<SquareFeed> {
     env.EVENTS_DB.prepare('SELECT name FROM square_connection').first<string>('name'),
     env.EVENTS_DB.prepare('SELECT p.id, p.paidAt, p.amount, p.cash, p.note, e.title AS event FROM square_payments p LEFT JOIN events e ON e.id = p.eventId ORDER BY p.paidAt DESC LIMIT 50').all<Omit<SquarePayment, 'cash'> & { cash: number }>(),
   ])
-  return { square, payments: payments.results.map(payment => ({ ...payment, cash: payment.cash === 1, note: payment.note.replace(/door:\S+\s*/, '') })) }
+  return { square, payments: payments.results.map(payment => ({ ...payment, cash: payment.cash === 1 })) }
 }

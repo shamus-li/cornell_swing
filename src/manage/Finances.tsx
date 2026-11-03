@@ -6,7 +6,7 @@ import { api, errorMessage } from "./api"
 const when = (paidAt: string) => new Date(paidAt).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
 
 // Club money taken in Square. Once an officer connects the club's Square account, the site files its
-// payments on the Balance Sheet by itself; this tab shows the connection and recent payments.
+// payments on the Balance Sheet by itself; this shows the connection and recent payments.
 export function Finances() {
   const [data, setData] = useState<SquareFeed | null>(null)
   const [error, setError] = useState("")
@@ -29,20 +29,25 @@ export function Finances() {
 
   if (error) return <p role="alert" className="event-error manage-notice">{error}</p>
   if (!data) return <p role="status" className="event-muted manage-notice">Loading Square payments…</p>
-  if (!data.square) return <section className="manage-group" aria-labelledby="square-connect-title">
-    <h2 id="square-connect-title">Square</h2>
+  const doorPage = <a href="/check-in/door/" target="_blank" rel="noreferrer">Open the door payment page</a>
+  if (!data.square) return <section className="finance finance-square" aria-labelledby="square-connect-title">
+    <div className="finance-heading"><h2 id="square-connect-title">Square payments</h2>{doorPage}</div>
     <p>Connect the club's Square account. Payments taken during an event go to the Balance Sheet as that event's Square and cash profits, after Square's fees.</p>
-    <Button asChild><a href="/manage/square/connect">Connect Square</a></Button>
+    <div><Button asChild><a href="/manage/square/connect">Connect Square</a></Button></div>
   </section>
-  return <>
-    <p className="event-muted">Connected to {data.square}. <Button variant="link" size="sm" onClick={() => { void disconnect() }}>Disconnect</Button></p>
-    <section className="manage-group" aria-labelledby="square-payments-title">
-      <h2 id="square-payments-title">Square payments</h2>
-      {data.payments.length ? <ul className="guest-list">{data.payments.map(payment => <li key={payment.id} className="guest-row">
-        <span><strong>{payment.event ?? "No event"}</strong><span className="event-muted"> · {[payment.cash ? "Cash" : "Card", payment.note].filter(Boolean).join(" · ")}</span></span>
-        <time className="event-muted">{when(payment.paidAt)}</time>
-        <span className="guest-count">${(payment.amount / 100).toFixed(2)}</span>
-      </li>)}</ul> : <p className="event-muted">No payments yet.</p>}
-    </section>
-  </>
+  return <section className="finance" aria-labelledby="square-payments-title">
+    <div>
+      <div className="finance-heading"><h2 id="square-payments-title">Square payments</h2>{doorPage}</div>
+      {data.payments.length ? <div className="finance-card"><table className="finance-table" aria-labelledby="square-payments-title">
+        <thead><tr><th scope="col">Paid</th><th scope="col">Event</th><th scope="col">Type</th><th scope="col" className="number">Amount</th></tr></thead>
+        <tbody>{data.payments.map(payment => <tr key={payment.id}>
+          <td>{when(payment.paidAt)}</td>
+          <th scope="row">{payment.event ?? "No event"}{payment.note && <small>{payment.note}</small>}</th>
+          <td>{payment.cash ? "Cash" : "Card"}</td>
+          <td className="number">${(payment.amount / 100).toFixed(2)}</td>
+        </tr>)}</tbody>
+      </table></div> : <p className="event-muted">No payments yet.</p>}
+      <p className="event-muted">Connected to {data.square}. <Button variant="link" size="sm" onClick={() => { void disconnect() }}>Disconnect</Button></p>
+    </div>
+  </section>
 }
