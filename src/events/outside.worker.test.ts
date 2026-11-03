@@ -5,7 +5,7 @@ import { http, HttpResponse } from 'msw'
 import { exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { resetEventsDb } from '../../check-in/test/events-db'
 import worker from './worker'
-import type { OutsideEvent } from './outside'
+import { listOutsideEvents, type OutsideEvent } from './outside'
 
 const env = runtimeEnv as typeof runtimeEnv
 const network = setupNetwork()
@@ -43,6 +43,14 @@ describe('other groups\' events', () => {
     expect(page).toContain('<span class="nowrap">Contra</span>')
     expect(page).toContain('https://www.google.com/maps/search/?api=1&amp;query=LACS%2C%20Ithaca%2C%20NY')
     expect(page).not.toContain('Winter Afternoon of Contras')
+  })
+
+  it('keeps an event running several days listed through its last day, without times', async () => {
+    const created = await manage('/outside-events', 'POST', { ...contra, title: 'Contra Weekend', date: '2000-01-07', lastDate: '2099-01-09' })
+    expect(await created.json()).toMatchObject({ event: { lastDate: '2099-01-09', startTime: '', endTime: '' } })
+    expect((await listOutsideEvents(env.EVENTS_DB, '2099-01-09')).map(event => event.title)).toContain('Contra Weekend')
+    expect((await listOutsideEvents(env.EVENTS_DB, '2099-01-10')).map(event => event.title)).not.toContain('Contra Weekend')
+    expect((await manage('/outside-events', 'POST', { ...contra, lastDate: contra.date })).status).toBe(400)
   })
 
   it('saves visitors\' requests for review', async () => {

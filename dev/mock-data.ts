@@ -33,11 +33,12 @@ export const events: ManagedEvent[] = [
 ]
 
 const outside = (id: string, title: string, groupName: string, days: number, startTime: string, endTime: string, location: string, style: string, price: string): OutsideEvent => ({
-  id, kind: "outside", title, groupName, date: daysFromToday(nextMonday + days), startTime, endTime, location, city: "Ithaca", styles: [style], price, url: "https://example.com", published: true, needsReview: false, updatedAt: common.updatedAt, fromFeed: false, sourceNote: "",
+  id, kind: "outside", title, groupName, date: daysFromToday(nextMonday + days), startTime, endTime, lastDate: "", location, city: "Ithaca", styles: [style], price, url: "https://example.com", published: true, needsReview: false, updatedAt: common.updatedAt, fromFeed: false, sourceNote: "",
 })
 export const outsideEvents: OutsideEvent[] = [
   outside("mock-outside-1", "First Friday Contra", "Ithaca Contra Dance", 4, "19:30", "22:30", "Bethel Grove Community Center", "Contra", "$10, students free"),
   outside("mock-outside-2", "Salsa Social", "Cornell Salsa", 9, "20:00", "23:00", "Willard Straight Hall", "Salsa", ""),
+  { ...outside("mock-outside-3", "Solo Jazz Weekend", "Ithaca Swing", 11, "", "", "Bethel Grove Community Center", "Swing", "Weekend pass $125"), lastDate: daysFromToday(nextMonday + 13) },
 ]
 
 export const square: SquareFeed = { square: "Swing Syndicate" }

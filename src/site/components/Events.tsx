@@ -1,4 +1,3 @@
-import { EventSchedule } from "../../events/EventSchedule"
 import { Fragment, useEffect, useRef, useState, type FormEvent } from "react"
 import { ClockIcon, MapPinIcon, TicketIcon, XIcon } from "lucide-react"
 import { Input } from "../../../check-in/src/components/ui/input"
@@ -73,7 +72,7 @@ export function RsvpDialog({ event, onClose }: { event: EventRecord; onClose: ()
     {/* The padding lives on this wrapper so only clicks on the backdrop reach the dialog itself. */}
     <div className="event-dialog-body">
     <Button type="button" variant="ghost" size="icon" className="dialog-close" aria-label="Close RSVP" onClick={onClose}><XIcon /></Button>
-    <p className="event-eyebrow">{formatEventDate(event.date, { weekday: "long", month: "long", day: "numeric" })} · {formatEventTime(event)}</p>
+    <p className="event-eyebrow">{event.moreDays?.length ? formatEventDayRange(event) : <>{formatEventDate(event.date, { weekday: "long", month: "long", day: "numeric" })} · {formatEventTime(event)}</>}</p>
     <h2 id="rsvp-title">{state === "done" ? "See you on the dance floor!" : event.title}</h2>
     {state === "done" ? <div className="event-actions"><CalendarLinks event={event} scope="rsvp" />{/* The form, and the button that had focus, are replaced on success, so focus moves to Done. */}<Button type="button" autoFocus onClick={onClose}>Done</Button></div> : <>
       <p className="event-muted"><EventLocation event={event} /></p>
@@ -101,7 +100,7 @@ export function NextEvent({ events, today }: EventSnapshot) {
     <div className="next-event-details is-next">
       <div className="next-event-row">
         <DateTile date={event.date} />
-        <div><p className="next-event-title">{formatEventDate(event.date, { weekday: "long", month: "long", day: "numeric" })}</p>{event.kind === "normal" ? <div className="event-muted"><LessonTimes event={event} /></div> : <p className="event-muted">{formatEventTime(event)}</p>}</div>
+        <div><p className="next-event-title">{event.moreDays?.length ? formatEventDayRange(event) : formatEventDate(event.date, { weekday: "long", month: "long", day: "numeric" })}</p>{event.kind === "normal" ? <div className="event-muted"><LessonTimes event={event} /></div> : !event.moreDays?.length && <p className="event-muted">{formatEventTime(event)}</p>}</div>
       </div>
       <div className="next-event-row">
         <span className="next-event-icon"><MapPinIcon aria-hidden="true" /></span>
@@ -154,7 +153,6 @@ export function EventSections(snapshot: EventSnapshot) {
         <div className="event-content">
           <h3>{event.slug ? <a href={`/events/${event.slug}`}>{event.title}</a> : event.title}</h3>
           {(event.location || event.room || event.startTime || prices.length > 0) && <div className="event-meta"><p className="icon-line"><ClockIcon aria-hidden="true" /><span>{event.moreDays?.length ? formatEventDayRange(event) : formatEventTime(event)}</span></p><p className="icon-line"><MapPinIcon aria-hidden="true" /><span><EventLocation event={event} /></span></p>{prices.length > 0 && <p className="icon-line"><TicketIcon aria-hidden="true" /><span>{prices.map((price, index) => <Fragment key={price}>{index > 0 && " · "}<span className="price">{price}</span></Fragment>)}</span></p>}</div>}
-          <EventSchedule event={event} />
           <Markdown>{event.description}</Markdown>
           {isUpcoming(event, today) && <div className="event-actions">{hasEventDetails(event) && <Button onClick={() => setSelected(event)}>RSVP</Button>}<CalendarLinks event={event} /></div>}
         </div>

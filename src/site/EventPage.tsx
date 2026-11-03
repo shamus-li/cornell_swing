@@ -1,4 +1,3 @@
-import { EventSchedule } from "../events/EventSchedule"
 import { useState } from "react"
 import { ArrowLeftIcon, ClockIcon, MapPinIcon, TicketIcon } from "lucide-react"
 import { Button } from "../../check-in/src/components/ui/button"
@@ -41,7 +40,6 @@ export function EventPage({ event, today }: EventPageData) {
           {(event.location || event.room) && <p className="icon-line"><MapPinIcon aria-hidden="true" /><span><EventLocation event={event} /></span></p>}
           {prices.length > 0 && <p className="icon-line"><TicketIcon aria-hidden="true" /><span>{prices.join(" · ")}</span></p>}
         </div>
-        <EventSchedule event={event} />
         <Markdown>{event.description}</Markdown>
         {!upcoming && <p className="event-muted">This event has passed.</p>}
         <div className="event-actions">

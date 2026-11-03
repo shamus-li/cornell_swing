@@ -1,7 +1,7 @@
 import { Fragment, useState } from "react"
 import { ClockIcon, MapPinIcon } from "lucide-react"
 import { Button } from "../../check-in/src/components/ui/button"
-import { danceStyles, isUpcoming, formatEventDate, formatEventLocation, formatEventPrices, formatEventTime, hasEventDetails, nightSpan, type EventRecord } from "../events/model"
+import { danceStyles, isUpcoming, formatEventDate, formatEventDayRange, formatEventLocation, formatEventPrices, formatEventTime, hasEventDetails, nightSpan, type EventRecord } from "../events/model"
 import type { OutsideEvent } from "../events/outside"
 import { LessonTimes } from "../events/LessonTimes"
 import { DateTile } from "../events/DateTile"
@@ -19,7 +19,7 @@ function listing(event: EventRecord | OutsideEvent) {
   const ours = event.kind !== "outside"
   return {
     key: event.id, date: event.date, startTime: nightSpan(event).startTime, title: event.title, group: ours ? "Swing Syndicate" : event.groupName, styles: event.styles,
-    time: formatEventTime(event), lesson: event.kind === "normal" ? event : undefined, place: <EventLocation event={event} />, hasPlace: formatEventLocation(event) !== "TBA", price: ours ? formatEventPrices(event).join(" · ") : event.price,
+    time: event.lastDate ? formatEventDayRange(event) : formatEventTime(event), lesson: event.kind === "normal" ? event : undefined, place: <EventLocation event={event} />, hasPlace: formatEventLocation(event) !== "TBA", price: ours ? formatEventPrices(event).join(" · ") : event.price,
     href: ours ? `/events/${event.slug}` : event.url, rsvp: event.kind === "special" && hasEventDetails(event), nearby: ithacaArea.includes(event.city), ours,
   }
 }
