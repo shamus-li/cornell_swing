@@ -348,8 +348,8 @@ export default function App() {
 
   if (confirmation) {
     return (
-      <main className="mx-auto flex min-h-svh w-full max-w-[540px] flex-col items-center justify-center gap-6 px-5 py-12 text-center sm:gap-8">
-        <h1 className="text-[1.75rem] leading-tight font-semibold">{confirmation}</h1>
+      <main className="mx-auto flex min-h-svh w-full max-w-[620px] flex-col items-center justify-center gap-6 px-5 py-12 text-center sm:gap-8">
+        <h1 className="text-[length:var(--title-font-size)] leading-tight font-semibold">{confirmation}</h1>
         {next?.joinCampusGroups && (
           <QrCallout
             title="Join Swing Syndicate on CampusGroups"
@@ -407,7 +407,7 @@ export default function App() {
       </header>
 
       <main className="pt-12">
-        <h1 className="mb-6 text-[1.75rem] leading-tight font-semibold">Check in</h1>
+        <h1 className="mb-6 text-[length:var(--title-font-size)] leading-tight font-semibold">Check in</h1>
 
         <form className="space-y-4" autoComplete="off" noValidate onSubmit={submitCheckin}>
           {selectedMember && (

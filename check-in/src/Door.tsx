@@ -98,9 +98,9 @@ export default function Door() {
   if (closing) return <main className="flex min-h-svh items-center justify-center p-5 text-lg" role="status">Returning to the list…</main>
 
   return (
-    <main className="mx-auto min-h-svh w-full max-w-[540px] px-4 py-5">
+    <main className="mx-auto min-h-svh w-full max-w-[620px] px-5 py-5">
       {queue?.justPaid.map((name) => <p key={name} className="mb-4 rounded-lg bg-muted px-3 py-3 text-lg font-semibold" role="status">Checked in, {name}!</p>)}
-      <h1 className="mb-4 text-xl font-semibold">Ready to pay</h1>
+      <h1 className="mb-4 text-[length:var(--title-font-size)] leading-tight font-semibold">Ready to pay</h1>
       {error && <p className="mb-4 text-base text-destructive" role="alert">Can't reach the site. Check the connection.</p>}
       {queue?.charges.length === 0 && <p className="py-8 text-center text-base text-muted-foreground">Nobody is waiting.</p>}
       <ul className="space-y-2">
@@ -111,9 +111,9 @@ export default function Door() {
                   <span className="min-w-0 truncate font-medium">{charge.label}</span>
                   <span className="text-sm whitespace-nowrap text-muted-foreground" role="status">Confirming…</span>
                 </div>
-              : <a className="flex min-h-16 items-center justify-between gap-3 rounded-lg border px-4 text-lg no-underline" href={squareUrl(queue.applicationId, charge)} onClick={() => tap(charge.id)}>
+              : <a className="flex min-h-16 items-center justify-between gap-3 rounded-lg border px-4 text-lg no-underline transition-colors hover:bg-muted" href={squareUrl(queue.applicationId, charge)} onClick={() => tap(charge.id)}>
                   <span className="min-w-0"><span className="block truncate font-medium">{charge.label}</span>{queue.charges.some((other) => other !== charge && other.label === charge.label) && <span className="block text-sm text-muted-foreground">Checked in at {time(charge.createdAt)}</span>}</span>
-                  <span className="font-semibold">{formatAmount(charge.amount)}</span>
+                  <span className="font-semibold tabular-nums">{formatAmount(charge.amount)}</span>
                 </a>}
           </li>
         ))}

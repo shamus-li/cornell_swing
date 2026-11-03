@@ -14,6 +14,9 @@
 
 :root {
   --page: min(920px, calc(100% - 40px));
+}
+
+.home {
   --serif: var(--brand-font);
 }
 
@@ -73,28 +76,21 @@ main,
 }
 
 .site-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
   font-weight: 500;
   line-height: 24px;
   text-decoration: none;
-}
-
-/* A whole-pixel line height keeps the site name and nav text on the same baseline. */
-.site-header .site-name {
-  line-height: 24px;
 }
 
 .site-nav a:hover {
   text-decoration: underline;
 }
 
-/* The name and the nav share one line down to the narrowest phones. */
 @media (max-width: 380px) {
   .site-header {
     gap: 8px;
-  }
-
-  .site-header .site-name {
-    font-size: 1rem;
   }
 }
 
@@ -140,6 +136,10 @@ h3:not([data-slot]) {
 }
 
 h1:not([data-slot]) {
+  font-size: var(--page-title-font-size);
+}
+
+.home h1:not([data-slot]) {
   font-size: clamp(2.5rem, 5.5vw, 3.75rem);
   font-weight: 700;
   letter-spacing: -0.01em;
@@ -151,13 +151,13 @@ h2:not([data-slot]) {
 
 h3:not([data-slot]) {
   font-family: var(--sans);
-  font-size: 1.125rem;
+  font-size: var(--large-font-size);
   line-height: 1.4;
 }
 
 .hero-intro > p {
   margin: 16px 0 0;
-  font-size: 1.125rem;
+  font-size: var(--large-font-size);
 }
 
 .hero-intro > [data-slot="button"] {

@@ -2,7 +2,6 @@
 .dances { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 40px 0 64px; }
 .dances > section { display: grid; gap: 8px; }
 .dances-heading { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
-.dances h1:not([data-slot]) { font-size: clamp(2rem, 4vw, 2.5rem); }
 /* The area toggle and request button share a line, with the styles on their own line below. */
 .dances-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; }
 .dances-toolbar .filter-chips { order: 1; flex: 0 0 100%; min-width: 0; }
@@ -12,12 +11,12 @@
 .request-form { margin-top: 20px; }
 .request-form :is(label, .request-styles) { display: grid; gap: 6px; font-size: var(--small-font-size); font-weight: 500; }
 .request-times { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.dances h2.dances-month { padding-bottom: 8px; border-bottom: 1px solid var(--border); font-size: 1.375rem; }
+.dances h2.dances-month { padding-bottom: 8px; border-bottom: 1px solid var(--border); font-size: var(--list-title-font-size); }
 
 /* /events/slug: one event, with the same row layout as the lists. */
 .event-page { padding: 40px 0 0; }
 .event-page-event { border-bottom: 0; }
-.event-page h1:not([data-slot]) { margin-bottom: 12px; font-family: var(--sans); font-size: clamp(1.75rem, 3vw, 2rem); font-weight: 600; }
+.event-page h1:not([data-slot]) { margin-bottom: 12px; }
 
 /* The title's link covers the whole row; links inside the row stay on top of it. */
 .dance-row { position: relative; gap: 14px; padding-block: 10px; }
@@ -25,7 +24,7 @@
 .dance-row.is-ours { border-bottom-color: transparent; border-radius: var(--radius-card); background: color-mix(in srgb, var(--primary) 6%, var(--background)); }
 .dance-row:has(h3 a:hover) { background: var(--muted); }
 .dance-row.is-ours:has(h3 a:hover) { background: color-mix(in srgb, var(--primary) 11%, var(--background)); }
-.dance-row .event-content h3 { font-size: 1.125rem; }
+.dance-row .event-content h3 { font-size: var(--large-font-size); }
 .dance-row h3 a { text-decoration: none; }
 .dance-row h3 a:hover { text-decoration: underline; }
 .dance-row h3 a::after { content: ""; position: absolute; inset: 0; }

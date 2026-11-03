@@ -1,5 +1,5 @@
 import { addDays, differenceInCalendarDays, format, parseISO } from "date-fns"
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react"
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react"
 import { ArrowLeftIcon, CalendarIcon, MapPinIcon, MusicIcon, TicketIcon, XIcon } from "lucide-react"
 import { Button } from "../../check-in/src/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
@@ -203,6 +203,7 @@ function EventEditor({ event, leaveGuard, onSave, onReplace, onDelete, onCancel,
   // Set when someone else saved the event after it was opened; the manager then keeps their own version or loads that one.
   const [conflict, setConflict] = useState(false)
   const [leaving, setLeaving] = useState(false)
+  const formId = useId()
   const dirty = (["title", "date", "startTime", "endTime", "location", "city", "locationUrl", "room", "description"] as const).some(key => draft[key] !== event[key]) || JSON.stringify([draft.tickets, draft.moreDays, draft.styles]) !== JSON.stringify([event.tickets, event.moreDays, event.styles])
   useEffect(() => {
     if (!dirty) return
@@ -246,11 +247,7 @@ function EventEditor({ event, leaveGuard, onSave, onReplace, onDelete, onCancel,
     await api(`/events/${event.id}`, { method: "DELETE" })
     await onDelete()
   }
-  const form = <form className="event-editor" aria-label={event.id ? "Edit event" : "New event"} onSubmit={e => { e.preventDefault(); if (e.currentTarget.reportValidity()) void save(event.published) }}>
-      <div className="editor-title">
-        <DateTile date={draft.date} />
-        <TitleInput value={draft.title} disabled={busy} onChange={value => change("title", value)} />
-      </div>
+  const form = <form id={formId} className="event-editor" aria-label={event.id ? "Edit event" : "New event"} onSubmit={e => { e.preventDefault(); if (e.currentTarget.reportValidity()) void save(event.published) }}>
       {event.published && event.slug && <div className="editor-share"><a href={`/events/${event.slug}`} target="_blank" rel="noreferrer">swingsyndicate.club/events/{event.slug}</a><CopyButton text={`${window.location.origin}/events/${event.slug}`} label="Copy link" /></div>}
       <div className="editor-card editor-card-sections">
         <div className="editor-field"><CalendarIcon aria-hidden="true" /><EventDays event={draft} disabled={busy} onChange={(days, tickets) => setDraft(current => ({ ...current, ...days, tickets }))} /></div>
@@ -270,7 +267,10 @@ function EventEditor({ event, leaveGuard, onSave, onReplace, onDelete, onCancel,
   return <div className="event-editor-shell">
     <DiscardChangesDialog open={leaving} onOpenChange={setLeaving} onDiscard={onCancel} />
     <DiscardChangesButton variant="ghost" className="back-button" dirty={dirty} onDiscard={onCancel} disabled={busy}><ArrowLeftIcon aria-hidden="true" />Events</DiscardChangesButton>
-    {event.id && tab !== "details" && <div className="event-page-title"><DateTile date={event.date} /><h1>{event.title}</h1></div>}
+    <div className="event-page-title">
+      <DateTile date={tab === "details" ? draft.date : event.date} />
+      {tab === "details" ? <TitleInput form={formId} value={draft.title} disabled={busy} onChange={value => change("title", value)} /> : <h1>{event.title}</h1>}
+    </div>
     <Tabs value={tab} onValueChange={setTab}>
     {event.id && <TabsList aria-label="Event sections">
       <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -283,7 +283,7 @@ function EventEditor({ event, leaveGuard, onSave, onReplace, onDelete, onCancel,
 }
 
 // Grows with the name so long names wrap instead of scrolling out of view. Enter saves, as in a one-line field.
-function TitleInput({ value, disabled, onChange }: { value: string; disabled: boolean; onChange: (value: string) => void }) {
+function TitleInput({ form, value, disabled, onChange }: { form: string; value: string; disabled: boolean; onChange: (value: string) => void }) {
   const field = useRef<HTMLTextAreaElement>(null)
   useLayoutEffect(() => {
     const element = field.current!
@@ -292,7 +292,7 @@ function TitleInput({ value, disabled, onChange }: { value: string; disabled: bo
     window.addEventListener("resize", fit)
     return () => window.removeEventListener("resize", fit)
   }, [value])
-  return <textarea ref={field} className="event-name-input" rows={1} disabled={disabled} aria-label="Event name" required maxLength={160} placeholder="Event name" value={value}
+  return <textarea ref={field} form={form} className="event-name-input" rows={1} disabled={disabled} aria-label="Event name" required maxLength={160} placeholder="Event name" value={value}
     onChange={e => onChange(e.target.value.replace(/\s*\n\s*/g, " "))}
     onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.form!.requestSubmit() } }} />
 }

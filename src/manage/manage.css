@@ -11,11 +11,11 @@
 /* Page */
 html:has(.manage-page) { scroll-behavior: auto; }
 /* 866px leaves the event editor's description box 832px for text, the width of an event description on the homepage; the list shares the width so the header stays put. */
-.manage-page { --page: min(866px, calc(100% - 32px)); --brand-font: var(--sans); --serif: var(--sans); --remove-size: var(--icon-button-size); }
+.manage-page { --page: min(866px, calc(100% - 32px)); --brand-font: var(--sans); --remove-size: var(--icon-button-size); }
 .manage-header { justify-content: space-between; gap: 16px; }
 .manage-main { padding: 24px 0 64px; }
-.manage-main h1 { font-size: 1.5rem; line-height: 1.25; }
-.manage-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 40px; margin-bottom: 16px; }
+.manage-main h1 { font-size: var(--manager-title-font-size); line-height: 1.25; }
+.manage-title { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; min-height: 40px; margin-bottom: 16px; }
 .manage-notice { margin: 16px 0 0; }
 .event-note { color: var(--muted-foreground); line-height: 1.5; margin: 0; }
 
@@ -45,7 +45,8 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .event-row-text { display: grid; gap: 2px; min-width: 0; }
 .event-row-text > .event-muted { font-size: var(--small-font-size); }
 .event-row-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.event-row-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.event-row-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.manage-list strong { font-weight: 600; }
 .status-badge { flex: none; padding: 1px 8px; border-radius: var(--radius-pill); background: var(--muted); color: var(--muted-foreground); font-size: var(--caption-font-size); font-weight: 500; }
 .guest-count { white-space: nowrap; font-size: var(--small-font-size); font-variant-numeric: tabular-nums; }
 
@@ -65,12 +66,14 @@ html:has(.manage-page) { scroll-behavior: auto; }
 /* Event editor */
 .event-editor-shell { display: grid; gap: 16px; }
 .event-editor { display: grid; gap: 16px; padding-top: 8px; }
-.editor-title { display: flex; align-items: flex-start; gap: 16px; }
-/* An undated tile stays the height of a dated one, so setting the date moves nothing below it. */
-.editor-title .date-tile { flex: none; min-height: 52px; justify-content: center; }
+/* An event's date and name, in the same place on every tab. An undated tile stays the height of a dated one, so setting the date moves nothing below it. */
+.event-page-title { display: flex; align-items: center; gap: 12px; }
+.event-page-title h1 { min-width: 0; }
+.event-page-title .date-tile { flex: none; align-self: center; min-height: 52px; justify-content: center; }
 /* A textarea, so a long name wraps as it does on the homepage. */
-.event-name-input { display: block; flex: 1; min-width: 0; padding: 8px 0 0; border: 0; outline: 0; background: transparent; color: var(--foreground); font: 600 1.5rem/1.25 var(--sans); resize: none; overflow: hidden; }
+.event-name-input { display: block; flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: transparent; font: 600 var(--manager-title-font-size)/1.25 var(--sans); resize: none; overflow: hidden; }
 .event-name-input::placeholder { color: var(--placeholder); }
+.event-name-input:focus-visible { box-shadow: 0 2px 0 var(--primary); }
 .editor-card { display: grid; padding: 0 16px; border-radius: var(--radius-card); background: var(--muted); }
 .editor-card :is([data-slot="input"], [data-slot="input-group"], [data-slot="popover-trigger"]) { background: var(--background); }
 .editor-field { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 12px; align-items: start; padding: 8px 0; }
@@ -130,7 +133,7 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .sheet-connection { display: grid; gap: 12px; padding: 16px; border-radius: var(--radius-card); background: var(--muted); }
 .campusgroups-steps { list-style: decimal; padding-left: 1.25rem; }
 .campusgroups-steps a { color: var(--foreground); text-decoration: underline; }
-.sheet-connection h2 { font: 600 1rem/1.4 var(--sans); }
+.sheet-connection h2 { font: 600 var(--body-font-size)/1.4 var(--sans); }
 .sheet-connection p { margin: 0; }
 .manage-filter { margin-top: 16px; }
 .editor-share { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; font-size: var(--small-font-size); overflow-wrap: anywhere; }
@@ -218,10 +221,8 @@ html:has(.manage-page) { scroll-behavior: auto; }
 
 @media (max-width: 620px) {
   .manage-main { padding-top: 16px; }
-  .manage-header .site-name { font-size: 1rem; }
   :is(.event-row-button, .normal-event-summary) { gap: 12px; }
   [data-slot="tabs-trigger"] { padding: 0 10px; }
-  .event-name-input { font-size: 1.375rem; }
   /* The date takes its own line above the times. */
   /* Lesson labels sit above their fields, so a start and end time fit side by side. */
   .normal-event-edit .editor-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
@@ -232,21 +233,20 @@ html:has(.manage-page) { scroll-behavior: auto; }
 
 /* Finances and event pages: black and white with right-aligned figures. Color only marks something to look at. */
 .finance { display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; min-width: 0; }
-.finance h2 { margin: 0; color: var(--foreground); font: 600 20px/28px var(--sans); letter-spacing: -0.6px; }
-.finance-total { margin: 8px 0 0; font: 600 48px/48px var(--sans); letter-spacing: -2.4px; }
+.finance h2 { margin: 0; color: var(--foreground); font: 600 var(--section-title-font-size)/1.4 var(--sans); }
+.finance-total { margin: 8px 0 0; font: 600 48px/48px var(--sans); }
 .finance-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; margin-bottom: 12px; }
 .finance-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .finance-actions label:has(input:focus-visible) { outline: 2px solid var(--primary); outline-offset: 2px; }
-.finance-check { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.finance-check { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .finance-check svg { flex: none; width: 14px; height: 14px; color: var(--muted-foreground); }
-.finance-check.is-off svg { color: #ab570a; }
-.event-page-title { display: flex; align-items: center; gap: 12px; margin: 8px 0 16px; }
+.finance-check.is-off svg { color: var(--destructive); }
 .finance-search { width: 16rem; max-width: 100%; }
 /* A minus sign is a place the browser would otherwise wrap. */
 [data-slot="table-cell"].tabular-nums { white-space: nowrap; }
 .event-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
-.event-stat { margin-top: 4px; font: 600 20px/28px var(--sans); letter-spacing: -0.6px; }
+.event-stat { margin-top: 4px; font: 600 var(--section-title-font-size)/1.4 var(--sans); font-variant-numeric: tabular-nums; }
 @media (max-width: 640px) {
-  .finance-total { font-size: 40px; line-height: 40px; letter-spacing: -2px; }
+  .finance-total { font-size: 40px; line-height: 40px; }
   .event-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

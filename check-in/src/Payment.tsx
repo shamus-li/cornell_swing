@@ -91,8 +91,8 @@ export function Payment({ attendee, event, tickets, onPaid, onLeave }: { attende
     else void settle("free", chosen.id)
   }
 
-  const main = "mx-auto flex min-h-svh w-full max-w-[540px] flex-col justify-center gap-6 px-5 py-12"
-  const heading = "text-[1.75rem] leading-tight font-semibold"
+  const main = "mx-auto flex min-h-svh w-full max-w-[620px] flex-col justify-center gap-6 px-5 py-12"
+  const heading = "text-[length:var(--title-font-size)] leading-tight font-semibold"
   const alert = message && <p className="text-destructive text-base" role="alert">{message}</p>
   const volunteer = <Button variant="ghost" className={largeButtonClass} disabled={busy} onClick={() => void settle("waived")}>I'm volunteering</Button>
 
@@ -104,7 +104,7 @@ export function Payment({ attendee, event, tickets, onPaid, onLeave }: { attende
           {tickets.map((option) => (
             <button key={option.id} type="button" disabled={busy} className="flex min-h-16 items-center justify-between gap-4 rounded-lg border bg-background px-4 py-3 text-left text-lg transition-colors hover:bg-muted disabled:opacity-50" onClick={() => choose(option)}>
               <span className="min-w-0"><span className="block font-medium">{option.name}</span>{option.days > 1 && <span className="block text-sm text-muted-foreground">{option.days} days</span>}</span>
-              <span className="font-semibold">{formatAmount(option.amount)}</span>
+              <span className="font-semibold tabular-nums">{formatAmount(option.amount)}</span>
             </button>
           ))}
           {volunteer}

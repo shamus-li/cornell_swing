@@ -12,4 +12,9 @@
 .redirect-fields { display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) 10rem; }
 .redirect-field { display: grid; gap: 6px; min-width: 0; }
 .redirect-field > span { color: var(--muted-foreground); font-size: var(--small-font-size); }
-@media (max-width: 640px) { .redirect-fields { grid-template-columns: 1fr; } }
+@media (max-width: 640px) {
+  .redirect-fields { grid-template-columns: 1fr; }
+  /* The destination gets the full width, with the actions on their own line. */
+  .redirect-row { flex-wrap: wrap; }
+  .redirect-row-text { flex-basis: 100%; }
+}
