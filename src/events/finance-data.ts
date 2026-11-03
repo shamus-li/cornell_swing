@@ -189,14 +189,17 @@ export async function eventActivity(env: Env, eventId: string, fresh = false): P
   const [sheet, payments, charges, stored, checkins] = await Promise.all([
     readBalanceSheet(env, fresh),
     readPayments(env, 'WHERE p.eventId = ?', eventId),
-    env.EVENTS_DB.prepare("SELECT email, ticketName, amount FROM door_charges WHERE eventId = ? AND status IN ('card', 'cash', 'free', 'waived')").bind(eventId).all<{ email: string; ticketName: string; amount: number }>(),
+    // A ticket's money follows its payment, which a refund lowers. Door cash waits under an unsent ID until Square has it.
+    env.EVENTS_DB.prepare("SELECT c.email, c.ticketName, c.amount, p.amount AS paid FROM door_charges c LEFT JOIN square_payments p ON p.id IN (c.paymentId, 'unsent:' || c.id) WHERE c.eventId = ? AND c.status IN ('card', 'cash', 'free', 'waived')").bind(eventId).all<{ email: string; ticketName: string; amount: number; paid: number | null }>(),
     env.MEMBER_CACHE.get<StoredExport>(campusGroupsTransactionsKey, 'json'),
     cached(env, fresh, 'finance:checkins:v2', async () => readCheckins(env, await accessToken(env))),
   ])
   const tickets = new Map<string, { name: string; count: number; amount: number }>()
   for (const charge of charges.results) {
+    // Fully refunded, so no longer sold. Free and volunteer tickets never had a payment.
+    if (charge.paid === 0) continue
     const ticket = tickets.get(charge.ticketName) ?? { name: charge.ticketName, count: 0, amount: 0 }
-    tickets.set(charge.ticketName, { ...ticket, count: ticket.count + 1, amount: ticket.amount + charge.amount / 100 })
+    tickets.set(charge.ticketName, { ...ticket, count: ticket.count + 1, amount: ticket.amount + (charge.paid ?? charge.amount) / 100 })
   }
   return {
     attendance: event.attendance,

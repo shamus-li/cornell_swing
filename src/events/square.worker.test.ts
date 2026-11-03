@@ -188,6 +188,19 @@ describe('Square feed', () => {
     await syncSquare(env)
     expect(ledgerRow('payments-2026-10-17', 'Square')?.[2]).toBe(-0.41)
   })
+  it('counts tickets from what was kept after refunds', async () => {
+    const charge = (id: string, status: string, amount: number, paymentId: string | null) => env.EVENTS_DB.prepare("INSERT INTO door_charges (id, eventId, sessionDate, email, attendee, ticketName, amount, days, status, paymentId, createdAt) VALUES (?, 'haunt', '2026-10-17', ?, '{}', 'Student', ?, 1, ?, ?, '')").bind(id, `${id}@example.edu`, amount, status, paymentId).run()
+    const paid = (id: string, amount: number) => env.EVENTS_DB.prepare("INSERT INTO square_payments (id, paidAt, amount, fee, cash, note, eventId) VALUES (?, '2026-10-17T23:00:00Z', ?, 0, 0, '', 'haunt')").bind(id, amount).run()
+    await env.EVENTS_DB.exec('DELETE FROM door_charges')
+    await charge('kept', 'card', 1000, 'p-kept'); await paid('p-kept', 1000)
+    await charge('partial', 'card', 1000, 'p-partial'); await paid('p-partial', 400)
+    await charge('refunded', 'cash', 1000, 'p-refunded'); await paid('p-refunded', 0)
+    await charge('unsent', 'cash', 1000, null); await paid('unsent:unsent', 1000)
+    await charge('volunteer', 'waived', 0, null)
+    const activity = await (await manage('/events/haunt/activity')).json() as EventActivity
+    expect(activity.tickets).toEqual([{ name: 'Student', count: 4, amount: 24 }])
+    await env.EVENTS_DB.exec('DELETE FROM door_charges')
+  })
   it('refuses to file while another filing is running', async () => {
     await env.EVENTS_DB.prepare("INSERT INTO filing_lock (id, until) VALUES (1, ?)").bind(new Date(Date.now() + 60_000).toISOString()).run()
     expect((await manage('/finance/file', 'POST')).status).toBe(409)
