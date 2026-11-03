@@ -201,6 +201,24 @@ describe('Square feed', () => {
     expect(activity.tickets).toEqual([{ name: 'Student', count: 4, amount: 24 }])
     await env.EVENTS_DB.exec('DELETE FROM door_charges')
   })
+  it('adds what an uploaded CampusGroups export has that the sheet is missing', async () => {
+    ledger = []
+    const row = (source: string, amount: string, paymentStatus: string, item: string, date: string) => ({ source, amount, paymentStatus, item, date })
+    const upload = await worker.fetch(new Request(`${origin}/manage/api/finance/campusgroups`, { method: 'PUT', headers: { origin, 'Content-Type': 'application/json', 'Cf-Access-Jwt-Assertion': managerToken }, body: JSON.stringify({ rows: [
+      row('GPSAFC - FY27', '-400', 'Approved', 'Already on the sheet', '9/21/2026 8:24:18 PM'),
+      row('GPSAFC - FY27', '-75', 'Pending Approval', 'Room booking', '10/1/2026 3:00:00 PM'),
+      row('Outside Funding - FY27', '-30', 'Approved', 'Snacks', '10/2/2026'),
+      row('GPSAFC - FY27', '-90', 'Rejected', 'Turned down', '10/3/2026 3:00:00 PM'),
+      row('GPSAFC - FY20', '-500', 'Approved', 'Before the sheet starts', '3/16/2020 12:31:06 PM'),
+    ] }) }), env)
+    expect(upload.status).toBe(200)
+    expect(ledger.map(item => item.values[0])).toEqual([
+      ['26-27', 46296, -75, 'GPSA', 'Incomplete', 'Room booking'],
+      ['26-27', 46297, -30, 'Outside Funding', 'Y', 'Snacks'],
+    ])
+    expect(ledger.every(item => item.range.includes('!A'))).toBe(true)
+    await env.MEMBER_CACHE.delete('finance:campusgroups:v1')
+  })
   it('refuses to file while another filing is running', async () => {
     await env.EVENTS_DB.prepare("INSERT INTO filing_lock (id, until) VALUES (1, ?)").bind(new Date(Date.now() + 60_000).toISOString()).run()
     expect((await manage('/finance/file', 'POST')).status).toBe(409)

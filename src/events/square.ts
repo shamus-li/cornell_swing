@@ -174,21 +174,25 @@ export async function syncPayments(env: Env, relistMs = RELIST_MS): Promise<void
   await env.EVENTS_DB.prepare('UPDATE square_connection SET syncedAt = ? WHERE id = 1').bind(startedAt).run()
 }
 
-// Reads Square and files what changed on the Balance Sheet, unless that's already running, because two writers at
-// once could claim the same new row on the sheet. Returns whether it ran.
-export async function syncSquare(env: Env, relistMs = RELIST_MS): Promise<boolean> {
+// Runs one writer to the Balance Sheet at a time, because two at once could claim the same new row. Returns whether it ran.
+export async function withFilingLock(env: Env, write: () => Promise<void>): Promise<boolean> {
   const now = Date.now()
   const lock = await env.EVENTS_DB.prepare('INSERT INTO filing_lock (id, until) VALUES (1, ?1) ON CONFLICT (id) DO UPDATE SET until = ?1 WHERE until < ?2')
     .bind(new Date(now + FILING_LOCK_MS).toISOString(), new Date(now).toISOString()).run()
   if (!lock.meta.changes) return false
   try {
-    await syncPayments(env, relistMs)
-    await syncLedger(env)
+    await write()
     return true
   } finally {
     await env.EVENTS_DB.prepare('DELETE FROM filing_lock').run()
   }
 }
+
+// Reads Square and files what changed on the Balance Sheet.
+export const syncSquare = (env: Env, relistMs = RELIST_MS) => withFilingLock(env, async () => {
+  await syncPayments(env, relistMs)
+  await syncLedger(env)
+})
 
 // An officer filing by hand also catches a refund on an older payment.
 export const fileNow = (env: Env) => syncSquare(env, FILE_NOW_RELIST_MS)

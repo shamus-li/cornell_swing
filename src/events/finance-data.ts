@@ -1,8 +1,8 @@
 import { createCachedGoogleAccessTokenProvider, getGoogleAccessToken, readCheckins } from '../../check-in/worker/google'
 import type { CampusGroupsRow, EventActivity, FinanceEvent, FinanceOverview, Transaction } from './finance'
-import { fiscalYear } from './ledger'
+import { appendLedgerRows, fiscalYear } from './ledger'
 import { todayInNewYork } from './model'
-import { eventLabel } from './square'
+import { eventLabel, withFilingLock } from './square'
 
 // The Finances tab and event pages: the Balance Sheet, with its batched Square and cash rows replaced by each
 // payment, checked row by row against the latest CampusGroups transactions export.
@@ -69,29 +69,34 @@ function linesAddingUpTo(lines: SheetRow[], amount: number): SheetRow[] {
 // The sheet labels an event with its plain name; a year in the site's title only keeps titles unique.
 const sheetLabel = (event: EventRow) => eventLabel(event.title.replace(/ 20\d\d$/, ''), event.date)
 
-export function buildTransactions(rows: SheetRow[], payments: Payment[], stored: StoredExport | null, events: EventRow[]): Transaction[] {
-  const byLabel = new Map(events.map(event => [sheetLabel(event), event]))
-  const uploaded = stored?.uploadedAt.slice(0, 10) ?? ''
+// Pairs the CampusGroups export with the sheet. One sheet row pairs with one export row: same account and amount,
+// close in date. A payment can also be several lines on the sheet, like an instructor's fee and travel.
+function pairExport(rows: SheetRow[], stored: StoredExport | null) {
   const earliest = rows.reduce((first, row) => row.date && row.date < first ? row.date : first, '9999')
   const exported = (stored?.rows ?? []).flatMap((row, index) => {
     const account = cornellAccount(row.source)
     const date = usDate(row.date)
     const amount = Number(row.amount)
-    return account && date >= earliest && amount && !/rejected/i.test(row.paymentStatus) ? [{ index, account, date, amount, item: row.item.trim() }] : []
+    return account && date >= earliest && amount && !/rejected/i.test(row.paymentStatus) ? [{ index, account, date, amount, item: row.item.trim(), pending: /pending/i.test(row.paymentStatus) }] : []
   })
-  // One sheet row pairs with one export row: same account and amount, close in date.
   const paired = new Set<number>()
   const unpaired = exported.filter(row => {
     const match = rows.find(sheet => !paired.has(sheet.index) && sheet.account === row.account && Math.abs(sheet.amount - row.amount) < 0.005 && Math.abs(Date.parse(sheet.date) - Date.parse(row.date)) <= MATCH_DAYS * DAY_MS)
     if (match) paired.add(match.index)
     return !match
   }).filter(row => {
-    // One CampusGroups payment can be several lines on the sheet, like an instructor's fee and travel.
     const nearby = rows.filter(sheet => !paired.has(sheet.index) && sheet.account === row.account && sheet.amount * row.amount > 0 && Math.abs(Date.parse(sheet.date) - Date.parse(row.date)) <= MATCH_DAYS * DAY_MS)
     const parts = linesAddingUpTo(nearby, row.amount)
     for (const part of parts) paired.add(part.index)
     return !parts.length
   })
+  return { paired, unpaired }
+}
+
+export function buildTransactions(rows: SheetRow[], payments: Payment[], stored: StoredExport | null, events: EventRow[]): Transaction[] {
+  const byLabel = new Map(events.map(event => [sheetLabel(event), event]))
+  const uploaded = stored?.uploadedAt.slice(0, 10) ?? ''
+  const { paired, unpaired } = pairExport(rows, stored)
   const fromSheet = rows.filter(row => !row.siteRow).map((row): Transaction => {
     const event = row.label && byLabel.get(row.label.key)
     const cornell = !!stored && (row.account === 'GPSA' || row.account === 'Outside Funding')
@@ -173,12 +178,19 @@ export async function financeOverview(env: Env, fresh = false): Promise<FinanceO
   return { accounts, events: buildEvents(rows, events), transactions: buildTransactions(rows, payments, stored, events), campusGroupsUploadedAt: stored?.uploadedAt ?? null }
 }
 
-// Keeps what the page needs from each row of the export, which also names the officers who filed them.
+// Keeps what the page needs from each row of the export, which also names the officers who filed them, and adds
+// what the Balance Sheet is missing. Those rows then pair with the export, so a later upload doesn't add them again.
 export async function saveCampusGroupsTransactions(env: Env, body: unknown): Promise<void> {
   const rows = (body as { rows?: unknown } | null)?.rows
   if (!Array.isArray(rows) || !rows.length || rows.length > 5000) throw new Error('Upload the transactions export CSV from CampusGroups.')
   const clean = (rows as Record<string, unknown>[]).map(row => ({ source: String(row.source ?? ''), amount: String(row.amount ?? ''), paymentStatus: String(row.paymentStatus ?? ''), item: String(row.item ?? '').slice(0, 200), date: String(row.date ?? '') }))
-  await env.MEMBER_CACHE.put(campusGroupsTransactionsKey, JSON.stringify({ uploadedAt: new Date().toISOString(), rows: clean } satisfies StoredExport))
+  const stored: StoredExport = { uploadedAt: new Date().toISOString(), rows: clean }
+  await env.MEMBER_CACHE.put(campusGroupsTransactionsKey, JSON.stringify(stored))
+  const added = await withFilingLock(env, async () => {
+    const [history] = await readBalanceSheet(env, true)
+    await appendLedgerRows(env, pairExport(parseSheetRows(history), stored).unpaired.map(row => ({ date: row.date, amount: row.amount, source: row.account, complete: !row.pending, description: row.item })))
+  })
+  if (!added) throw new Error('The Balance Sheet is being updated. Upload the export again in a minute.')
 }
 
 const clock = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' })

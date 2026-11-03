@@ -283,7 +283,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (path === '/manage/api/finance' && method === 'GET') return json(await financeOverview(env, url.searchParams.has('fresh')))
   if (path === '/manage/api/finance/campusgroups' && method === 'PUT') {
     try { await saveCampusGroupsTransactions(env, await readBody(request, 2_000_000)) } catch (error) { if (error instanceof HttpError) throw error; throw new HttpError(400, (error as Error).message) }
-    return json(await financeOverview(env))
+    return json(await financeOverview(env, true))
   }
   if (path === '/manage/api/finance/file' && method === 'POST') {
     if (!await fileNow(env)) throw new HttpError(409, 'Filing is already running. Try again in a minute.')

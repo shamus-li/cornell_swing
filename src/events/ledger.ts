@@ -72,3 +72,19 @@ export async function upsertLedgerRows(env: Env, rows: LedgerRow[]): Promise<voi
   const remove = await fetch(`${sheet}:batchUpdate`, { method: 'POST', headers, body: JSON.stringify({ requests }) })
   if (!remove.ok) throw new Error(`Ledger row removal failed with ${remove.status}`)
 }
+
+// Rows from elsewhere that belong to the treasurer once added, so they get no ID. An unfinished one is marked Incomplete.
+export async function appendLedgerRows(env: Env, rows: { date: string; amount: number; source: string; complete: boolean; description: string }[]): Promise<void> {
+  if (!rows.length) return
+  const headers = { Authorization: `Bearer ${await getGoogleAccessToken(env)}`, 'Content-Type': 'application/json' }
+  const base = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(env.FINANCE_SPREADSHEET_ID)}/values`
+  const read = new URL(`${base}:batchGet`)
+  for (const column of ['B', 'H']) read.searchParams.append('ranges', `${TAB}!${column}:${column}`)
+  const response = await fetch(read, { headers })
+  if (!response.ok) throw new Error(`Ledger read failed with ${response.status}`)
+  const { valueRanges } = await response.json() as { valueRanges: { values?: unknown[][] }[] }
+  const first = Math.max(...valueRanges.map(range => range.values?.length ?? 0)) + 1
+  const data = rows.map((row, index) => ({ range: `${TAB}!A${first + index}:F${first + index}`, values: [[fiscalYear(row.date), (Date.parse(`${row.date}T00:00:00Z`) - SHEET_EPOCH_MS) / DAY_MS, row.amount, row.source, row.complete ? 'Y' : 'Incomplete', row.description]] }))
+  const write = await fetch(`${base}:batchUpdate`, { method: 'POST', headers, body: JSON.stringify({ valueInputOption: 'RAW', data }) })
+  if (!write.ok) throw new Error(`Ledger write failed with ${write.status}`)
+}
