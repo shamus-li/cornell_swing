@@ -118,7 +118,7 @@ function fill(html: string, script: string, data: object, page: string) {
 export function renderPage(html: string, originalUrl: string) {
   const today = todayInNewYork()
   if (html.includes('id="dances-data"')) {
-    const data = { events: published(), outside: outside.filter(event => event.date >= today), today }
+    const data = { events: published(), outside: outside.filter(event => event.published && event.date >= today), today }
     return fill(html, "dances-data", data, renderToString(createElement(DancesPage, data)))
   }
   if (html.includes('id="event-data"')) {

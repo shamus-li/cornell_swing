@@ -93,7 +93,7 @@ time { font-variant-numeric: tabular-nums; }
 
 @layer base {
   [data-slot] { margin: 0; border: 0 solid var(--border); }
-  [data-slot="button"] { border-style: solid; }
+  [data-slot="button"] { color: inherit; border-style: solid; }
   [data-slot="popover-content"] { border: 0 solid var(--border); outline: none; }
 }
 

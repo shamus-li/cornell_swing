@@ -223,6 +223,8 @@ html:has(.manage-page) { scroll-behavior: auto; }
   .manage-main { padding-top: 16px; }
   :is(.event-row-button, .normal-event-summary) { gap: 12px; }
   [data-slot="tabs-trigger"] { padding: 0 10px; }
+  /* Tighter columns keep Remove RSVP in view. */
+  .guest-list :is([data-slot="table-head"], [data-slot="table-cell"]) { padding-inline: 6px; }
   /* The date takes its own line above the times. */
   /* Lesson labels sit above their fields, so a start and end time fit side by side. */
   .normal-event-edit .editor-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }

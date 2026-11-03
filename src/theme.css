@@ -148,7 +148,7 @@
 /* The public pages and the manager don't load Tailwind's reset, so form controls get what they need here. */
 @layer base {
   :where(button, input, select, textarea) { color: inherit; font: inherit; }
-  :where(input, select, textarea, [data-slot="select-trigger"]) { font-weight: var(--body-font-weight); }
+  :where(input, select, textarea, [data-slot="select-trigger"]) { color: var(--foreground); font-weight: var(--body-font-weight); }
   :where(button) { background: transparent; border: 0 solid var(--border); }
   :where(button:not(:disabled), [role="button"]:not(:disabled)) { cursor: pointer; }
 }
