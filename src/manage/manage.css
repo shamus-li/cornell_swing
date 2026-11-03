@@ -40,6 +40,9 @@ html:has(.manage-page) { scroll-behavior: auto; }
 :is(.event-row-button, .normal-event-summary):focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .event-row-text { display: grid; gap: 2px; min-width: 0; }
 .event-row-text > .event-muted { font-size: var(--small-font-size); }
+.normal-event-summary { line-height: 1.4; }
+.normal-event-summary .schedule-times { margin: 0; }
+.normal-event-summary .schedule-program .event-markdown p + p { margin-top: 2px; }
 .event-row-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .event-row-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .manage-list strong { font-weight: 600; }
@@ -67,7 +70,7 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .event-page-title h1 { min-width: 0; }
 .event-page-title .date-tile { flex: none; align-self: center; min-height: 52px; justify-content: center; }
 /* A textarea, so a long name wraps as it does on the homepage. */
-.event-name-input { display: block; flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: transparent; font: 600 var(--manager-title-font-size)/1.25 var(--sans); resize: none; overflow: hidden; }
+.event-name-input { display: block; flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: transparent; font: 700 var(--manager-title-font-size)/1.25 var(--sans); resize: none; overflow: hidden; }
 .event-name-input::placeholder { color: var(--placeholder); }
 .event-name-input:focus-visible { box-shadow: 0 2px 0 var(--primary); }
 .editor-card { display: grid; padding: 0 16px; border-radius: var(--radius-card); background: var(--muted); }

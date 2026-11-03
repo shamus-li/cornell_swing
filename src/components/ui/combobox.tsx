@@ -142,7 +142,7 @@ function ComboboxItem({
     <ComboboxPrimitive.Item
       data-slot="combobox-item"
       className={cn(
-        "relative flex min-h-(--menu-row-height) w-full cursor-default items-center gap-2 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground not-data-[variant=destructive]:data-highlighted:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "relative flex min-h-(--menu-row-height) w-full cursor-default items-center gap-2 rounded-md py-1 pr-8 pl-1.5 text-base outline-hidden select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground not-data-[variant=destructive]:data-highlighted:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
@@ -193,7 +193,7 @@ function ComboboxEmpty({ className, ...props }: ComboboxPrimitive.Empty.Props) {
     <ComboboxPrimitive.Empty
       data-slot="combobox-empty"
       className={cn(
-        "hidden w-full justify-center py-2 text-center text-sm text-muted-foreground group-data-empty/combobox-content:flex",
+        "hidden w-full justify-center py-2 text-center text-base text-muted-foreground group-data-empty/combobox-content:flex",
         className
       )}
       {...props}

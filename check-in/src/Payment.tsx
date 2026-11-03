@@ -94,7 +94,7 @@ export function Payment({ attendee, eventId, event, tickets, onPaid, onLeave }: 
   }
 
   const main = "mx-auto flex min-h-svh w-full max-w-[620px] flex-col justify-center gap-6 px-5 py-12"
-  const heading = "text-[length:var(--title-font-size)] leading-tight font-semibold"
+  const heading = "text-[length:var(--title-font-size)] leading-tight font-bold"
   const alert = message && <p className="text-destructive text-base" role="alert">{message}</p>
   const volunteer = <Button variant="ghost" className={largeButtonClass} disabled={busy} onClick={() => void settle("waived")}>I'm volunteering</Button>
 

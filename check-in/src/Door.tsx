@@ -125,7 +125,7 @@ export default function Door() {
   return (
     <main className="mx-auto min-h-svh w-full max-w-[620px] px-5 py-5">
       {queue?.justPaid.map((name) => <p key={name} className="mb-4 rounded-lg bg-muted px-3 py-3 text-lg font-semibold" role="status">Checked in, {name}!</p>)}
-      <h1 className="mb-4 text-[length:var(--title-font-size)] leading-tight font-semibold">Ready to pay</h1>
+      <h1 className="mb-4 text-[length:var(--title-font-size)] leading-tight font-bold">Ready to pay</h1>
       {error && <p className="mb-4 text-base text-destructive" role="alert">Can't reach the site. Check the connection.</p>}
       {queue?.charges.length === 0 && <p className="py-8 text-center text-base text-muted-foreground">Nobody is waiting.</p>}
       <ul className="space-y-2">

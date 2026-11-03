@@ -11,7 +11,7 @@
 .request-form { margin-top: 20px; }
 .request-form :is(label, .request-styles) { display: grid; gap: 6px; font-size: var(--small-font-size); font-weight: 500; }
 .request-times { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.dances h2.dances-month { padding-bottom: 8px; border-bottom: 1px solid var(--border); font-size: var(--list-title-font-size); }
+.dances h2.dances-month { padding-bottom: 8px; border-bottom: 1px solid var(--border); font-size: var(--list-title-font-size); font-weight: 700; }
 
 /* /events/slug: one event, with the same row layout as the lists. */
 .event-page { padding: 40px 0 0; }
