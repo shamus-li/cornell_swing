@@ -34,17 +34,17 @@ typography:
   page-title:
     fontFamily: Inter
     fontSize: 32px
-    fontWeight: 600
+    fontWeight: 700
     lineHeight: 1.1
   title:
     fontFamily: Inter
     fontSize: 28px
-    fontWeight: 600
+    fontWeight: 700
     lineHeight: 1.25
   manager-title:
     fontFamily: Inter
     fontSize: 24px
-    fontWeight: 600
+    fontWeight: 700
     lineHeight: 1.25
   list-title:
     fontFamily: Inter

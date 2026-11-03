@@ -213,7 +213,7 @@ export function NonCornellWaiver({
     <form className="space-y-4" noValidate onSubmit={sign}>
       {waiver && (
         <>
-          <h1 className="text-[length:var(--title-font-size)] leading-tight font-semibold">
+          <h1 className="text-[length:var(--title-font-size)] leading-tight font-bold">
             {waiver.blocks[0].runs.map((run) => run.text).join("")}
           </h1>
           <div className="rounded-xl bg-muted p-4">

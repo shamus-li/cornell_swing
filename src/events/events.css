@@ -58,7 +58,7 @@ time { font-variant-numeric: tabular-nums; }
 .next-event-title { font-weight: 500; }
 .next-event-icon { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--border); border-radius: var(--radius); color: var(--muted-foreground); }
 .next-event-icon svg { width: 20px; height: 20px; }
-.event-dialog h2 { font-size: var(--title-font-size); padding-right: 12px; }
+.event-dialog h2 { font-size: var(--title-font-size); font-weight: 700; padding-right: 12px; }
 /* The date line runs beside the close button, so it stops short of it. */
 .event-dialog .event-eyebrow { padding-right: 28px; }
 .dialog-close { position: absolute; top: 10px; right: 12px; color: var(--muted-foreground); }

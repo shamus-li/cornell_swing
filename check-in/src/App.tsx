@@ -384,7 +384,7 @@ export default function App() {
   if (confirmation) {
     return (
       <main className="mx-auto flex min-h-svh w-full max-w-[620px] flex-col items-center justify-center gap-6 px-5 py-12 text-center sm:gap-8">
-        <h1 className="text-[length:var(--title-font-size)] leading-tight font-semibold">{confirmation}</h1>
+        <h1 className="text-[length:var(--title-font-size)] leading-tight font-bold">{confirmation}</h1>
         {next?.joinCampusGroups && (
           <QrCallout
             title="Join Swing Syndicate on CampusGroups"
@@ -446,7 +446,7 @@ export default function App() {
           <SiteBrand link={false} />
         </header>
         <main className="pt-12">
-          <h1 className="mb-6 text-[length:var(--title-font-size)] leading-tight font-semibold">Choose an event</h1>
+          <h1 className="mb-6 text-[length:var(--title-font-size)] leading-tight font-bold">Choose an event</h1>
           <div className="flex flex-col gap-3">
             {choices.map((option) => (
               <button key={option.id} type="button" className="flex min-h-16 flex-col justify-center rounded-lg border bg-background px-4 py-3 text-left text-lg transition-colors hover:bg-muted" onClick={() => setPickedEvent(option.id)}>
@@ -467,7 +467,7 @@ export default function App() {
       </header>
 
       <main className="pt-12">
-        <h1 className="mb-6 text-[length:var(--title-font-size)] leading-tight font-semibold">Check in</h1>
+        <h1 className="mb-6 text-[length:var(--title-font-size)] leading-tight font-bold">Check in</h1>
 
         <form className="space-y-4" autoComplete="off" noValidate onSubmit={submitCheckin}>
           {selectedMember && (

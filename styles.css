@@ -137,11 +137,11 @@ h3:not([data-slot]) {
 
 h1:not([data-slot]) {
   font-size: var(--page-title-font-size);
+  font-weight: 700;
 }
 
 .home h1:not([data-slot]) {
   font-size: clamp(2.5rem, 5.5vw, 3.75rem);
-  font-weight: 700;
   letter-spacing: -0.01em;
 }
 
