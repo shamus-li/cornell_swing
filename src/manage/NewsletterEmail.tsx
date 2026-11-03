@@ -1,7 +1,8 @@
 import type { CSSProperties, ReactNode } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { formatEventDate, formatEventDayRange, formatEventDays, formatEventLocation, formatEventPrices, formatEventTime, nightSpan, todayInNewYork, type EventRecord } from "../events/model"
+import { formatEventDate, formatEventDayRange, formatEventLocation, formatEventPrices, formatEventTime, nightSpan, todayInNewYork, type EventRecord } from "../events/model"
+import type { OutsideEvent } from "../events/outside"
 import { parsePrograms } from "./NormalEventRow"
 
 // Inline styles only, since Gmail keeps nothing else from pasted HTML.
@@ -99,7 +100,7 @@ export function GlanceBlock({ events }: { events: EventRecord[] }) {
     <table role="presentation" cellPadding={0} cellSpacing={0} border={0} width="100%" style={{ width: "100%", margin: "0 0 16px", borderCollapse: "collapse" }}><tbody>
       {events.map(event => <tr key={event.id}>
         <td style={{ width: 88, padding: "6px 12px 6px 0", verticalAlign: "top", fontSize: 15, lineHeight: "22px", fontWeight: 700, whiteSpace: "nowrap" }}>{formatEventDate(event.date, { weekday: "short", month: "short", day: "numeric" })}</td>
-        <td style={{ padding: "6px 0", verticalAlign: "top", fontSize: 15, lineHeight: "22px" }}>{event.kind === "normal" ? lessonTitle(event) : event.title}<br /><span style={{ color: gray }}>{time(nightSpan(event))} · {formatEventLocation(event)}</span></td>
+        <td style={{ padding: "6px 0", verticalAlign: "top", fontSize: 15, lineHeight: "22px" }}>{event.kind === "normal" ? lessonTitle(event) : event.title}<br /><span style={{ color: gray }}>{event.moreDays?.length ? formatEventDayRange(event) : time(nightSpan(event))} · {formatEventLocation(event)}</span></td>
       </tr>)}
     </tbody></table>
   </>
@@ -111,7 +112,6 @@ export function FeaturedBlock({ event }: { event: EventRecord }) {
   return <>
     <h2 style={{ margin: "0 0 8px", fontSize: 26, lineHeight: "32px", fontWeight: 700 }}>{event.title}</h2>
     <p style={meta}>{event.moreDays?.length ? formatEventDayRange(event) : <>{fullDate(event.date)} · {time(event)}</>}<br /><Place event={event} />{prices.length > 0 && <Prices prices={prices} />}</p>
-    {event.moreDays?.length ? <p style={meta}>{formatEventDays(event).map(day => <span key={day}>{day}<br /></span>)}</p> : null}
     {event.description && <EmailMarkdown>{event.description}</EmailMarkdown>}
     <EmailButton href={event.slug ? `${site}events/${event.slug}` : site}>RSVP</EmailButton>
   </>
@@ -150,11 +150,22 @@ export function EventsBlock({ events, title }: { events: EventRecord[]; title: s
     {events.map(event => {
       const prices = formatEventPrices(event)
       return <div key={event.id} style={{ margin: "0 0 20px" }}>
-        <p style={{ ...text, margin: 0 }}><strong>{formatEventDate(event.date, { weekday: "short", month: "short", day: "numeric" })}:</strong> <a href={site} style={{ color: berry, textDecoration: "none", fontWeight: 700 }}>{event.title}</a></p>
-        <p style={{ ...meta, margin: "0 0 8px" }}>{time(event)} · <Place event={event} />{prices.length > 0 && <Prices prices={prices} />}</p>
+        <p style={{ ...text, margin: 0 }}><strong>{event.moreDays?.length ? formatEventDayRange(event) : formatEventDate(event.date, { weekday: "short", month: "short", day: "numeric" })}:</strong> <a href={site} style={{ color: berry, textDecoration: "none", fontWeight: 700 }}>{event.title}</a></p>
+        <p style={{ ...meta, margin: "0 0 8px" }}>{!event.moreDays?.length && <>{time(event)} · </>}<Place event={event} />{prices.length > 0 && <Prices prices={prices} />}</p>
         {event.description && <EmailMarkdown>{event.description}</EmailMarkdown>}
       </div>
     })}
+  </>
+}
+
+// Other groups' dances, each linked to its own page.
+export function CommunityBlock({ events }: { events: OutsideEvent[] }) {
+  return <>
+    <Title>Community events</Title>
+    {events.map(event => <div key={event.id} style={{ margin: "0 0 20px" }}>
+      <p style={{ ...text, margin: 0 }}><strong>{event.lastDate ? formatEventDayRange(event) : formatEventDate(event.date, { weekday: "short", month: "short", day: "numeric" })}:</strong> {event.url ? <a href={event.url} style={{ color: berry, textDecoration: "none", fontWeight: 700 }}>{event.title}</a> : <strong>{event.title}</strong>}</p>
+      <p style={{ ...meta, margin: "0 0 8px" }}>{[!event.lastDate && event.startTime && time(event), formatEventLocation(event), event.groupName, event.price].filter(Boolean).join(" · ")}</p>
+    </div>)}
   </>
 }
 

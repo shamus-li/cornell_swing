@@ -71,6 +71,8 @@ export function lessonSchedule({ startTime, endTime, lessonEndTime, socialStartT
 // ["Lesson 8:00–9:00 PM", "Social dance 9:00–10:00 PM"]
 export const formatLessonSchedule = (event: Parameters<typeof lessonSchedule>[0]) => lessonSchedule(event).map(part => part.text)
 // Whether any day of the event is still to come; an event without a date hasn't happened yet.
+// Places close enough to count as Ithaca rather than a trip.
+export const ithacaArea = ['Ithaca', 'Newfield', 'Enfield', 'Danby', 'Caroline', 'Dryden', 'Freeville', 'Lansing', 'Groton', 'Trumansburg', 'Ulysses']
 // The first day of the academic year holding `today`. Years run August 1 through July 31.
 export const academicYearStart = (today: string) => `${Number(today.slice(0, 4)) - (Number(today.slice(5, 7)) < 8 ? 1 : 0)}-08-01`
 export const isUpcoming = ({ date, lastDate }: Pick<EventRecord, 'date' | 'lastDate'>, today: string) => !date || (lastDate || date) >= today
@@ -79,9 +81,6 @@ export function formatEventDayRange({ date, lastDate, moreDays = [] }: Pick<Even
   const day = (value: string) => formatEventDate(value, { weekday: 'short', month: 'short', day: 'numeric' })
   return `${day(date)} – ${day(lastDate || moreDays.at(-1)!.date)}`
 }
-// ["Fri, Nov 13 · 6:00–10:00 PM", "Sat, Nov 14 · 10:00 AM–5:00 PM"] for an event running several days.
-export const formatEventDays = ({ date, startTime, endTime, moreDays = [] }: Pick<EventRecord, 'date' | 'startTime' | 'endTime' | 'moreDays'>) =>
-  [{ date, startTime, endTime }, ...moreDays].map(day => `${formatEventDate(day.date, { weekday: 'short', month: 'short', day: 'numeric' })} · ${formatEventTime(day)}`)
 // A weekly night runs from whichever of the lesson and social dance starts first until whichever ends last.
 export function nightSpan({ startTime, endTime, lessonEndTime, socialStartTime }: Pick<EventRecord, 'startTime' | 'endTime' | 'lessonEndTime' | 'socialStartTime'>): Pick<EventRecord, 'startTime' | 'endTime'> {
   return {

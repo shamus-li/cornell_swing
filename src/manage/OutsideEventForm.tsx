@@ -46,7 +46,6 @@ export function OutsideEventForm({ event, groups, onSave, onCancel, onDelete }: 
       <label className="editor-row"><span>Link</span><Input type="url" maxLength={2000} placeholder="https://" value={draft.url} onChange={e => change("url", e.target.value)} disabled={busy} /></label>
     </div>
     {event.sourceNote && <p className="event-note">{event.sourceNote}</p>}
-    {event.fromFeed && <p className="event-note">From {event.groupName}'s calendar feed, which may replace edits to the event's name, time, place or link.</p>}
     {error && <p role="alert" className="event-error">{error}</p>}
     <div className="normal-event-actions">
       <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</Button>

@@ -4,15 +4,16 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { Bold, Check, Copy, ExternalLink, GripVertical, Italic, Link, Plus, RotateCcw, Save, X } from "lucide-react"
 import { Button } from "../../check-in/src/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../check-in/src/components/ui/select"
-import { formatEventDate, hasEventDetails, todayInNewYork, type EventRecord } from "../events/model"
+import { formatEventDate, hasEventDetails, isUpcoming, ithacaArea, todayInNewYork, type EventRecord } from "../events/model"
+import type { OutsideEvent } from "../events/outside"
 import { api, errorMessage } from "./api"
 import { ConfirmButton } from "./ConfirmButton"
-import { AnnouncementBlock, Card, EmailFrame, EventsBlock, FeaturedBlock, FooterBlock, GlanceBlock, GreetingBlock, InvolvedBlock, LessonBlock, longDate, PracticeBlock, SignOffBlock } from "./NewsletterEmail"
+import { AnnouncementBlock, Card, CommunityBlock, EmailFrame, EventsBlock, FeaturedBlock, FooterBlock, GlanceBlock, GreetingBlock, InvolvedBlock, LessonBlock, longDate, PracticeBlock, SignOffBlock } from "./NewsletterEmail"
 
 const none = "none"
 type Placement = "featured" | "listed" | "out"
 const placements: { value: Placement; label: string }[] = [{ value: "featured", label: "Featured" }, { value: "listed", label: "Listed" }, { value: "out", label: "Left out" }]
-const shortDate = (event: EventRecord) => formatEventDate(event.date, { weekday: "short", month: "short", day: "numeric" })
+const shortDate = (event: Pick<EventRecord, "date">) => formatEventDate(event.date, { weekday: "short", month: "short", day: "numeric" })
 
 // Parts that repeat every week. Organizers can save their edits to these for future newsletters.
 type Part = "practice" | "involved" | "signoff" | "footer"
@@ -56,7 +57,7 @@ function Block({ html, part }: { html: string; part?: Part }) {
 
 // Builds the weekly newsletter from published events. Organizers edit it in place and paste it into Gmail.
 // The copy buttons go in the page header, `actions`, where other tabs put their main action.
-export function Newsletter({ events, actions }: { events: EventRecord[]; actions: HTMLElement | null }) {
+export function Newsletter({ events, outside, actions }: { events: EventRecord[]; outside: OutsideEvent[]; actions: HTMLElement | null }) {
   const today = todayInNewYork()
   const upcoming = events.filter(event => event.published && event.date >= today)
   const lessons = upcoming.filter(event => event.kind === "normal")
@@ -65,6 +66,9 @@ export function Newsletter({ events, actions }: { events: EventRecord[]; actions
   const [lessonId, setLessonId] = useState(lessons[0]?.id ?? none)
   // The next special event is featured and later ones are listed under Coming up.
   const [placement, setPlacement] = useState<Record<string, Placement>>(() => Object.fromEntries(specials.map((event, index) => [event.id, index ? "listed" : "featured"])))
+  // Other groups' dances stay out until an organizer ticks them.
+  const [communityIds, setCommunityIds] = useState<string[]>([])
+  const [nearby, setNearby] = useState(true)
   const [theme, setTheme] = useState(false)
   const [glanceShown, setGlanceShown] = useState(true)
   const [subject, setSubject] = useState<string | null>(null)
@@ -100,6 +104,8 @@ export function Newsletter({ events, actions }: { events: EventRecord[]; actions
   const lesson = lessons.find(event => event.id === lessonId)
   const featured = specials.filter(event => placement[event.id] === "featured")
   const listed = specials.filter(event => placement[event.id] === "listed")
+  const communityEvents = outside.filter(event => event.published && isUpcoming(event, today))
+  const community = communityEvents.filter(event => communityIds.includes(event.id))
   // The mailing list adds "[Swing Syndicate]" to every subject.
   const defaultSubject = [lesson && `${longDate(lesson.date)} Dance`, ...featured.map(event => event.title)].filter(Boolean).join(" & ") || "Weekly Newsletter"
   // Each section is one card. The lesson card ends with the etiquette and practice note, which organizers can save for future weeks.
@@ -112,6 +118,7 @@ export function Newsletter({ events, actions }: { events: EventRecord[]; actions
   if (lesson) sections.set("lesson", { name: "Lesson", key: `lesson-${lesson.id}-${theme}`, html: renderToStaticMarkup(<LessonBlock lesson={lesson} theme={theme} />), part: "practice" })
   for (const event of featured) add(event.id, event.title, `featured-${event.id}`, <FeaturedBlock event={event} />)
   if (listed.length) add("events", "Coming up", `events-${listed.map(event => event.id).join()}-${glanceOn}`, <EventsBlock events={listed} title={glanceOn ? "Later this semester" : "Coming up"} />)
+  if (community.length) add("community", "Community events", `community-${community.map(event => event.id).join()}`, <CommunityBlock events={community} />)
   for (const id of notes) add(id, "Announcement", id, <AnnouncementBlock />)
   const present = [...order.filter(id => sections.has(id)), ...[...sections.keys()].filter(id => !order.includes(id))]
 
@@ -145,6 +152,7 @@ export function Newsletter({ events, actions }: { events: EventRecord[]; actions
     if (id === "lesson") setLessonId(none)
     else if (id === "glance") setGlanceShown(false)
     else if (id === "events") setPlacement(current => ({ ...current, ...Object.fromEntries(listed.map(event => [event.id, "out"])) }))
+    else if (id === "community") setCommunityIds([])
     else if (placement[id]) setPlacement(current => ({ ...current, [id]: "out" }))
     else setNotes(current => current.filter(note => note !== id))
   }
@@ -230,6 +238,16 @@ export function Newsletter({ events, actions }: { events: EventRecord[]; actions
             <SelectTrigger size="sm" aria-label={`Show ${event.title}`}><SelectValue /></SelectTrigger>
             <SelectContent>{placements.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
           </Select>
+        </li>)}</ul>
+      </fieldset>}
+      {communityEvents.length > 0 && <fieldset className="newsletter-field"><legend>Community events</legend>
+        <div className="segmented" role="group" aria-label="Area">
+          <button type="button" aria-pressed={nearby} onClick={() => setNearby(true)}>Ithaca</button>
+          <button type="button" aria-pressed={!nearby} onClick={() => setNearby(false)}>All upstate</button>
+        </div>
+        <ul className="newsletter-specials newsletter-community">{communityEvents.filter(event => !nearby || ithacaArea.includes(event.city) || communityIds.includes(event.id)).map(event => <li key={event.id}>
+          <label className="newsletter-check"><input type="checkbox" checked={communityIds.includes(event.id)} onChange={e => setCommunityIds(current => e.target.checked ? [...current, event.id] : current.filter(id => id !== event.id))} />
+            <span className="event-row-text"><span>{event.title}</span><span className="event-muted">{shortDate(event)} · {event.groupName}</span></span></label>
         </li>)}</ul>
       </fieldset>}
       <div className="newsletter-actions">

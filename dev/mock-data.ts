@@ -38,7 +38,7 @@ const outside = (id: string, title: string, groupName: string, days: number, sta
 export const outsideEvents: OutsideEvent[] = [
   outside("mock-outside-1", "First Friday Contra", "Ithaca Contra Dance", 4, "19:30", "22:30", "Bethel Grove Community Center", "Contra", "$10, students free"),
   outside("mock-outside-2", "Salsa Social", "Cornell Salsa", 9, "20:00", "23:00", "Willard Straight Hall", "Salsa", ""),
-  { ...outside("mock-outside-3", "Solo Jazz Weekend", "Ithaca Swing", 11, "", "", "Bethel Grove Community Center", "Swing", "Weekend pass $125"), lastDate: daysFromToday(nextMonday + 13) },
+  { ...outside("mock-outside-3", "Solo Jazz Weekend", "Ithaca Swing", 11, "", "", "Bethel Grove Community Center", "Swing", "Weekend pass $125"), lastDate: daysFromToday(nextMonday + 13), city: "Rochester" },
 ]
 
 export const square: SquareFeed = { square: "Swing Syndicate" }

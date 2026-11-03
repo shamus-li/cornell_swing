@@ -1,7 +1,7 @@
 import { Fragment, useState } from "react"
 import { ClockIcon, MapPinIcon } from "lucide-react"
 import { Button } from "../../check-in/src/components/ui/button"
-import { danceStyles, isUpcoming, formatEventDate, formatEventDayRange, formatEventLocation, formatEventPrices, formatEventTime, hasEventDetails, nightSpan, type EventRecord } from "../events/model"
+import { danceStyles, isUpcoming, formatEventDate, formatEventDayRange, formatEventLocation, formatEventPrices, formatEventTime, hasEventDetails, ithacaArea, nightSpan, type EventRecord } from "../events/model"
 import type { OutsideEvent } from "../events/outside"
 import { LessonTimes } from "../events/LessonTimes"
 import { DateTile } from "../events/DateTile"
@@ -11,9 +11,6 @@ import { RequestEvent } from "./RequestEvent"
 
 // `unavailable` is set when the server could not read the events, so the page says so instead of "no dances".
 export type DanceSnapshot = { events: EventRecord[]; outside: OutsideEvent[]; today: string; unavailable?: boolean }
-
-// Places close enough to count as Ithaca rather than a trip.
-const ithacaArea = ["Ithaca", "Newfield", "Enfield", "Danby", "Caroline", "Dryden", "Freeville", "Lansing", "Groton", "Trumansburg", "Ulysses"]
 
 function listing(event: EventRecord | OutsideEvent) {
   const ours = event.kind !== "outside"
