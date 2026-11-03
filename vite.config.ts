@@ -15,7 +15,6 @@ export default defineConfig({
     },
     dedupe: ["react", "react-dom"],
   },
-  server: { proxy: { "/redirects/api": "http://localhost:8787" } },
   // The mock server renders pages using code that imports this package, which Node cannot load unbundled.
   ssr: { noExternal: ["validator"] },
   build: {

@@ -5,14 +5,16 @@ import { DancesPage } from "../src/site/DancesPage"
 import { EventPage } from "../src/site/EventPage"
 import { todayInNewYork, validateEvent, type ManagedEvent } from "../src/events/model"
 import { baseSlug } from "../src/events/slugs"
-import { activity, eventRsvps, events as sampleEvents, finance, outsideEvents, square } from "./mock-data"
+import { activity, danceFeeds, eventRsvps, events as sampleEvents, finance, outsideEvents, places, redirects as sampleRedirects, serviceAccountEmail, sheet, square } from "./mock-data"
 
 // Stands in for the Worker under `npm run dev`, so every page has data without signing in.
 // Saves run the real event validation and last until this code changes or the dev server restarts.
 const withSlug = (event: ManagedEvent) => ({ ...event, slug: baseSlug(event) })
 let events = sampleEvents.map(withSlug)
 let outside = [...outsideEvents]
-let feeds: { id: string }[] = []
+let feeds = [...danceFeeds]
+let redirects = [...sampleRedirects]
+let sheetConnection: typeof sheet | null = sheet
 const template: Record<string, string> = {}
 const rsvps: Record<string, { name: string; email: string; createdAt: string }[]> = { "mock-special-1": eventRsvps }
 // In the Worker's order: by date, undated events last.
@@ -45,6 +47,14 @@ async function respond(req: IncomingMessage, path: string): Promise<object | nul
   const rsvp = path.match(/^\/api\/events\/([^/]+)\/rsvp$/)
   if (rsvp) { (rsvps[rsvp[1]] ??= []).push({ ...await body(req), createdAt: new Date().toISOString() }); return { success: true } }
   if (path === "/api/event-requests") return { success: true }
+  if (path === "/redirects/api") {
+    if (method === "GET") return redirects
+    const change = await body(req)
+    if (method === "POST") redirects = [...redirects, change]
+    if (method === "PUT") redirects = redirects.map(rule => rule.source === change.source ? change.redirect : rule)
+    if (method === "DELETE") redirects = redirects.filter(rule => rule.source !== change.source)
+    return { success: true }
+  }
   if (!path.startsWith("/manage/api/")) return null
   const route = path.slice("/manage/api".length)
   if (/^\/events\/[^/]+\/activity$/.test(route)) return activity
@@ -69,12 +79,16 @@ async function respond(req: IncomingMessage, path: string): Promise<object | nul
     if (method === "PUT") template[part] = html; else delete template[part]
     return { success: true }
   }
-  if (route.startsWith("/locations")) return { places: [] }
+  if (route.startsWith("/locations")) return { places }
   if (route === "/square") return square
   if (route === "/finance") return finance
   if (route === "/finance/campusgroups") return { ...finance, campusGroupsUploadedAt: new Date().toISOString() }
   if (route === "/alert-email") return { email: "alerts@example.com", verified: true }
-  if (route.startsWith("/rsvp-sheet")) return { connection: null, serviceAccountEmail: null }
+  if (route.startsWith("/rsvp-sheet")) {
+    if (method === "PUT") sheetConnection = { ...sheet, url: (await body(req)).url }
+    if (method === "DELETE") sheetConnection = null
+    return { connection: sheetConnection, serviceAccountEmail }
+  }
   if (route === "/campusgroups") return { uploadedAt: null, count: null, members: null, generalRisk: null }
   return { success: true }
 }
@@ -88,7 +102,7 @@ export async function handle(req: IncomingMessage, res: ServerResponse, next: ()
     req.url = "/events/event/"
     return next()
   }
-  if (!path.startsWith("/api/") && !path.startsWith("/manage/api/")) return next()
+  if (!path.startsWith("/api/") && !path.startsWith("/manage/api/") && path !== "/redirects/api") return next()
   let status = 200, result: object | null
   try { result = await respond(req, path) } catch (error) { status = 400; result = { error: (error as Error).message } }
   res.writeHead(result ? status : 404, { "Content-Type": "application/json" }).end(JSON.stringify(result ?? { error: "Not found." }))

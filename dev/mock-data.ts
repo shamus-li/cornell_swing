@@ -1,6 +1,9 @@
+import type { DanceFeed } from "../src/events/feeds"
 import type { EventActivity, FinanceOverview, SquareFeed, Transaction } from "../src/events/finance"
+import type { PlaceResult } from "../src/events/locations"
 import { todayInNewYork, type ManagedEvent } from "../src/events/model"
 import type { OutsideEvent } from "../src/events/outside"
+import type { Redirect } from "../src/redirects/redirect"
 
 // Sample data for the dev server. Dates count from today, so there are always upcoming lessons and events.
 
@@ -39,6 +42,25 @@ export const outsideEvents: OutsideEvent[] = [
   outside("mock-outside-1", "First Friday Contra", "Ithaca Contra Dance", 4, "19:30", "22:30", "Bethel Grove Community Center", "Contra", "$10, students free"),
   outside("mock-outside-2", "Salsa Social", "Cornell Salsa", 9, "20:00", "23:00", "Willard Straight Hall", "Salsa", ""),
   { ...outside("mock-outside-3", "Solo Jazz Weekend", "Ithaca Swing", 11, "", "", "Bethel Grove Community Center", "Swing", "Weekend pass $125"), lastDate: daysFromToday(nextMonday + 13), city: "Rochester" },
+  { ...outside("mock-outside-4", "Tango Night", "Cornell Tango", 6, "19:00", "21:00", "Willard Straight Hall", "Tango", ""), published: false, needsReview: true, sourceNote: "Requested by tango@example.edu" },
+]
+
+export const danceFeeds: DanceFeed[] = [
+  { id: "mock-feed-1", name: "Ithaca Contra Dance", style: "Contra", city: "Ithaca", siteUrl: "https://example.com", feedUrl: "https://example.com/contra.ics", skipTitles: "", eventPages: "", checkedAt: `${todayInNewYork()}T11:00:00Z`, feedError: null },
+  { id: "mock-feed-2", name: "Cornell Salsa", style: "Salsa", city: "Ithaca", siteUrl: "", feedUrl: "https://example.com/salsa.ics", skipTitles: "Practice", eventPages: "", checkedAt: `${todayInNewYork()}T11:00:00Z`, feedError: "The calendar could not be read." },
+]
+
+export const places: PlaceResult[] = [
+  { label: "Willard Straight Hall", address: "Ho Plaza, Ithaca, NY", url: straight.locationUrl },
+  { label: "Big Red Barn", address: "Garden Ave, Ithaca, NY", url: barn.locationUrl },
+]
+
+export const sheet = { url: "https://docs.google.com/spreadsheets/d/mock", error: null }
+export const serviceAccountEmail = "sheets@mock.iam.gserviceaccount.com"
+
+export const redirects: Redirect[] = [
+  { source: "/join", destination: "https://cornell.campusgroups.com/swingsyndicate", code: 301 },
+  { source: "/waiver", destination: "https://example.com/a-long-destination-that-will-not-fit-on-a-phone/waiver-form", code: 302 },
 ]
 
 export const square: SquareFeed = { square: "Swing Syndicate" }

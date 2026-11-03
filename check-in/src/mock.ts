@@ -81,6 +81,7 @@ const WAIVER_BLOCKS: WaiverBlock[] = [
 
 const checkedIn = new Set<string>()
 const priced = new URLSearchParams(window.location.search).has("priced")
+const justPaid = new URLSearchParams(window.location.search).has("paid") ? ["Ada Lovelace"] : []
 const MOCK_TICKETS = [
   { id: "student", name: "Student", amount: 1000, days: 1 },
   { id: "general", name: "General", amount: 1500, days: 1 },
@@ -112,7 +113,7 @@ async function respond(path: string, init: RequestInit = {}): Promise<Response> 
     return json({ checkedIn: checkedIn.has(body.email), next: nextSteps(body.email, body.affiliation) })
   }
   if (path.endsWith("api/door/queue")) {
-    return json({ applicationId: "mock-app", justPaid: [], charges: [...doorCharges.values()].map(({ id, body: person, ticketName, amount, createdAt, verifying }) => ({ id, label: person.name, ticketName, amount, createdAt, verifying })) })
+    return json({ applicationId: "mock-app", justPaid, charges: [...doorCharges.values()].map(({ id, body: person, ticketName, amount, createdAt, verifying }) => ({ id, label: person.name, ticketName, amount, createdAt, verifying })) })
   }
   if (path.endsWith("api/door/charges")) {
     const id = `mock-${doorCharges.size + 1}`
