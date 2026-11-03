@@ -1,8 +1,8 @@
-import { Fragment, useState, type ReactNode } from "react"
+import { Fragment, useState } from "react"
 import { ClockIcon, MapPinIcon } from "lucide-react"
 import { Button } from "../../check-in/src/components/ui/button"
-import { isUpcoming, formatEventDate, formatEventLocation, formatEventPrices, formatEventTime, hasEventDetails, mapsSearchUrl, nightSpan, type EventRecord } from "../events/model"
-import { danceStyles, type OutsideEvent } from "../events/outside"
+import { danceStyles, isUpcoming, formatEventDate, formatEventLocation, formatEventPrices, formatEventTime, hasEventDetails, nightSpan, type EventRecord } from "../events/model"
+import type { OutsideEvent } from "../events/outside"
 import { LessonTimes } from "../events/LessonTimes"
 import { DateTile } from "../events/DateTile"
 import { EventLocation } from "../events/EventLocation"
@@ -12,29 +12,21 @@ import { RequestEvent } from "./RequestEvent"
 // `unavailable` is set when the server could not read the events, so the page says so instead of "no dances".
 export type DanceSnapshot = { events: EventRecord[]; outside: OutsideEvent[]; today: string; unavailable?: boolean }
 
-type Listing = { key: string; date: string; startTime: string; title: string; group: string; styles: string[]; time: string; lesson?: EventRecord; place: ReactNode; hasPlace: boolean; price: string; href: string; rsvp: boolean; nearby: boolean; ours: boolean }
-
 // Places close enough to count as Ithaca rather than a trip.
 const ithacaArea = ["Ithaca", "Newfield", "Enfield", "Danby", "Caroline", "Dryden", "Freeville", "Lansing", "Groton", "Trumansburg", "Ulysses"]
 
-function OutsidePlace({ event }: { event: OutsideEvent }) {
-  const named = event.venue.includes(event.city)
-  const place = [event.venue, event.city !== "Ithaca" && !named && event.city].filter(Boolean).join(", ") || event.city
-  return <a href={mapsSearchUrl(named ? event.venue : `${event.venue ? `${event.venue}, ` : ""}${event.city}`)} target="_blank" rel="noreferrer">{place}</a>
+function listing(event: EventRecord | OutsideEvent) {
+  const ours = event.kind !== "outside"
+  return {
+    key: event.id, date: event.date, startTime: nightSpan(event).startTime, title: event.title, group: ours ? "Swing Syndicate" : event.groupName, styles: event.styles,
+    time: formatEventTime(event), lesson: event.kind === "normal" ? event : undefined, place: <EventLocation event={event} />, hasPlace: formatEventLocation(event) !== "TBA", price: ours ? formatEventPrices(event).join(" · ") : event.price,
+    href: ours ? `/events/${event.slug}` : event.url, rsvp: event.kind === "special" && hasEventDetails(event), nearby: ithacaArea.includes(event.city), ours,
+  }
 }
+type Listing = ReturnType<typeof listing>
 
-function listings({ events, outside, today }: DanceSnapshot): Listing[] {
-  const ours = events.filter(event => event.date && isUpcoming(event, today)).map((event): Listing => ({
-    key: event.id, date: event.date, startTime: nightSpan(event).startTime, title: event.title, group: "Swing Syndicate", styles: ["Swing"],
-    time: formatEventTime(event), ...(event.kind === "normal" && { lesson: event }), place: <EventLocation event={event} />, hasPlace: formatEventLocation(event) !== "TBA", price: formatEventPrices(event).join(" · "),
-    href: `/events/${event.slug}`, rsvp: event.kind === "special" && hasEventDetails(event), nearby: true, ours: true,
-  }))
-  const theirs = outside.filter(event => event.date >= today).map((event): Listing => ({
-    key: event.id, date: event.date, startTime: event.startTime, title: event.title, group: event.groupName, styles: event.styles,
-    time: formatEventTime(event), place: <OutsidePlace event={event} />, hasPlace: true, price: event.price, href: event.url, rsvp: false, nearby: ithacaArea.includes(event.city), ours: false,
-  }))
-  return [...ours, ...theirs].sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime) || a.title.localeCompare(b.title))
-}
+const listings = ({ events, outside, today }: DanceSnapshot) => [...events, ...outside].filter(event => event.date && isUpcoming(event, today)).map(listing)
+  .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime) || a.title.localeCompare(b.title))
 
 export function DancesPage(snapshot: DanceSnapshot) {
   const [nearby, setNearby] = useState(true)

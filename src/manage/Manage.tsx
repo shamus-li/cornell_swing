@@ -1,7 +1,9 @@
 import { addDays, differenceInCalendarDays, format, parseISO } from "date-fns"
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react"
-import { CalendarIcon, Check, Copy, MapPinIcon, TicketIcon, XIcon } from "lucide-react"
+import { CalendarIcon, Check, Copy, MapPinIcon, MusicIcon, TicketIcon, XIcon } from "lucide-react"
 import { Button } from "../../check-in/src/components/ui/button"
+import { Input } from "../../check-in/src/components/ui/input"
+import { StylePicker } from "../events/StylePicker"
 import { isUpcoming, isValidPrice, todayInNewYork, type EventDay, type EventRecord, type EventTicket, type ManagedEvent, type RSVP } from "../events/model"
 import { EventTimePicker } from "./EventTimePicker"
 import { LocationPicker } from "./LocationPicker"
@@ -33,7 +35,7 @@ type ManagerTab = "special" | "lessons" | "newsletter" | "finances" | "settings"
 const managerTabs: { value: ManagerTab; label: string }[] = [{ value: "special", label: "Special events" }, { value: "lessons", label: "Lessons" }, { value: "newsletter", label: "Newsletter" }, { value: "finances", label: "Finances" }, { value: "settings", label: "Settings" }]
 const groupFilters = [{ value: "all", label: "All" }, { value: "ours", label: "Swing Syndicate" }, { value: "theirs", label: "Other groups" }] as const
 const byDate = (a: { date: string; startTime: string }, b: { date: string; startTime: string }) => (a.date || "9999").localeCompare(b.date || "9999") || a.startTime.localeCompare(b.startTime)
-const newEvent = (kind: EventRecord["kind"]): EventRecord => ({ id: "", kind, title: kind === "normal" ? "Monday Night Swing" : "", date: kind === "normal" ? todayInNewYork() : "", moreDays: [], startTime: kind === "normal" ? "20:00" : "", endTime: kind === "normal" ? "22:00" : "", lessonEndTime: kind === "normal" ? "21:00" : "", socialStartTime: kind === "normal" ? "21:00" : "", location: "", locationUrl: "", room: "", tickets: kind === "special" ? [{ id: "student", name: "Student", price: "", days: 1 }, { id: "general", name: "General", price: "", days: 1 }] : [], description: "", published: false, updatedAt: "" })
+const newEvent = (kind: EventRecord["kind"]): EventRecord => ({ id: "", kind, title: kind === "normal" ? "Monday Night Swing" : "", date: kind === "normal" ? todayInNewYork() : "", moreDays: [], startTime: kind === "normal" ? "20:00" : "", endTime: kind === "normal" ? "22:00" : "", lessonEndTime: kind === "normal" ? "21:00" : "", socialStartTime: kind === "normal" ? "21:00" : "", location: "", city: "Ithaca", styles: ["Swing"], locationUrl: "", room: "", tickets: kind === "special" ? [{ id: "student", name: "Student", price: "", days: 1 }, { id: "general", name: "General", price: "", days: 1 }] : [], description: "", published: false, updatedAt: "" })
 const searchParam = (name: string) => new URLSearchParams(window.location.search).get(name)
 
 export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent[] }) {
@@ -133,14 +135,14 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
     <span className="guest-count event-muted">{event.rsvpCount} RSVP{event.rsvpCount === 1 ? "" : "s"}</span>
   </Button>
   // Upcoming requested or imported events, which an organizer publishes or deletes.
-  const waiting = outside.filter(event => event.status === "review" && event.date >= todayInNewYork())
+  const waiting = outside.filter(event => event.needsReview && event.date >= todayInNewYork())
   const shownOutside = groupFilter === "ours" ? [] : outside
   const review = groupFilter === "ours" ? [] : waiting
   const outsideRow = (event: OutsideEvent) => editingOutside === event.id
     ? <OutsideEventForm key={event.id} event={event} groups={groups} onSave={acceptOutside} onCancel={() => setEditingOutside(null)} onDelete={() => { setOutside(current => current.filter(item => item.id !== event.id)); setEditingOutside(null) }} />
     : <Button key={event.id} variant="ghost" className="event-row-button" disabled={editingOutside !== null} onClick={() => setEditingOutside(event.id)}>
       <DateTile date={event.date} />
-      <span className="event-row-text"><span className="event-row-title"><strong>{event.title}</strong>{event.status === "hidden" && <DraftBadge />}</span><span className="event-muted">{outsideSummary(event)}</span></span>
+      <span className="event-row-text"><span className="event-row-title"><strong>{event.title}</strong>{!event.published && !event.needsReview && <DraftBadge />}</span><span className="event-muted">{outsideSummary(event)}</span></span>
     </Button>
 
   const tabLabel = managerTabs.find(item => item.value === tab)!.label
@@ -166,7 +168,7 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
         {error && <p role="alert" className="event-error manage-notice">{error} <Button variant="link" size="sm" onClick={() => window.location.reload()}>Reload</Button></p>}
         <div role="tabpanel" className="manage-panel" aria-label={tabLabel}>
           {tab === "settings" ? <><SheetConnection onSync={load} /><CampusGroupsUpload /><DanceFeeds /><AlertEmail /></> : tab === "finances" ? <><FinanceOverview /><Finances /></> : loading ? <p role="status" className="event-muted manage-notice">Loading events…</p> : tab === "newsletter" ? <Newsletter events={events} actions={titleActions} /> : tab === "special"
-            ? <>{review.length > 0 && <section className="manage-group" aria-label="Waiting for review"><h2>Waiting for review</h2><div className="manage-list">{review.map(outsideRow)}</div></section>}<EventGroups<ManagedEvent | OutsideEvent> events={[...events.filter(event => event.kind === "special" && groupFilter !== "theirs"), ...shownOutside.filter(event => !review.includes(event))].sort(byDate)} render={item => "groupName" in item ? outsideRow(item) : specialRow(item)} empty="No special events yet." first={editingOutside === "" && <OutsideEventForm event={blankOutsideEvent()} groups={groups} onSave={acceptOutside} onCancel={() => setEditingOutside(null)} />} /></>
+            ? <>{review.length > 0 && <section className="manage-group" aria-label="Waiting for review"><h2>Waiting for review</h2><div className="manage-list">{review.map(outsideRow)}</div></section>}<EventGroups<ManagedEvent | OutsideEvent> events={[...events.filter(event => event.kind === "special" && groupFilter !== "theirs"), ...shownOutside.filter(event => !review.includes(event))].sort(byDate)} render={item => item.kind === "outside" ? outsideRow(item) : specialRow(item)} empty="No special events yet." first={editingOutside === "" && <OutsideEventForm event={blankOutsideEvent()} groups={groups} onSave={acceptOutside} onCancel={() => setEditingOutside(null)} />} /></>
             : <EventGroups events={events.filter(event => event.kind === "normal")} render={lessonRow} empty="No weekly lessons yet." first={activeNormal === "" && <NormalEventRow ref={normalEditor} editing onEdit={() => {}} event={newEvent("normal")} onSave={saveNormal} onCancel={() => setActiveNormal(null)} />} />}
         </div>
       </>}
@@ -195,7 +197,7 @@ function EventEditor({ event, leaveGuard, onSave, onReplace, onDelete, onCancel,
   // Set when someone else saved the event after it was opened; the manager then keeps their own version or loads that one.
   const [conflict, setConflict] = useState(false)
   const [leaving, setLeaving] = useState(false)
-  const dirty = (["title", "date", "startTime", "endTime", "location", "locationUrl", "room", "description"] as const).some(key => draft[key] !== event[key]) || JSON.stringify([draft.tickets, draft.moreDays]) !== JSON.stringify([event.tickets, event.moreDays])
+  const dirty = (["title", "date", "startTime", "endTime", "location", "city", "locationUrl", "room", "description"] as const).some(key => draft[key] !== event[key]) || JSON.stringify([draft.tickets, draft.moreDays, draft.styles]) !== JSON.stringify([event.tickets, event.moreDays, event.styles])
   useEffect(() => {
     if (!dirty) return
     const warn = (e: BeforeUnloadEvent) => e.preventDefault()
@@ -251,7 +253,8 @@ function EventEditor({ event, leaveGuard, onSave, onReplace, onDelete, onCancel,
       {event.published && event.slug && <div className="editor-share"><a href={`/events/${event.slug}`} target="_blank" rel="noreferrer">swingsyndicate.club/events/{event.slug}</a><CopyButton text={`${window.location.origin}/events/${event.slug}`} label="Copy link" /></div>}
       <div className="editor-card editor-card-sections">
         <div className="editor-field"><CalendarIcon aria-hidden="true" /><EventDays event={draft} disabled={busy} onChange={(days, tickets) => setDraft(current => ({ ...current, ...days, tickets }))} /></div>
-        <div className="editor-field"><MapPinIcon aria-hidden="true" /><LocationPicker icon={false} value={draft.location} url={draft.locationUrl} room={draft.room} onRoomChange={room => change("room", room)} onChange={(location, locationUrl) => setDraft(current => ({ ...current, location, locationUrl }))} disabled={busy} /></div>
+        <div className="editor-field"><MapPinIcon aria-hidden="true" /><div className="grid gap-2"><LocationPicker icon={false} value={draft.location} url={draft.locationUrl} room={draft.room} onRoomChange={room => change("room", room)} onChange={(location, locationUrl) => setDraft(current => ({ ...current, location, locationUrl }))} disabled={busy} /><Input aria-label="City" placeholder="City" maxLength={80} value={draft.city} onChange={e => change("city", e.target.value)} disabled={busy} /></div></div>
+        <div className="editor-field"><MusicIcon aria-hidden="true" /><StylePicker value={draft.styles} onChange={styles => setDraft(current => ({ ...current, styles }))} disabled={busy} /></div>
         <div className="editor-field"><TicketIcon aria-hidden="true" /><TicketTypes tickets={draft.tickets ?? []} eventDays={(draft.moreDays?.length ?? 0) + 1} disabled={busy} onChange={tickets => setDraft(current => ({ ...current, tickets }))} /></div>
       </div>
       <MarkdownEditor markdown={draft.description} label="Description" onChange={value => change("description", value)} onError={setEditorError} readOnly={busy} />

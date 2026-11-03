@@ -55,7 +55,7 @@ async function respond(req: IncomingMessage, path: string): Promise<object | nul
   const other = route.match(/^\/outside-events(?:\/([^/]+))?$/)
   if (other) {
     if (method === "GET") return { events: outside, groups: [...new Set(outside.map(item => item.groupName))] }
-    const [next, result] = await crud(req, outside, other[1], "event"); outside = next; return result
+    const [next, result] = await crud(req, outside, other[1], "event"); outside = next.map(item => item.published ? { ...item, needsReview: false } : item); return result
   }
   const feed = route.match(/^\/dance-feeds(?:\/([^/]+))?$/)
   if (feed) {

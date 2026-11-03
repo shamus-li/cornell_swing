@@ -1,7 +1,6 @@
 import { Buffer } from 'node:buffer'
 import { logError } from './logging'
-import { danceStyles } from './outside'
-import { todayInNewYork } from './model'
+import { danceStyles, todayInNewYork } from './model'
 
 // Reads other groups' calendar feeds into outside_events every six hours, and when an organizer saves a feed.
 export const FEEDS_CRON = '15 */6 * * *'
@@ -9,7 +8,7 @@ export const FEEDS_CRON = '15 */6 * * *'
 const campusGroupsCalendar = 'https://cornell.campusgroups.com/ical/cornell/ical_cornell.ics'
 
 export interface DanceFeed { id: string; name: string; style: string; city: string; siteUrl: string; feedUrl: string; skipTitles: string; checkedAt: string | null; feedError: string | null }
-type FeedEvent = { sourceId: string; title: string; date: string; startTime: string; endTime: string; venue: string; city: string; url: string }
+type FeedEvent = { sourceId: string; title: string; date: string; startTime: string; endTime: string; location: string; city: string; url: string }
 // A problem the organizer can fix, shown with the feed in /manage.
 class FeedError extends Error {}
 type SquarespaceEvents = { upcoming?: { id: string; title: string; startDate: number; endDate: number; fullUrl: string; location?: { addressTitle?: string; addressLine2?: string } }[] }
@@ -45,14 +44,14 @@ const decode = (text: string) => text.replace(/\\([,;\\nN])/g, (_, c: string) =>
   .replace(/&(amp|quot|#(\d+));/g, (_, name: string, code?: string) => code ? String.fromCodePoint(Number(code)) : name === 'amp' ? '&' : '"')
   .replace(/\s+/g, ' ').trim()
 
-// "TreeHouse Studio, 119 S Cayuga St, Ithaca, NY, 14850, United States" is that venue in Ithaca. A location with no
+// "TreeHouse Studio, 119 S Cayuga St, Ithaca, NY, 14850, United States" is that place in Ithaca. A location with no
 // recognizable state leaves the city empty, which means the group's own city.
-function place(location: string) {
-  if (/sign in/i.test(location)) return { venue: '', city: '' }
-  const parts = location.split(',').map(part => part.trim()).filter(Boolean)
+function place(text: string) {
+  if (/sign in/i.test(text)) return { location: '', city: '' }
+  const parts = text.split(',').map(part => part.trim()).filter(Boolean)
   const state = parts.findIndex(part => /^(ny|new york)\b/i.test(part))
-  if (state > 0) return { venue: parts.slice(0, state - 1).join(', ').slice(0, 300), city: parts[state - 1].slice(0, 80) }
-  return { venue: parts.filter(part => !/^(united states|usa|\d{5})\b/i.test(part)).join(', ').slice(0, 300), city: '' }
+  if (state > 0) return { location: parts.slice(0, state - 1).join(', ').slice(0, 300), city: parts[state - 1].slice(0, 80) }
+  return { location: parts.filter(part => !/^(united states|usa|\d{5})\b/i.test(part)).join(', ').slice(0, 300), city: '' }
 }
 
 // Times with a time zone other than UTC are taken as Ithaca time, which every feed here uses.
@@ -117,7 +116,7 @@ export function icsEvents(text: string): FeedEvent[] {
 function squarespaceEvents(data: SquarespaceEvents, origin: string): FeedEvent[] {
   return (data.upcoming ?? []).map(event => {
     const start = inNewYork(event.startDate)
-    return { sourceId: event.id, title: decode(event.title).slice(0, 160), date: start.date, startTime: start.time, endTime: sameDayEnd(start, inNewYork(event.endDate)), venue: decode(event.location?.addressTitle ?? '').slice(0, 300), city: event.location?.addressLine2?.match(/^(.+?),?\s+(NY|New York)\b/i)?.[1].trim() ?? '', url: new URL(event.fullUrl, origin).href }
+    return { sourceId: event.id, title: decode(event.title).slice(0, 160), date: start.date, startTime: start.time, endTime: sameDayEnd(start, inNewYork(event.endDate)), location: decode(event.location?.addressTitle ?? '').slice(0, 300), city: event.location?.addressLine2?.match(/^(.+?),?\s+(NY|New York)\b/i)?.[1].trim() ?? '', url: new URL(event.fullUrl, origin).href }
   })
 }
 
@@ -158,18 +157,19 @@ function stylesFrom(title: string, usual: string) {
   return named.length ? danceStyles.filter(style => named.includes(style)) : [usual]
 }
 
-// Adds and updates the feed's upcoming events and removes upcoming ones the feed dropped. Events an organizer hid
-// stay hidden, and a venue typed in for an event the feed lists without one is kept.
+// Adds and updates the feed's upcoming events and removes upcoming published ones the feed dropped. A feed listing
+// nothing removes nothing, since that usually means a calendar problem. An unpublished event keeps its row, so it stays
+// unpublished if the feed lists it again, and a place typed in for an event the feed lists without one is kept.
 function saveEvents(db: D1Database, feed: DanceFeed, events: FeedEvent[], today: string, checkedAt: string) {
   const skip = feed.skipTitles.toLowerCase().split(',').map(word => word.trim()).filter(Boolean)
   const kept = events.filter(event => event.date >= today && !skip.some(word => event.title.toLowerCase().includes(word)))
   const rows = JSON.stringify(kept.map(event => ({ ...event, url: event.url || feed.siteUrl, styles: JSON.stringify(stylesFrom(event.title, feed.style)) })))
   return db.batch([
-    db.prepare(`INSERT INTO outside_events (id, groupId, sourceId, title, date, startTime, endTime, venue, city, styles, url, status, updatedAt)
-      SELECT lower(hex(randomblob(16))), ?1, value ->> 'sourceId', value ->> 'title', value ->> 'date', value ->> 'startTime', value ->> 'endTime', value ->> 'venue', iif(value ->> 'city' = '', ?2, value ->> 'city'), value ->> 'styles', value ->> 'url', 'published', ?3 FROM json_each(?4) WHERE true
+    db.prepare(`INSERT INTO outside_events (id, groupId, sourceId, title, date, startTime, endTime, location, city, styles, url, published, updatedAt)
+      SELECT lower(hex(randomblob(16))), ?1, value ->> 'sourceId', value ->> 'title', value ->> 'date', value ->> 'startTime', value ->> 'endTime', value ->> 'location', iif(value ->> 'city' = '', ?2, value ->> 'city'), value ->> 'styles', value ->> 'url', 1, ?3 FROM json_each(?4) WHERE true
       ON CONFLICT (groupId, sourceId) DO UPDATE SET title = excluded.title, date = excluded.date, startTime = excluded.startTime, endTime = excluded.endTime,
-        venue = CASE excluded.venue WHEN '' THEN venue ELSE excluded.venue END, city = CASE excluded.venue WHEN '' THEN outside_events.city ELSE excluded.city END, url = excluded.url, updatedAt = excluded.updatedAt`).bind(feed.id, feed.city, checkedAt, rows),
-    db.prepare(`DELETE FROM outside_events WHERE groupId = ? AND sourceId IS NOT NULL AND date >= ? AND sourceId NOT IN (SELECT value ->> 'sourceId' FROM json_each(?))`).bind(feed.id, today, rows),
+        location = CASE excluded.location WHEN '' THEN location ELSE excluded.location END, city = CASE excluded.location WHEN '' THEN outside_events.city ELSE excluded.city END, url = excluded.url, updatedAt = excluded.updatedAt`).bind(feed.id, feed.city, checkedAt, rows),
+    ...(events.length ? [db.prepare(`DELETE FROM outside_events WHERE groupId = ? AND sourceId IS NOT NULL AND published = 1 AND date >= ? AND sourceId NOT IN (SELECT value ->> 'sourceId' FROM json_each(?))`).bind(feed.id, today, rows)] : []),
     db.prepare('UPDATE dance_groups SET checkedAt = ?, feedError = NULL WHERE id = ?').bind(checkedAt, feed.id),
   ])
 }

@@ -12,7 +12,7 @@ function daysFromToday(days: number) {
 const nextMonday = (8 - new Date(`${todayInNewYork()}T00:00:00Z`).getUTCDay()) % 7
 const barn = { location: "Big Red Barn", locationUrl: "https://www.google.com/maps/search/?api=1&query=Big+Red+Barn&query_place_id=ChIJDR2olYqB0IkRr0G4Rv2qXek", room: "" }
 const straight = { location: "Willard Straight Hall", locationUrl: "https://www.google.com/maps/search/?api=1&query=Willard+Straight+Hall&query_place_id=ChIJjYXdZomB0IkRlRAhm3sQd9s" }
-const common = { published: true, updatedAt: new Date().toISOString(), rsvpCount: 0, tickets: [], moreDays: [] }
+const common = { city: "Ithaca", styles: ["Swing"],  published: true, updatedAt: new Date().toISOString(), rsvpCount: 0, tickets: [], moreDays: [] }
 const lesson = (week: number, description: string, times = { startTime: "20:00", lessonEndTime: "21:00", socialStartTime: "21:00" }): ManagedEvent => ({ ...common, ...barn, id: `mock-lesson-${week}`, kind: "normal", title: "Monday Night Swing", date: daysFromToday(nextMonday + week * 7), endTime: "22:00", ...times, description })
 
 export const events: ManagedEvent[] = [
@@ -26,14 +26,14 @@ export const events: ManagedEvent[] = [
     moreDays: [{ date: daysFromToday(nextMonday + 19), startTime: "10:00", endTime: "17:00" }, { date: daysFromToday(nextMonday + 20), startTime: "11:00", endTime: "15:00" }], lastDate: daysFromToday(nextMonday + 20),
     tickets: [{ id: "weekend", name: "Weekend pass", price: "60", days: 3 }, { id: "day", name: "One day", price: "25", days: 1 }],
     description: "Three days of classes with a Friday night dance." },
-  { ...common, ...barn, id: "mock-special-3", kind: "special", title: "Blues Night", date: daysFromToday(nextMonday + 12), startTime: "20:00", endTime: "23:00",
+  { ...common, ...barn, id: "mock-special-3", kind: "special", styles: ["Blues"], title: "Blues Night", date: daysFromToday(nextMonday + 12), startTime: "20:00", endTime: "23:00",
     description: "A slower social with a blues DJ." },
   { ...common, ...straight, id: "mock-special-2", kind: "special", title: "Winter Ball", date: daysFromToday(nextMonday + 25), startTime: "19:00", endTime: "23:00", room: "Memorial Room", tickets: [{ id: "student", name: "Student", price: "5", days: 1 }, { id: "general", name: "General", price: "10", days: 1 }],
     description: "Dress up and dance the semester out with a live big band." },
 ]
 
-const outside = (id: string, title: string, groupName: string, days: number, startTime: string, endTime: string, venue: string, style: string, price: string): OutsideEvent => ({
-  id, title, groupName, date: daysFromToday(nextMonday + days), startTime, endTime, venue, city: "Ithaca", styles: [style], price, url: "https://example.com", status: "published", updatedAt: common.updatedAt, fromFeed: false, sourceNote: "",
+const outside = (id: string, title: string, groupName: string, days: number, startTime: string, endTime: string, location: string, style: string, price: string): OutsideEvent => ({
+  id, kind: "outside", title, groupName, date: daysFromToday(nextMonday + days), startTime, endTime, location, city: "Ithaca", styles: [style], price, url: "https://example.com", published: true, needsReview: false, updatedAt: common.updatedAt, fromFeed: false, sourceNote: "",
 })
 export const outsideEvents: OutsideEvent[] = [
   outside("mock-outside-1", "First Friday Contra", "Ithaca Contra Dance", 4, "19:30", "22:30", "Bethel Grove Community Center", "Contra", "$10, students free"),

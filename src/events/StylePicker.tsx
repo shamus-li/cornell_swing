@@ -1,4 +1,4 @@
-import { danceStyles } from "./outside"
+import { danceStyles } from "./model"
 
 // One toggle per dance style; an event can have several, kept in the list's order.
 export function StylePicker({ value, onChange, disabled }: { value: string[]; onChange: (styles: string[]) => void; disabled?: boolean }) {

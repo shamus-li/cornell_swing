@@ -7,30 +7,39 @@ export type EventDay = { date: string; startTime: string; endTime: string }
 // A ticket type: price is in dollars, like "5" or "7.50", and days is how many days of the event it covers.
 export type EventTicket = { id: string; name: string; price: string; days: number }
 
-export interface EventRecord {
+// Dance styles an event can have.
+export const danceStyles = ['Swing', 'Blues', 'West Coast Swing', 'Contra', 'Square', 'English Country', 'Salsa', 'Tango', 'Ballroom', 'Line dancing', 'Other'] as const
+
+// What every event has, whether Swing Syndicate or another group runs it.
+export interface CalendarEvent {
   id: string
+  title: string
+  date: string
+  startTime: string
+  endTime: string
+  location: string
+  city: string
+  styles: string[]
+  published: boolean
+  updatedAt: string
+}
+
+export interface EventRecord extends CalendarEvent {
   // The event's address, /events/slug; set when the event is saved.
   slug?: string | null
   kind: EventKind
-  title: string
-  date: string
   // The rest of an event running several days. date, startTime and endTime stay the first day.
   moreDays?: EventDay[]
   // The last of moreDays, set when the event is saved; empty for one day.
   lastDate?: string
-  startTime: string
-  endTime: string
   // Weekly lessons only: the lesson runs from startTime to lessonEndTime and the social dance from socialStartTime to endTime, and they may overlap.
   // Both are empty when the night is all social dance, from startTime to endTime.
   lessonEndTime?: string
   socialStartTime?: string
-  location: string
   locationUrl?: string
   room?: string
   tickets?: EventTicket[]
   description: string
-  published: boolean
-  updatedAt: string
 }
 
 type EventInput = Omit<EventRecord, 'id' | 'updatedAt'>
@@ -93,8 +102,9 @@ export function scheduleTitle(events: Pick<EventRecord, 'kind' | 'date'>[], toda
   return `${month <= 5 ? 'Spring' : month <= 7 ? 'Summer' : 'Fall'} ${date.slice(0, 4)} schedule`
 }
 
-export function formatEventLocation(event: Pick<EventRecord, 'location' | 'room'>): string {
-  return [event.room, event.location].filter(Boolean).join(', ') || 'TBA'
+// "Memorial Room, Willard Straight Hall", adding the city when it isn't Ithaca and the place doesn't name it.
+export function formatEventLocation({ room, location, city }: Pick<EventRecord, 'location' | 'room' | 'city'>): string {
+  return [room, location, city !== 'Ithaca' && !location.includes(city) && city].filter(Boolean).join(', ') || 'TBA'
 }
 
 const formatPrice = (price: string) => `$${Number(price).toFixed(Number.isInteger(Number(price)) ? 0 : 2)}`
@@ -111,6 +121,21 @@ export const isValidPrice = (price: string) => /^((0|[1-9]\d{0,2})(\.\d{1,2})?)?
 // A real YYYY-MM-DD date, and a 24-hour HH:MM time.
 export const isValidDate = (date: string) => /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(Date.parse(date)) && new Date(date).toISOString().slice(0, 10) === date
 export const isValidTime = (time: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(time)
+
+// An end time needs a start time and comes after it on the same day.
+export function validateTimeRange(startTime: string, endTime: string) {
+  for (const time of [startTime, endTime]) {
+    if (time && !isValidTime(time)) throw new Error('Enter a valid event time.')
+  }
+  if (endTime && !startTime) throw new Error('Enter a start time before adding an end time.')
+  if (endTime && endTime <= startTime) throw new Error('The end time must be after the start time on the same day.')
+}
+
+export function validateStyles(value: unknown): string[] {
+  const styles = Array.isArray(value) ? value : []
+  if (!styles.length || !styles.every(style => (danceStyles as readonly unknown[]).includes(style))) throw new Error('Choose a dance style.')
+  return danceStyles.filter(style => styles.includes(style))
+}
 
 function validateMoreDays(value: unknown, date: string): EventDay[] {
   if (value === undefined) return []
@@ -146,6 +171,7 @@ export function validateEvent(value: unknown): EventInput {
   if (!value || typeof value !== 'object') throw new Error('Enter the event details.')
   const input = value as Record<string, unknown>
   const limits = { title: 160, date: 10, startTime: 5, endTime: 5, location: 300, description: 20000 }
+  if (input.city !== undefined && (typeof input.city !== 'string' || input.city.length > 80)) throw new Error('Check the event city.')
   const fields: Record<string, string> = {}
   for (const [key, limit] of Object.entries(limits)) {
     if (typeof input[key] !== 'string' || input[key].length > limit) throw new Error(key === 'description' && input.kind === 'normal' ? 'Notes can be up to 20,000 characters.' : `Check the event ${key}.`)
@@ -155,12 +181,12 @@ export function validateEvent(value: unknown): EventInput {
   if (input.kind !== 'normal' && input.kind !== 'special') throw new Error('Choose a normal or special event.')
   if (typeof input.published !== 'boolean') throw new Error('Choose whether the event is published.')
   if ((fields.date || input.kind === 'normal') && !isValidDate(fields.date)) throw new Error('Enter a valid event date.')
-  for (const time of [fields.startTime, fields.endTime]) {
-    if (time && !isValidTime(time)) throw new Error('Enter a valid event time.')
-  }
   const lessonEndTime = input.kind === 'normal' && typeof input.lessonEndTime === 'string' ? input.lessonEndTime.trim() : ''
   const socialStartTime = lessonEndTime && typeof input.socialStartTime === 'string' ? input.socialStartTime.trim() : ''
   if (input.kind === 'normal') {
+    for (const time of [fields.startTime, fields.endTime]) {
+      if (time && !isValidTime(time)) throw new Error('Enter a valid event time.')
+    }
     if (lessonEndTime) {
       if (!fields.startTime) throw new Error('Enter when the lesson starts.')
       if (!isValidTime(lessonEndTime)) throw new Error('Enter a valid lesson end time.')
@@ -170,10 +196,7 @@ export function validateEvent(value: unknown): EventInput {
     const socialStart = lessonEndTime ? socialStartTime : fields.startTime
     if (!socialStart && (lessonEndTime || fields.endTime)) throw new Error('Enter when the social dance starts.')
     if (fields.endTime && fields.endTime <= socialStart) throw new Error('The social dance must end after it starts.')
-  } else {
-    if (fields.endTime && !fields.startTime) throw new Error('Enter a start time before adding an end time.')
-    if (fields.endTime && fields.endTime <= fields.startTime) throw new Error('The end time must be after the start time on the same day.')
-  }
+  } else validateTimeRange(fields.startTime, fields.endTime)
   if (input.room !== undefined && (typeof input.room !== 'string' || input.room.length > 300)) throw new Error('Enter room details up to 300 characters.')
   const room = typeof input.room === 'string' ? input.room.trim() : ''
   const moreDays = input.kind === 'special' ? validateMoreDays(input.moreDays, fields.date) : []
@@ -184,7 +207,9 @@ export function validateEvent(value: unknown): EventInput {
     try { url = new URL(locationUrl) } catch { throw new Error('Enter a valid Google Maps link.') }
     if (locationUrl.length > 2000 || url.protocol !== 'https:' || url.hostname !== 'www.google.com' || url.pathname !== '/maps/search/' || url.username || url.password || url.port) throw new Error('Enter a valid Google Maps link.')
   }
-  return { room, locationUrl, tickets, moreDays, lastDate: moreDays.at(-1)?.date ?? '', lessonEndTime, socialStartTime, kind: input.kind, published: input.published, title: fields.title, date: fields.date, startTime: fields.startTime, endTime: fields.endTime, location: fields.location, description: fields.description }
+  const styles = input.styles === undefined ? ['Swing'] : validateStyles(input.styles)
+  const city = typeof input.city === 'string' && input.city.trim() || 'Ithaca'
+  return { styles, city, room, locationUrl, tickets, moreDays, lastDate: moreDays.at(-1)?.date ?? '', lessonEndTime, socialStartTime, kind: input.kind, published: input.published, title: fields.title, date: fields.date, startTime: fields.startTime, endTime: fields.endTime, location: fields.location, description: fields.description }
 }
 
 export function validateRSVP(value: unknown): { name: string; email: string } {

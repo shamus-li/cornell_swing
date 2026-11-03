@@ -1,13 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { beforeAll, expect, it } from 'vitest'
-import eventsMigration from '../../migrations/events/0001_events.sql?raw'
-import roomMigration from '../../migrations/events/0004_event_room.sql?raw'
-import publishedMigration from '../../migrations/events/0005_event_published.sql?raw'
-import pricesMigration from '../../migrations/events/0006_event_prices.sql?raw'
-import lessonEndMigration from '../../migrations/events/0010_lesson_end.sql?raw'
-import socialStartMigration from '../../migrations/events/0018_social_start.sql?raw'
-import slugsMigration from '../../migrations/events/0019_event_slugs.sql?raw'
-import doorMigration from '../../migrations/events/0020_door_charges.sql?raw'
+import { resetEventsDb } from '../../check-in/test/events-db'
 import { assignSlug } from './slugs'
 import worker from './worker'
 
@@ -21,7 +14,7 @@ const add = async (id: string, kind: string, title: string, date: string, publis
 }
 
 beforeAll(async () => {
-  for (const migration of [eventsMigration, roomMigration, publishedMigration, pricesMigration, lessonEndMigration, socialStartMigration, slugsMigration, doorMigration]) await env.EVENTS_DB.exec(migration.replace(/--.*$/gm, '').replaceAll('\n', ' '))
+  await resetEventsDb()
 })
 
 it('names events from their titles without clashing', async () => {
