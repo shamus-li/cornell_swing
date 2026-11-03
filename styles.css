@@ -31,7 +31,7 @@ body {
   background: var(--background);
   font-family: var(--sans);
   font-size: var(--body-font-size);
-  font-weight: 450;
+  font-weight: var(--body-font-weight);
   line-height: 1.5;
 }
 
@@ -209,7 +209,7 @@ h3:not([data-slot]) {
   appearance: none;
   background: transparent;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   transition: width 500ms ease;
 }
@@ -234,7 +234,7 @@ h3:not([data-slot]) {
   display: block;
   overflow: hidden;
   background: rgb(255 255 255 / 55%);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   box-shadow: 0 1px 3px rgb(0 0 0 / 25%);
   transition: background-color 500ms ease;
 }
@@ -411,5 +411,4 @@ body > .site-footer {
 }
 
 /* The way back from an event, the same on the public site and in the manager. */
-.back-button { justify-self: start; height: 40px; margin-left: -10px; padding-inline: 10px; color: var(--foreground); font-size: var(--control-font-size, 1rem); }
-.back-button svg { width: 18px; height: 18px; }
+.back-button { justify-self: start; height: 40px; margin-left: -10px; padding-inline: 10px; color: var(--foreground); }

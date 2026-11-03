@@ -6,13 +6,11 @@
 /* The area toggle and request button share a line, with the styles on their own line below. */
 .dances-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; }
 .dances-toolbar .filter-chips { order: 1; flex: 0 0 100%; min-width: 0; }
-/* The request button matches the area toggle's height. */
-.dances-toolbar [data-slot="button"] { height: auto; padding: 5px 12px; font: 500 var(--small-font-size)/1.5 var(--sans); }
-@media (pointer: coarse) { .dances-toolbar [data-slot="button"] { min-height: 44px; padding-inline: 16px; } }
+/* The request button matches the area toggle's height. Its dialog sits inside the toolbar, so the rule stops at the toolbar's own button. */
+@media not (pointer: coarse) { .dances-toolbar > [data-slot="button"] { height: calc(var(--segment-height) + 4px); padding-inline: 12px; } }
 
 .request-form { margin-top: 20px; }
 .request-form :is(label, .request-styles) { display: grid; gap: 6px; font-size: var(--small-font-size); font-weight: 500; }
-.request-form [data-slot="input"] { font-weight: 400; }
 .request-times { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .dances h2.dances-month { padding-bottom: 8px; border-bottom: 1px solid var(--border); font-size: 1.375rem; }
 
@@ -24,7 +22,7 @@
 /* The title's link covers the whole row; links inside the row stay on top of it. */
 .dance-row { position: relative; gap: 14px; padding-block: 10px; }
 .dance-row:last-child { border-bottom: 0; }
-.dance-row.is-ours { border-bottom-color: transparent; border-radius: 12px; background: color-mix(in srgb, var(--primary) 6%, var(--background)); }
+.dance-row.is-ours { border-bottom-color: transparent; border-radius: var(--radius-card); background: color-mix(in srgb, var(--primary) 6%, var(--background)); }
 .dance-row:has(h3 a:hover) { background: var(--muted); }
 .dance-row.is-ours:has(h3 a:hover) { background: color-mix(in srgb, var(--primary) 11%, var(--background)); }
 .dance-row .event-content h3 { font-size: 1.125rem; }
@@ -33,7 +31,7 @@
 .dance-row h3 a::after { content: ""; position: absolute; inset: 0; }
 .dance-row :is(.icon-line, .event-actions, .dance-program) a { position: relative; z-index: 1; }
 .dance-row .event-meta { gap: 0; margin: 2px 0 0; color: var(--foreground); }
-.dance-styles { margin: 0; color: var(--muted-foreground); font-size: .8125rem; font-weight: 500; }
+.dance-styles { margin: 0; color: var(--muted-foreground); font-size: var(--caption-font-size); font-weight: 500; }
 .dance-external, .dance-facts { color: var(--muted-foreground); }
 .dance-facts { margin: 2px 0 0; }
 .dance-program { margin-top: 4px; }

@@ -11,21 +11,18 @@
 /* Page */
 html:has(.manage-page) { scroll-behavior: auto; }
 /* 866px leaves the event editor's description box 832px for text, the width of an event description on the homepage; the list shares the width so the header stays put. */
-.manage-page { --page: min(866px, calc(100% - 32px)); --brand-font: var(--sans); --serif: var(--sans); }
-/* Every field uses the same text size. */
-.manage-page :is([data-slot="input"], [data-slot="input-group-control"], [data-slot="textarea"], [data-slot="popover-trigger"]) { font-size: var(--input-font-size); }
+.manage-page { --page: min(866px, calc(100% - 32px)); --brand-font: var(--sans); --serif: var(--sans); --remove-size: var(--icon-button-size); }
 .manage-header { justify-content: space-between; gap: 16px; }
 .manage-main { padding: 24px 0 64px; }
 .manage-main h1 { font-size: 1.5rem; line-height: 1.25; }
 .manage-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 40px; margin-bottom: 16px; }
 .manage-notice { margin: 16px 0 0; }
 .event-note { color: var(--muted-foreground); line-height: 1.5; margin: 0; }
-[data-slot="calendar"] button { border-style: solid; }
 
 /* Tabs */
 /* Tabs scroll sideways when they do not fit. The rule is a shadow, so the selected tab's underline stays inside the scroll area. */
 .tabs { display: flex; gap: 4px; overflow: auto hidden; touch-action: pan-x; scrollbar-width: none; box-shadow: inset 0 -1px var(--border); }
-.tab { position: relative; flex: none; height: 40px; padding: 0 12px; border: 0; background: none; color: var(--muted-foreground); font: 500 var(--control-font-size) var(--sans); cursor: pointer; }
+.tab { position: relative; flex: none; height: 40px; padding: 0 12px; border: 0; background: none; color: var(--muted-foreground); font: 500 var(--small-font-size) var(--sans); cursor: pointer; }
 .tab:hover { color: var(--foreground); }
 .tab[aria-selected="true"] { color: var(--foreground); }
 .tab[aria-selected="true"]::after { content: ""; position: absolute; inset: auto 12px 0; height: 2px; background: var(--foreground); border-radius: 2px; }
@@ -40,7 +37,7 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .manage-group h2 { margin: 0 0 4px; color: var(--muted-foreground); font: 500 var(--small-font-size) var(--sans); }
 .manage-group.is-past :is(.event-row-button, .normal-event-summary) { color: var(--muted-foreground); }
 .manage-list > * + * { border-top: 1px solid var(--border); }
-.event-row-button, .normal-event-summary { font-size: var(--body-font-size); display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 16px; align-items: center; width: 100%; height: auto; padding: 12px 8px; border: 0; border-radius: var(--radius); font-weight: 450; white-space: normal; text-align: left; line-height: 1.5; }
+.event-row-button, .normal-event-summary { font-size: var(--body-font-size); display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 16px; align-items: center; width: 100%; height: auto; padding: 12px 8px; border: 0; border-radius: var(--radius); font-weight: var(--body-font-weight); white-space: normal; text-align: left; line-height: 1.5; }
 .normal-event-summary { grid-template-columns: 44px minmax(0, 1fr); align-items: start; }
 :is(.event-row-button, .normal-event-summary):hover { background: var(--muted); }
 :is(.event-row-button, .normal-event-summary):focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
@@ -48,17 +45,17 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .event-row-text > .event-muted { font-size: var(--small-font-size); }
 .event-row-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .event-row-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.status-badge { flex: none; padding: 1px 8px; border-radius: 999px; background: var(--muted); color: var(--muted-foreground); font-size: var(--caption-font-size); font-weight: 500; }
+.status-badge { flex: none; padding: 1px 8px; border-radius: var(--radius-pill); background: var(--muted); color: var(--muted-foreground); font-size: var(--caption-font-size); font-weight: 500; }
 .guest-count { white-space: nowrap; font-size: var(--small-font-size); font-variant-numeric: tabular-nums; }
 
 /* Weekly lesson editing in place */
-.normal-event-edit { margin: 8px 0; padding: 16px; border-radius: 12px; background: var(--muted); }
+.normal-event-edit { margin: 8px 0; padding: 16px; border-radius: var(--radius-card); background: var(--muted); }
 .normal-event-edit :is([data-slot="input"], [data-slot="textarea"], [data-slot="input-group"]) { background: var(--background); }
 .normal-event-fields { display: grid; gap: 12px; margin-bottom: 16px; }
 .editor-row { display: grid; grid-template-columns: 80px minmax(0, 1fr); align-items: center; gap: 12px; }
 .editor-row > span { color: var(--muted-foreground); font-size: var(--small-font-size); }
 .editor-row-top { align-items: start; }
-.editor-row-top > span { padding-top: 10px; }
+.editor-row-top > span { padding-top: calc((var(--field-height) - 1lh) / 2); }
 .lesson-times { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .normal-event-edit .segmented { background: var(--border); }
 .time-range { display: grid; grid-template-columns: minmax(0, 9rem) auto minmax(0, 9rem); justify-content: start; align-items: center; gap: 8px; color: var(--muted-foreground); }
@@ -73,35 +70,32 @@ html:has(.manage-page) { scroll-behavior: auto; }
 /* A textarea, so a long name wraps as it does on the homepage. */
 .event-name-input { display: block; flex: 1; min-width: 0; padding: 8px 0 0; border: 0; outline: 0; background: transparent; color: var(--foreground); font: 600 1.5rem/1.25 var(--sans); resize: none; overflow: hidden; }
 .event-name-input::placeholder { color: var(--placeholder); }
-.editor-card { display: grid; padding: 0 16px; border-radius: 12px; background: var(--muted); }
+.editor-card { display: grid; padding: 0 16px; border-radius: var(--radius-card); background: var(--muted); }
 .editor-card :is([data-slot="input"], [data-slot="input-group"], [data-slot="popover-trigger"]) { background: var(--background); }
 .editor-field { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 12px; align-items: start; padding: 8px 0; }
-.editor-field > svg { width: 16px; height: 16px; margin-top: 8px; color: var(--muted-foreground); }
+.editor-field > svg { width: 16px; height: 16px; margin-top: calc((var(--field-height) - 16px) / 2); color: var(--muted-foreground); }
 .editor-when { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 9rem) auto minmax(0, 9rem); align-items: center; gap: 8px; color: var(--muted-foreground); }
 .editor-card-sections .editor-field { padding: 12px 0; }
 .editor-card-sections .editor-field + .editor-field { border-top: 1px solid var(--border); }
 .editor-days { display: grid; justify-items: start; gap: 8px; min-width: 0; }
 /* Date, start, dash, end, and a remove button once there is more than one day. */
 .editor-day { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 9rem) auto minmax(0, 9rem); align-items: center; gap: 8px; width: 100%; color: var(--muted-foreground); }
-.editor-day-removable { grid-template-columns: minmax(0, 1fr) minmax(0, 9rem) auto minmax(0, 9rem) 32px; }
-.editor-day-remove { color: var(--muted-foreground); }
+.editor-day-removable { grid-template-columns: minmax(0, 1fr) minmax(0, 9rem) auto minmax(0, 9rem) var(--remove-size); }
+.editor-day-remove { width: var(--remove-size); height: var(--remove-size); margin-block: calc((var(--field-height) - var(--remove-size)) / 2); color: var(--muted-foreground); }
 .event-date-picker { position: relative; min-width: 0; }
 .event-date-clear { position: absolute; top: 4px; right: 4px; color: var(--muted-foreground); }
 .event-date-clear svg:not([class*='size-']) { width: 16px; height: 16px; }
 .editor-card .editor-link { height: auto; padding: 0; color: var(--primary); font-size: var(--small-font-size); }
 .editor-tickets { display: grid; justify-items: start; gap: 8px; min-width: 0; }
 /* Name, price and remove line up in every row, whatever is typed. */
-.editor-ticket { --remove-size: 32px; display: grid; grid-template-columns: minmax(0, 1fr) 6rem var(--remove-size); grid-auto-rows: 32px; align-items: center; gap: 8px; width: 100%; }
+.editor-ticket { display: grid; grid-template-columns: minmax(0, 1fr) 6rem var(--remove-size); grid-auto-rows: var(--field-height); align-items: center; gap: 8px; width: 100%; }
 .editor-ticket-days { grid-template-columns: minmax(0, 1fr) 6rem 6rem var(--remove-size); }
-.editor-ticket-select { width: 100%; height: 32px; background: var(--background); font-size: var(--input-font-size); }
-.editor-ticket-remove { width: var(--remove-size); height: var(--remove-size); color: var(--muted-foreground); }
+.editor-ticket-select { width: 100%; background: var(--background); }
+.editor-ticket-remove { width: var(--remove-size); height: var(--remove-size); margin-block: calc((var(--field-height) - var(--remove-size)) / 2); color: var(--muted-foreground); }
 @media (pointer: coarse) {
-  /* A finger-sized remove button, and links that reach but do not cover the fields around them, in rows that stay the height of their fields. */
-  .editor-ticket { --remove-size: 44px; }
-  .editor-ticket-remove { margin-block: -6px; }
-  .event-date-clear { top: 0; right: 0; width: 32px; height: 32px; }
-  .editor-day-removable { grid-template-columns: minmax(0, 1fr) minmax(0, 9rem) auto minmax(0, 9rem) 44px; }
-  .editor-day-remove { width: 44px; height: 44px; margin-block: -6px; }
+  /* Finger-sized remove buttons, and links that reach but do not cover the fields around them, in rows that stay the height of their fields. */
+  .manage-page { --remove-size: 2.75rem; }
+  .event-date-clear { width: 32px; height: 32px; }
   .editor-card .editor-link { position: relative; }
   .editor-card .editor-link::after { content: ""; position: absolute; inset: -7px 0; }
 }
@@ -109,15 +103,12 @@ html:has(.manage-page) { scroll-behavior: auto; }
 @media (max-width: 760px) {
   .editor-when, .editor-day { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
   .editor-when > :first-child, .editor-day > :first-child { grid-column: 1 / -1; }
-  .editor-day-removable { --remove-size: 32px; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) var(--remove-size); }
+  .editor-day-removable { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) var(--remove-size); }
   .editor-day-removable > :first-child { grid-column: 1 / 4; }
   .editor-day-remove { grid-column: 4; grid-row: 1; }
   /* Too narrow for a time and an X; a time is cleared by deleting its text. */
   .editor-day-removable [data-slot="input-group-addon"] { display: none; }
   .editor-days:has(.editor-day-removable) { gap: 16px; }
-}
-@media (max-width: 760px) and (pointer: coarse) {
-  .editor-day-removable { --remove-size: 44px; }
 }
 @media (max-width: 620px) {
   .editor-tickets:has(.editor-ticket-days) { gap: 16px; }
@@ -135,7 +126,7 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .guest-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 
 /* Settings */
-.sheet-connection { display: grid; gap: 12px; padding: 16px; border-radius: 12px; background: var(--muted); }
+.sheet-connection { display: grid; gap: 12px; padding: 16px; border-radius: var(--radius-card); background: var(--muted); }
 .campusgroups-steps { list-style: decimal; padding-left: 1.25rem; }
 .campusgroups-steps a { color: var(--foreground); text-decoration: underline; }
 .sheet-connection h2 { font: 600 1rem/1.4 var(--sans); }
@@ -144,7 +135,7 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .editor-share { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; font-size: var(--small-font-size); overflow-wrap: anywhere; }
 .dance-feeds-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 /* Feeds read as one white list, with dividers between rows. */
-.sheet-connection .manage-list { overflow: hidden; border-radius: 8px; background: var(--background); }
+.sheet-connection .manage-list { overflow: hidden; border-radius: var(--radius); background: var(--background); }
 .sheet-connection .manage-list > * + * { border-top: 1px solid var(--border); }
 .sheet-connection .event-row-button { grid-template-columns: minmax(0, 1fr); padding-inline: 12px; border-radius: 0; }
 .sheet-connection .normal-event-edit { margin: 0; border-radius: 0; background: var(--background); }
@@ -173,7 +164,7 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .newsletter-community .newsletter-check input { margin-top: 4px; }
 .newsletter-status { margin: 0; font-size: var(--small-font-size); }
 .newsletter-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 16px; border-top: 1px solid var(--border); }
-.newsletter-compose { min-width: 0; border: 1px solid var(--border); border-radius: 12px; overflow: clip; }
+.newsletter-compose { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-card); overflow: clip; }
 .newsletter-subject { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--background); font: 500 var(--body-font-size) var(--sans); }
 .newsletter-subject:focus-within { box-shadow: inset 0 -2px 0 var(--primary); }
 .newsletter-subject > span { flex: none; color: var(--muted-foreground); font-weight: 400; }
@@ -183,14 +174,14 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .newsletter-canvas { position: relative; background: #f9f8f6; overflow-x: auto; }
 /* The editor's own controls in the margins keep the manager's styles. */
 .newsletter-canvas :where(:not(.newsletter-chrome, .newsletter-chrome *)) { all: revert; }
-.newsletter-block { border-radius: 4px; outline: 1px dashed transparent; outline-offset: 4px; }
+.newsletter-block { border-radius: var(--radius-inner); outline: 1px dashed transparent; outline-offset: 4px; }
 .newsletter-canvas .newsletter-block:hover { outline-color: var(--input); }
 .newsletter-canvas .newsletter-block:focus { outline: 2px solid var(--primary); }
 /* Each section's tools sit in the margin to its left, shown on hover or focus: move and remove, and save or restore beside a repeating part.
    Hidden tools take no clicks. The right padding bridges the gap to the card, so the pointer can reach them. */
 .newsletter-canvas :is(.newsletter-section, .newsletter-part) { position: relative; }
-.newsletter-canvas .newsletter-tools { position: absolute; top: 0; left: -40px; display: grid; gap: 2px; padding-right: 12px; opacity: 0; pointer-events: none; }
-.newsletter-canvas .newsletter-part > .newsletter-tools { left: -61px; }
+.newsletter-canvas .newsletter-tools { position: absolute; top: 0; left: calc(-12px - var(--icon-button-size)); display: grid; gap: 2px; padding-right: 12px; opacity: 0; pointer-events: none; }
+.newsletter-canvas .newsletter-part > .newsletter-tools { left: calc(-33px - var(--icon-button-size)); }
 .newsletter-canvas .newsletter-section:hover:not(:has(> .newsletter-insert:hover)) .newsletter-tools, .newsletter-canvas .newsletter-tools:focus-within { opacity: 1; pointer-events: auto; }
 .newsletter-canvas .newsletter-tools [data-slot="button"] { color: var(--muted-foreground); }
 .newsletter-canvas .newsletter-tools [data-slot="button"]:hover { color: var(--foreground); }
@@ -208,16 +199,16 @@ html:has(.manage-page) { scroll-behavior: auto; }
   .newsletter-canvas .newsletter-insert { display: none; }
 }
 /* The bar under a clicked link opens it in a new tab, edits it, or removes it. */
-.newsletter-canvas .newsletter-link { position: absolute; z-index: 2; display: flex; align-items: center; gap: 4px; max-width: min(480px, calc(100% - 16px)); padding: 4px 4px 4px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--background); box-shadow: 0 4px 12px rgb(0 0 0 / .08); font: 400 var(--small-font-size) var(--sans); }
+.newsletter-canvas .newsletter-link { position: absolute; z-index: 2; display: flex; align-items: center; gap: 4px; max-width: min(480px, calc(100% - 16px)); padding: 4px 4px 4px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); box-shadow: 0 4px 12px rgb(0 0 0 / .08); font: 400 var(--small-font-size) var(--sans); }
 .newsletter-canvas .newsletter-link a { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; color: var(--primary); text-overflow: ellipsis; white-space: nowrap; }
 .newsletter-canvas .newsletter-link svg { flex: none; width: 14px; height: 14px; }
 .newsletter-canvas .newsletter-section[data-drop="before"] { box-shadow: 0 -2px 0 var(--primary); }
 .newsletter-canvas .newsletter-section[data-drop="after"] { box-shadow: 0 2px 0 var(--primary); }
 /* Narrow screens: the email fills the width, so a margin on the left holds the tools. */
 @media (max-width: 760px) {
-  .newsletter-canvas { padding-left: 32px; }
-  .newsletter-canvas .newsletter-tools { left: -30px; padding-right: 2px; }
-  .newsletter-canvas .newsletter-part > .newsletter-tools { left: -51px; }
+  .newsletter-canvas { padding-left: calc(4px + var(--icon-button-size)); }
+  .newsletter-canvas .newsletter-tools { left: calc(-2px - var(--icon-button-size)); padding-right: 2px; }
+  .newsletter-canvas .newsletter-part > .newsletter-tools { left: calc(-23px - var(--icon-button-size)); }
 }
 /* Wide screens: the editor reaches past the page width on both sides, so the header stays where the other tabs have it. */
 @media (min-width: 1100px) {

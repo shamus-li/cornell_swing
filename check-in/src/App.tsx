@@ -416,7 +416,6 @@ export default function App() {
                 Updating {selectedMember.name || selectedMember.email}
               </span>
               <Button
-                size="sm"
                 type="button"
                 variant="link"
                 onClick={clearSelectedMember}

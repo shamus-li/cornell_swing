@@ -13,7 +13,7 @@ export function EventDatePicker({ value, onChange, disabled, clearable = false, 
   const first = after ? addDays(parseISO(after), 1) : undefined
   return <Popover open={open} onOpenChange={setOpen}>
     <div className="event-date-picker">
-      <PopoverTrigger asChild><Button type="button" variant="outline" disabled={disabled} className={`w-full justify-start border-input px-2.5 text-left text-[length:var(--input-font-size)] font-normal ${clearable ? "pr-8" : ""} ${date ? "text-foreground" : "text-muted-foreground"}`}>{icon && <CalendarIcon className="text-muted-foreground" />}<span className="sr-only">{label}: </span>{date ? format(date, "EEE, MMM d, yyyy") : placeholder}</Button></PopoverTrigger>
+      <PopoverTrigger asChild><Button type="button" variant="outline" disabled={disabled} className={`w-full justify-start border-input px-2.5 text-left text-base font-[450] ${clearable ? "pr-8" : ""} ${date ? "text-foreground" : "text-muted-foreground"}`}>{icon && <CalendarIcon className="text-muted-foreground" />}<span className="sr-only">{label}: </span>{date ? format(date, "EEE, MMM d, yyyy") : placeholder}</Button></PopoverTrigger>
       {clearable && value && <Button type="button" variant="ghost" size="icon-xs" className="event-date-clear" disabled={disabled} aria-label={`Clear ${label.toLowerCase()}`} onClick={() => onChange("")}><XIcon /></Button>}
     </div>
     <PopoverContent className="w-auto p-0" align="start">

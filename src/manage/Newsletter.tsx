@@ -197,14 +197,14 @@ export function Newsletter({ events, outside, actions }: { events: EventRecord[]
     setActiveLink(null)
   }
 
-  const tool = (label: string, icon: ReactElement, onClick: () => void) => <Button variant="ghost" size="icon-sm" aria-label={label} title={label} onClick={onClick}>{icon}</Button>
+  const tool = (label: string, icon: ReactElement, onClick: () => void) => <Button variant="ghost" size="icon" aria-label={label} title={label} onClick={onClick}>{icon}</Button>
   const templateTools = (part: Part) => <>
     {tool(`Save ${partNames[part]} for future newsletters`, <Save />, () => void saveTemplate(part))}
     {saved[part] !== undefined && tool(`Restore the original text of ${partNames[part]}`, <RotateCcw />, () => void restoreTemplate(part))}
   </>
   // Sits in the gap below a section, where hovering shows its button.
   const insert = (at: number) => <div className="newsletter-chrome newsletter-insert">
-    <Button variant="outline" size="xs" onClick={() => addNote(at)}><Plus />Add announcement</Button>
+    <Button variant="outline" size="sm" onClick={() => addNote(at)}><Plus />Add announcement</Button>
   </div>
   function reset() {
     setSubject(null); setGlanceShown(true); setNotes([]); setOrder([]); setActiveLink(null); setGeneration(current => current + 1)
@@ -223,7 +223,7 @@ export function Newsletter({ events, outside, actions }: { events: EventRecord[]
     <aside className="newsletter-controls">
       <div className="newsletter-group">
         <label className="newsletter-field"><span>Lesson</span><Select value={lessonId} onValueChange={setLessonId}>
-          <SelectTrigger size="sm" className="w-full"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value={none}>None</SelectItem>
             {lessons.map(event => <SelectItem key={event.id} value={event.id}>{shortDate(event)}</SelectItem>)}
@@ -235,7 +235,7 @@ export function Newsletter({ events, outside, actions }: { events: EventRecord[]
         <ul className="newsletter-specials">{specials.map(event => <li key={event.id}>
           <span className="event-row-text"><span>{event.title}</span><span className="event-muted">{shortDate(event)}</span></span>
           <Select value={placement[event.id] ?? "out"} onValueChange={value => setPlacement(current => ({ ...current, [event.id]: value as Placement }))}>
-            <SelectTrigger size="sm" aria-label={`Show ${event.title}`}><SelectValue /></SelectTrigger>
+            <SelectTrigger aria-label={`Show ${event.title}`}><SelectValue /></SelectTrigger>
             <SelectContent>{placements.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
           </Select>
         </li>)}</ul>
@@ -261,9 +261,9 @@ export function Newsletter({ events, outside, actions }: { events: EventRecord[]
       <label className="newsletter-subject"><span>Subject</span><input value={subject ?? defaultSubject} onChange={e => setSubject(e.target.value)} /></label>
       {/* Buttons keep focus in the email, so the selection they format stays selected. */}
       <div className="newsletter-toolbar" role="toolbar" aria-label="Formatting" onMouseDown={e => e.preventDefault()}>
-        <Button variant="ghost" size="icon-sm" aria-label="Bold" onClick={() => document.execCommand("bold")}><Bold /></Button>
-        <Button variant="ghost" size="icon-sm" aria-label="Italic" onClick={() => document.execCommand("italic")}><Italic /></Button>
-        <Button variant="ghost" size="icon-sm" aria-label="Link" onClick={addLink}><Link /></Button>
+        <Button variant="ghost" size="icon" aria-label="Bold" onClick={() => document.execCommand("bold")}><Bold /></Button>
+        <Button variant="ghost" size="icon" aria-label="Italic" onClick={() => document.execCommand("italic")}><Italic /></Button>
+        <Button variant="ghost" size="icon" aria-label="Link" onClick={addLink}><Link /></Button>
       </div>
       <div ref={canvas} className="newsletter-canvas" data-dragging={dragging !== null || undefined}
         onClick={e => { const anchor = (e.target as Element).closest<HTMLAnchorElement>(".newsletter-block a"); if (anchor) e.preventDefault(); setActiveLink(anchor) }}
@@ -278,7 +278,7 @@ export function Newsletter({ events, outside, actions }: { events: EventRecord[]
             return <div key={`${section.key}-${generation}`} data-section={id} className="newsletter-section" data-moving={dragging === index || undefined} data-drop={dropAt === index ? "before" : dropAt === present.length && index === present.length - 1 ? "after" : undefined}>
               <div className="newsletter-chrome newsletter-tools">
                 {/* Drag the handle to move a section, or focus it and use the arrow keys. */}
-                <Button variant="ghost" size="icon-sm" className="newsletter-handle" aria-label={`Move ${section.name}`} title="Drag to move, or use the arrow keys"
+                <Button variant="ghost" size="icon" className="newsletter-handle" aria-label={`Move ${section.name}`} title="Drag to move, or use the arrow keys"
                   onPointerDown={e => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); setDragging(index) }}
                   onPointerMove={dragTo} onPointerUp={endDrag} onPointerCancel={() => { setDragging(null); setDropAt(null) }}
                   onKeyDown={e => {

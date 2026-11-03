@@ -18,30 +18,27 @@
 .event-markdown p { margin: 8px 0; }
 .event-markdown li > p { margin: 0; }
 .event-markdown :is(h1, h2, h3) { margin: 20px 0 8px; font: 600 1.25rem/1.3 var(--sans); }
-.event-markdown img { max-width: 100%; height: auto; border-radius: 4px; }
+.event-markdown img { max-width: 100%; height: auto; border-radius: var(--radius-inner); }
 .event-markdown pre { overflow-x: auto; padding: 12px; background: var(--muted); }
 .event-markdown blockquote { margin-left: 0; padding-left: 16px; border-left: 2px solid var(--border); color: var(--muted-foreground); }
 .event-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 16px; }
 .event-actions:empty { display: none; }
-/* Touch screens get 44px-tall buttons and menu rows so they are easy to tap. */
 @media (pointer: coarse) {
-  .event-actions [data-slot="button"] { height: 44px; padding-inline: 16px; }
-  .dialog-close { width: 44px; height: 44px; top: 4px; right: 4px; }
-  .calendar-menu a { padding: 12px; }
+  .dialog-close { top: 4px; right: 4px; }
 }
 .calendar-menu { inset: auto; position-area: bottom span-right; position-try-fallbacks: flip-block; margin: 4px 0; min-width: 12rem; padding: 4px; color: var(--foreground); background: var(--background); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 8px 24px color-mix(in srgb, var(--foreground) 10%, transparent); }
-.calendar-menu a { display: block; padding: 6px 8px; border-radius: 4px; text-decoration: none; }
+.calendar-menu a { display: flex; align-items: center; min-height: var(--menu-row-height); padding-inline: 8px; border-radius: var(--radius-inner); text-decoration: none; }
 .calendar-menu a:is(:hover, :focus-visible) { background: var(--muted); outline: none; }
 [data-slot="button"]:has(+ .calendar-menu:popover-open) { background: var(--muted); }
 [data-slot] { font-family: var(--sans); }
-[data-slot="button"] { cursor: pointer; text-decoration: none; }
+[data-slot="button"] { text-decoration: none; }
 .is-past { color: var(--muted-foreground); }
-.event-dialog { width: min(440px, calc(100% - 32px)); max-height: calc(100dvh - 40px); border: 1px solid var(--border); border-radius: 12px; padding: 0; color: var(--foreground); font-family: var(--sans); box-shadow: 0 24px 100px color-mix(in srgb, var(--foreground) 13%, transparent); }
+.event-dialog { width: min(440px, calc(100% - 32px)); max-height: calc(100dvh - 40px); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 0; color: var(--foreground); font-family: var(--sans); box-shadow: 0 24px 100px color-mix(in srgb, var(--foreground) 13%, transparent); }
 .event-dialog-body { padding: 36px; }
 .event-dialog::backdrop { background: color-mix(in srgb, var(--foreground) 40%, transparent); }
 .event-dialog [data-slot="input"] { background: var(--background); }
 time { font-variant-numeric: tabular-nums; }
-.date-tile { display: flex; color: var(--foreground); background: var(--background); flex-direction: column; align-self: start; width: 44px; overflow: hidden; border: 1px solid var(--border); border-radius: 8px; text-align: center; line-height: 1; }
+.date-tile { display: flex; color: var(--foreground); background: var(--background); flex-direction: column; align-self: start; width: 44px; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); text-align: center; line-height: 1; }
 .date-tile-month { padding: 4px 0 3px; color: var(--foreground); background: var(--muted); font-size: .625rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 .date-tile-day { padding: 6px 0 7px; font-size: 1.125rem; font-weight: 500; }
 .is-past .date-tile { color: var(--muted-foreground); }
@@ -59,7 +56,7 @@ time { font-variant-numeric: tabular-nums; }
 @media (max-width: 419px) { .next-event-details { display: grid; } }
 .next-event-row { display: flex; align-items: center; gap: 16px; }
 .next-event-title { font-weight: 500; }
-.next-event-icon { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted-foreground); }
+.next-event-icon { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--border); border-radius: var(--radius); color: var(--muted-foreground); }
 .next-event-icon svg { width: 20px; height: 20px; }
 .event-dialog h2 { font-size: 1.75rem; padding-right: 12px; }
 /* The date line runs beside the close button, so it stops short of it. */
@@ -81,11 +78,10 @@ time { font-variant-numeric: tabular-nums; }
 .schedule-program .event-markdown p + p { margin-top: 4px; }
 .schedule-program .event-markdown p:not(:has(strong)) { color: var(--muted-foreground); }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.segmented { display: inline-flex; flex: none; padding: 2px; border-radius: 8px; background: var(--muted); }
-.segmented button { touch-action: manipulation; padding: 4px 12px; border: 0; border-radius: 6px; background: none; color: var(--muted-foreground); font: 500 var(--small-font-size)/1.5 var(--sans); cursor: pointer; }
+.segmented { display: inline-flex; flex: none; padding: 2px; border-radius: var(--radius); background: var(--muted); }
+.segmented button { touch-action: manipulation; height: var(--segment-height); padding: 0 12px; border: 0; border-radius: var(--radius-inner); background: none; color: var(--muted-foreground); font: 500 var(--small-font-size)/1.5 var(--sans); cursor: pointer; }
 .segmented button:hover { color: var(--foreground); }
-/* Touch screens get a 44px-tall switch so it is easy to tap. */
-@media (pointer: coarse) { .segmented button { min-height: 40px; padding: 0 16px; } }
+@media (pointer: coarse) { .segmented button { padding: 0 16px; } }
 .segmented button[aria-pressed="true"] { color: var(--foreground); background: var(--background); box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 12%, transparent); }
 .segmented button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 
@@ -97,18 +93,18 @@ time { font-variant-numeric: tabular-nums; }
 
 @layer base {
   [data-slot] { margin: 0; border: 0 solid var(--border); }
-  [data-slot="button"] { background-color: transparent; color: inherit; border-style: solid; }
+  [data-slot="button"] { border-style: solid; }
   [data-slot="popover-content"] { border: 0 solid var(--border); outline: none; }
 }
 
 /* Toggle buttons that filter a list, wrapping when there are many. */
 .filter-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.filter-chips button { touch-action: manipulation; padding: 4px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--background); color: var(--foreground); font: 500 var(--small-font-size)/1.5 var(--sans); cursor: pointer; }
+.filter-chips button { touch-action: manipulation; height: var(--chip-height); padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--background); color: var(--foreground); font: 500 var(--small-font-size)/1.5 var(--sans); cursor: pointer; }
 @media (hover: hover) { .filter-chips button:hover:enabled:not([aria-pressed="true"]) { background: var(--muted); } }
 .filter-chips button:disabled { color: var(--muted-foreground); opacity: .5; cursor: default; }
 .filter-chips button[aria-pressed="true"] { border-color: var(--foreground); background: var(--foreground); color: var(--background); }
 .filter-chips button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-@media (pointer: coarse) { .filter-chips button { min-height: 40px; padding-inline: 16px; } }
+@media (pointer: coarse) { .filter-chips button { padding-inline: 16px; } }
 
 /* An event's title links to its page, underlined only on hover. */
 .event-list h3 a { text-decoration: none; }

@@ -61,7 +61,7 @@ export function LocationPicker({ value, url, room = "", onChange, onRoomChange, 
           {icon && <InputGroupAddon align="inline-start"><MapPin aria-hidden="true" /></InputGroupAddon>}
           {url && <InputGroupAddon align="inline-end"><a href={url} target="_blank" rel="noreferrer" className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Open in Google Maps" title="Open in Google Maps"><ExternalLink className="size-3.5" /></a></InputGroupAddon>}
         </ComboboxInput>
-        <ComboboxContent anchor={field}><ComboboxList>{(place: PlaceResult) => <ComboboxItem key={place.url} value={place}><span><span className="block">{place.label}</span><span className="block text-xs text-muted-foreground">{place.address}</span></span></ComboboxItem>}</ComboboxList><p translate="no" className="m-0 px-3 py-2 text-xs font-normal text-[#5e5e5e] whitespace-nowrap">Google Maps</p></ComboboxContent>
+        <ComboboxContent anchor={field}><ComboboxList>{(place: PlaceResult) => <ComboboxItem key={place.url} value={place}><span><span className="block">{place.label}</span><span className="block text-[length:var(--caption-font-size)] text-muted-foreground">{place.address}</span></span></ComboboxItem>}</ComboboxList><p translate="no" className="m-0 px-3 py-2 text-[length:var(--caption-font-size)] font-normal text-muted-foreground whitespace-nowrap">Google Maps</p></ComboboxContent>
       </Combobox>
     </div>
     <Input aria-label="Room or details (optional)" placeholder="Room or details (optional)" value={room} onChange={event => onRoomChange(event.target.value)} maxLength={300} disabled={disabled} />

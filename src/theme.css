@@ -63,16 +63,57 @@
   --primary-foreground: #fff;
   --destructive: #a22031;
   --radius: .5rem;
-  /* Type scale for the site and the manager. */
+  --radius-inner: .375rem;
+  --radius-card: .75rem;
+  --radius-pill: 999px;
+  /* Type scale. */
   --body-font-size: 1rem;
-  --control-font-size: .9375rem;
+  --body-font-weight: 450;
   --input-font-size: 1rem;
   --small-font-size: .875rem;
   --caption-font-size: .8125rem;
+  /* Control sizes on public pages. The manager's are below. */
+  --button-height: 2.5rem;
+  --button-padding: 1rem;
+  --button-small-height: 1.75rem;
+  --icon-button-size: 2rem;
+  --field-height: 2.5rem;
+  --chip-height: 2rem;
+  --segment-height: 1.75rem;
+  --menu-row-height: 2rem;
+  --calendar-cell-size: 1.75rem;
   --sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   /* The site title is always Fraunces; only the homepage also sets its headings in it. */
   --brand-font: Fraunces, Georgia, "Times New Roman", serif;
   --serif: var(--sans);
+}
+
+@media (pointer: coarse) {
+  :root {
+    --button-height: 2.75rem;
+    --icon-button-size: 2.75rem;
+    --chip-height: 2.5rem;
+    --segment-height: 2.5rem;
+    --menu-row-height: 2.5rem;
+    --calendar-cell-size: 2.25rem;
+  }
+}
+
+/* The manager is dense under a mouse and finger-sized on touch. */
+.manage-page {
+  --button-height: 2rem;
+  --button-padding: .625rem;
+  --field-height: 2rem;
+}
+
+@media (pointer: coarse) {
+  .manage-page {
+    --button-height: 2.5rem;
+    --button-padding: 1rem;
+    --button-small-height: 2.5rem;
+    --icon-button-size: 2.5rem;
+    --field-height: 2.5rem;
+  }
 }
 
 @theme inline {
@@ -89,12 +130,21 @@
   --color-input: var(--input);
   --color-ring: var(--primary);
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
   --color-primary-foreground: var(--primary-foreground);
   --color-destructive: var(--destructive);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* The public pages and the manager don't load Tailwind's reset, so form controls get what they need here. */
+@layer base {
+  :where(button, input, select, textarea) { color: inherit; font: inherit; }
+  :where(input, select, textarea, [data-slot="select-trigger"]) { font-weight: var(--body-font-weight); }
+  :where(button) { background: transparent; border: 0 solid var(--border); }
+  :where(button:not(:disabled), [role="button"]:not(:disabled)) { cursor: pointer; }
 }
 
 /* Pages keep the same width whether or not they scroll. */
