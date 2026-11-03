@@ -4,7 +4,8 @@ import { searchMembers } from "@/lib/member-search"
 // Dev-only stand-in for the check-in API, loaded by /check-in/?mock. Nothing reaches the Sheet,
 // Notion, or CampusGroups. Add &waiver=changed to see the kiosk skip the waiver when the form
 // changed, &waiver=down for the sign-on-your-phone fallback when CampusGroups is down, or
-// &waiver=refuses for that fallback after signing. Add &priced for an event with tickets to buy.
+// &waiver=refuses for that fallback after signing. Add &priced for an event with tickets to buy, or
+// &events for a day with several events to choose from.
 // Jeff Bishop still needs the General Risk waiver and Ada Lovelace has signed it.
 
 const MEMBERS: Member[] = [
@@ -91,6 +92,12 @@ const doorCharges = new Map<string, { id: string; body: Record<string, string>; 
   ["mock-b", { id: "mock-b", body: { name: "Ben Kim" }, ticketName: "General", amount: 1500, createdAt: new Date().toISOString(), verifying: false }],
 ])
 const waiverMode = new URLSearchParams(window.location.search).get("waiver")
+const MOCK_EVENTS = new URLSearchParams(window.location.search).has("events")
+  ? [
+      { id: "workshop", title: "Balboa Workshop", time: "3:00–5:00 PM" },
+      { id: "lesson", title: "Monday Night Swing", time: "8:00–10:00 PM" },
+    ]
+  : [{ id: "dance", title: "Swing Dance", time: "7:00–9:00 PM" }]
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const json = (body: unknown, status = 200) =>
@@ -102,15 +109,19 @@ function nextSteps(email: string, affiliation: string): NextSteps {
   return { waiver: person?.generalRisk ? null : "cornell", joinCampusGroups: !person?.member }
 }
 
-async function respond(path: string, init: RequestInit = {}): Promise<Response> {
+async function respond(url: string, init: RequestInit = {}): Promise<Response> {
+  const [path, query] = url.split("?")
+  const chosen = MOCK_EVENTS.find((event) => event.id === new URLSearchParams(query).get("event")) ?? MOCK_EVENTS[0]
   const body = typeof init.body === "string" ? (JSON.parse(init.body) as Record<string, string>) : {}
+  const checkinKey = `${chosen.id}|${body.email}`
+  if (path.endsWith("api/events")) return json({ events: MOCK_EVENTS })
   if (path.endsWith("api/members")) {
     await wait(150)
     return json({ members: searchMembers(MEMBERS, body.q, {}) })
   }
   if (path.endsWith("api/checkins/status")) {
     await wait(300)
-    return json({ checkedIn: checkedIn.has(body.email), next: nextSteps(body.email, body.affiliation) })
+    return json({ checkedIn: checkedIn.has(checkinKey), next: nextSteps(body.email, body.affiliation) })
   }
   if (path.endsWith("api/door/queue")) {
     return json({ applicationId: "mock-app", justPaid, charges: [...doorCharges.values()].map(({ id, body: person, ticketName, amount, createdAt, verifying }) => ({ id, label: person.name, ticketName, amount, createdAt, verifying })) })
@@ -123,7 +134,7 @@ async function respond(path: string, init: RequestInit = {}): Promise<Response> 
   }
   if (path.endsWith("api/door/settle")) {
     await wait(300)
-    checkedIn.add(body.email)
+    checkedIn.add(checkinKey)
     return json({ message: "Checked in", next: nextSteps(body.email, body.affiliation) }, 201)
   }
   const doorCharge = path.match(/api\/door\/charges\/([^/]+)/)?.[1]
@@ -139,9 +150,9 @@ async function respond(path: string, init: RequestInit = {}): Promise<Response> 
   if (path.endsWith("api/checkins")) {
     await wait(400)
     const next = nextSteps(body.email, body.affiliation)
-    if (checkedIn.has(body.email)) return json({ message: "Already checked in", next }, 409)
-    if (priced) return json({ message: "Choose a ticket", event: "Sweater Weather Swing", tickets: MOCK_TICKETS }, 402)
-    checkedIn.add(body.email)
+    if (checkedIn.has(checkinKey)) return json({ message: "Already checked in", next }, 409)
+    if (priced) return json({ message: "Choose a ticket", event: chosen.title, tickets: MOCK_TICKETS }, 402)
+    checkedIn.add(checkinKey)
     return json({ message: "Checked in", next }, 201)
   }
   if (path.endsWith("api/waiver") && init.method === "POST") {
@@ -154,7 +165,7 @@ async function respond(path: string, init: RequestInit = {}): Promise<Response> 
     if (waiverMode === "changed") return json({ formChanged: true }, 503)
     if (waiverMode === "down") return json({ unavailable: true }, 503)
     const today = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(new Date())
-    return json({ blocks: WAIVER_BLOCKS, eventName: `${today} Swing Dance` })
+    return json({ blocks: WAIVER_BLOCKS, eventName: MOCK_EVENTS.length > 1 ? chosen.title : `${today} Swing Dance` })
   }
   return json({ message: "Not found" }, 404)
 }

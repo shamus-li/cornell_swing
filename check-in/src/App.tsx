@@ -30,6 +30,7 @@ import {
 import {
   AFFILIATION_LABELS,
   AFFILIATIONS,
+  eventQuery,
   hasUnusualNameCapitalization,
   isConnectionError,
   isValidEmail,
@@ -42,6 +43,7 @@ import {
   type Affiliation,
   type Attendee,
   type DoorTicket,
+  type EventChoice,
   type Member,
   type NextSteps,
 } from "@/lib/checkin"
@@ -53,6 +55,7 @@ type MembersResponse = {
 const MEMBER_SEARCH_DELAY_MS = 75
 const MEMBER_SEARCH_CACHE_LIMIT = 12
 const IDLE_RESET_MS = 90_000
+const EVENTS_REFRESH_MS = 60_000
 const NO_RESULTS = { key: "", members: [], failed: false }
 // /check-in/?demo offers this person when someone types "demo". They aren't stored as a member, and a new email
 // each time lets a demo run again at the same event.
@@ -103,11 +106,44 @@ export default function App() {
   const [next, setNext] = useState<NextSteps | null>(null)
   const [waiverAttendee, setWaiverAttendee] = useState<Attendee | null>(null)
   const [payment, setPayment] = useState<{ attendee: Attendee; event: string; tickets: DoorTicket[] } | null>(null)
+  // Null until the day's events have loaded.
+  const [choices, setChoices] = useState<EventChoice[] | null>(null)
+  // Stays chosen from one attendee to the next; reloading the page asks again.
+  const [pickedEvent, setPickedEvent] = useState<string | null>(null)
   const memberSearchCache = useRef(new Map<string, Member[]>())
 
+  const severalEvents = !!choices && choices.length > 1
+  const eventId = severalEvents && choices.some((option) => option.id === pickedEvent) ? pickedEvent : null
+
   useEffect(() => {
-    if (affiliation && PARTICIPANT_WAIVER_AFFILIATIONS.includes(affiliation)) preloadWaiver().catch(() => {})
-  }, [affiliation])
+    if (affiliation && PARTICIPANT_WAIVER_AFFILIATIONS.includes(affiliation)) preloadWaiver(eventId).catch(() => {})
+  }, [affiliation, eventId])
+
+  // Only refreshed while the form is empty, so the event can't change under someone checking in.
+  const hasEntry = !!(name || email || phone || affiliation || waiverAttendee || payment)
+  const isIdle = !hasEntry && !confirmation
+  useEffect(() => {
+    if (!isIdle) return
+    let active = true
+    const load = async () => {
+      try {
+        const response = await fetch("api/events", { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+        if (!response.ok) throw new Error(`Events request failed with ${response.status}`)
+        const payload = (await response.json()) as { events: EventChoice[] }
+        if (active) setChoices(payload.events)
+      } catch (error) {
+        console.error(error)
+        // Check-in never stops at the door: without the list, the server goes by the time.
+        if (active) setChoices((current) => current ?? [])
+      }
+    }
+    void load()
+    const interval = window.setInterval(load, EVENTS_REFRESH_MS)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
+  }, [isIdle])
 
   const query = name.trim()
   const searchKey = memberSearchKey(query)
@@ -253,7 +289,7 @@ export default function App() {
   // error message when it can't tell.
   async function checkinStatus(attendee: Attendee): Promise<{ checkedIn: boolean; next: NextSteps } | string> {
     try {
-      const response = await fetch("api/checkins/status", {
+      const response = await fetch(`api/checkins/status${eventQuery(eventId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify(attendee),
@@ -275,7 +311,7 @@ export default function App() {
   // Records the check-in and shows the confirmation; returns an error message when it fails.
   async function checkIn(attendee: Attendee): Promise<string | null> {
     try {
-      const response = await fetch("api/checkins", {
+      const response = await fetch(`api/checkins${eventQuery(eventId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify(attendee),
@@ -330,7 +366,6 @@ export default function App() {
 
   // A half-filled form or an open waiver clears itself after 90 seconds without a touch, keypress, or
   // scroll, so the next person at the kiosk never sees it.
-  const hasEntry = !!(name || email || phone || affiliation || waiverAttendee || payment)
   useEffect(() => {
     if (confirmation || !hasEntry) return
     const events = ["pointerdown", "keydown", "input", "scroll"]
@@ -366,6 +401,7 @@ export default function App() {
     return (
       <Payment
         attendee={payment.attendee}
+        eventId={eventId}
         event={payment.event}
         tickets={payment.tickets}
         onPaid={(steps) => confirmPayment(payment.attendee, steps)}
@@ -386,6 +422,7 @@ export default function App() {
               name={waiverAttendee.name}
               email={waiverAttendee.email}
               phone={waiverAttendee.phone}
+              eventId={eventId}
               onBack={() => setWaiverAttendee(null)}
               onComplete={() => checkIn(waiverAttendee)}
             />
@@ -395,6 +432,29 @@ export default function App() {
               onComplete={() => checkIn(waiverAttendee)}
             />
           )}
+        </main>
+      </div>
+    )
+  }
+
+  if (!choices) return null
+
+  if (severalEvents && !eventId) {
+    return (
+      <div className="mx-auto min-h-svh w-full max-w-[620px] px-5 pb-12">
+        <header className="flex h-16 items-center">
+          <SiteBrand link={false} />
+        </header>
+        <main className="pt-12">
+          <h1 className="mb-6 text-[length:var(--title-font-size)] leading-tight font-semibold">Choose an event</h1>
+          <div className="flex flex-col gap-3">
+            {choices.map((option) => (
+              <button key={option.id} type="button" className="flex min-h-16 flex-col justify-center rounded-lg border bg-background px-4 py-3 text-left text-lg transition-colors hover:bg-muted" onClick={() => setPickedEvent(option.id)}>
+                <span className="font-medium">{option.title}</span>
+                <span className="text-sm text-muted-foreground">{option.time}</span>
+              </button>
+            ))}
+          </div>
         </main>
       </div>
     )

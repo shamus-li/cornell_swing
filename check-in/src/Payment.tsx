@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 
 import { Button } from "@shared/components/ui/button"
-import { isConnectionError, REQUEST_TIMEOUT_MS, type Attendee, type DoorTicket, type NextSteps } from "@/lib/checkin"
+import { eventQuery, isConnectionError, REQUEST_TIMEOUT_MS, type Attendee, type DoorTicket, type NextSteps } from "@/lib/checkin"
 import { largeButtonClass } from "@shared/lib/sizes"
 import { TimedButton } from "@/TimedButton"
 
@@ -10,8 +10,8 @@ const POLL_MS = 2000
 
 type SettleMethod = "cash" | "free" | "waived"
 
-async function post(path: string, body: unknown): Promise<Response> {
-  return fetch(`/check-in/api/door/${path}`, {
+async function post(path: string, eventId: string | null, body: unknown): Promise<Response> {
+  return fetch(`/check-in/api/door/${path}${eventQuery(eventId)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify(body),
@@ -23,7 +23,7 @@ const failure = (error: unknown) =>
   isConnectionError(error) ? "Couldn't reach the server. Check the Wi-Fi connection and try again." : "That didn't go through. Please try again."
 
 // Shown when an event has tickets to buy. The check-in is recorded once the ticket is paid for.
-export function Payment({ attendee, event, tickets, onPaid, onLeave }: { attendee: Attendee; event: string; tickets: DoorTicket[]; onPaid: (next: NextSteps | null) => void; onLeave: () => void }) {
+export function Payment({ attendee, eventId, event, tickets, onPaid, onLeave }: { attendee: Attendee; eventId: string | null; event: string; tickets: DoorTicket[]; onPaid: (next: NextSteps | null) => void; onLeave: () => void }) {
   // With one ticket type there is nothing to pick.
   const [ticket, setTicket] = useState<DoorTicket | null>(tickets.length === 1 ? tickets[0] : null)
   const [method, setMethod] = useState<"card" | "cash" | null>(null)
@@ -53,7 +53,7 @@ export function Payment({ attendee, event, tickets, onPaid, onLeave }: { attende
     setBusy(true)
     setMessage("")
     try {
-      const response = await post("charges", { ...attendee, ticketId: chosen.id })
+      const response = await post("charges", eventId, { ...attendee, ticketId: chosen.id })
       if (response.status === 409) return onPaid(((await response.json()) as { next?: NextSteps }).next ?? null)
       if (!response.ok) throw new Error(`Charge failed with ${response.status}`)
       setChargeId(((await response.json()) as { id: string }).id)
@@ -77,7 +77,7 @@ export function Payment({ attendee, event, tickets, onPaid, onLeave }: { attende
     setBusy(true)
     setMessage("")
     try {
-      const response = await post("settle", { ...attendee, id: settleId.current, method: settleMethod, ticketId })
+      const response = await post("settle", eventId, { ...attendee, id: settleId.current, method: settleMethod, ticketId })
       if (!response.ok && response.status !== 409) throw new Error(`Settle failed with ${response.status}`)
       return onPaid(((await response.json()) as { next?: NextSteps }).next ?? null)
     } catch (error) {

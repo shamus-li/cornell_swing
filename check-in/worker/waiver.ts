@@ -1,8 +1,7 @@
 import { decodeHTML, decodeHTMLAttribute } from "entities"
 
 import type { WaiverBlock } from "../src/lib/checkin"
-import { eventAtSheetTimestamp, type CheckinEvent } from "./events"
-import { timestampForSheet } from "./google"
+import type { CheckinEvent } from "./events"
 import { isRecord } from "./util"
 
 // Cornell's non-Cornell participant waiver on CampusGroups. CampusGroups doesn't allow embedding its
@@ -145,11 +144,8 @@ export function waiverEventName(event: CheckinEvent): string {
   return `${day} Swing Dance`
 }
 
-export async function readWaiver(env: Env): Promise<{ blocks: WaiverBlock[]; eventName: string }> {
-  const [form, event] = await Promise.all([
-    loadWaiverForm(),
-    eventAtSheetTimestamp(env, timestampForSheet(Date.now(), env.TIME_ZONE)),
-  ])
+export async function readWaiver(event: CheckinEvent): Promise<{ blocks: WaiverBlock[]; eventName: string }> {
+  const form = await loadWaiverForm()
   return { blocks: form.blocks, eventName: waiverEventName(event) }
 }
 

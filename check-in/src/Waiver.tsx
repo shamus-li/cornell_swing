@@ -7,7 +7,7 @@ import { Button } from "@shared/components/ui/button"
 import { FloatingField, floatingInputClass } from "@shared/components/ui/floating-field"
 import { Input } from "@shared/components/ui/input"
 import { QrCallout } from "@shared/components/ui/qr-callout"
-import { isConnectionError, REQUEST_TIMEOUT_MS, signatureMatchesName, type WaiverBlock } from "@/lib/checkin"
+import { eventQuery, isConnectionError, REQUEST_TIMEOUT_MS, signatureMatchesName, type WaiverBlock } from "@/lib/checkin"
 import { largeButtonClass } from "@shared/lib/sizes"
 
 type WaiverText = { blocks: WaiverBlock[]; eventName: string }
@@ -18,8 +18,8 @@ let pendingWaiver: Promise<WaiverResult> | null = null
 
 // Starts loading the waiver while the attendee is still filling in the form, so the waiver screen
 // opens with the text ready. A failed load is retried for the next attendee.
-export function preloadWaiver(): Promise<WaiverResult> {
-  pendingWaiver ??= fetch("api/waiver", { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }).then(async (response) => {
+export function preloadWaiver(eventId: string | null): Promise<WaiverResult> {
+  pendingWaiver ??= fetch(`api/waiver${eventQuery(eventId)}`, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }).then(async (response) => {
     const payload = (await response.json()) as WaiverResponse
     if (payload.formChanged) return { formChanged: true as const }
     if (payload.unavailable) {
@@ -114,12 +114,14 @@ export function NonCornellWaiver({
   name,
   email,
   phone,
+  eventId,
   onBack,
   onComplete,
 }: {
   name: string
   email: string
   phone: string
+  eventId: string | null
   onBack: () => void
   // Records the check-in; returns an error message when it fails.
   onComplete: () => Promise<string | null>
@@ -136,7 +138,7 @@ export function NonCornellWaiver({
   // onComplete runs here only when the form changed.
   useEffect(() => {
     let active = true
-    preloadWaiver()
+    preloadWaiver(eventId)
       .then(async (result) => {
         if (!active) return
         if ("waiver" in result) return setWaiver(result.waiver)
@@ -169,7 +171,7 @@ export function NonCornellWaiver({
     setIsSubmitting(true)
     try {
       if (!signed.current) {
-        const response = await fetch("api/waiver", {
+        const response = await fetch(`api/waiver${eventQuery(eventId)}`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Accept: "application/json" },
           body: JSON.stringify({ name, email, phone, signature }),

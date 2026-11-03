@@ -15,7 +15,7 @@ import {
 import type { CheckinStats } from "../src/lib/member-search"
 import { cachedMembers, searchCachedMembers, storeCheckinStats, storeMemberCache } from "./cache"
 import { cancelCharge, findCharge, findTicket, isVerifying, justPaidCharges, openCardCharge, queuedCharges, settleAtDoor, ticketsToOffer, useHeldTicket, volunteerTicket, type DoorCharge } from "./door"
-import { eventAtSheetTimestamp, findCheckinEvent, type EventSession } from "./events"
+import { eventAtSheetTimestamp, eventChoices, findCheckinEvent, type EventSession } from "./events"
 import {
   type CheckinRow,
   appendWaiver,
@@ -58,6 +58,7 @@ const MEMBER_SEARCH_PATH = "/check-in/api/members"
 const CHECKIN_PATH = "/check-in/api/checkins"
 const CHECKIN_STATUS_PATH = "/check-in/api/checkins/status"
 const WAIVER_PATH = "/check-in/api/waiver"
+const EVENTS_PATH = "/check-in/api/events"
 const DOOR_PATH = "/check-in/api/door/"
 type AccessTokenProvider = (env: Env) => Promise<string>
 
@@ -177,17 +178,23 @@ async function readCheckinAttendee(request: Request, env: Env): Promise<Attendee
   return attendee
 }
 
-// The event a check-in at this moment belongs to, and the moment in Sheet form.
-async function eventNow(env: Env, timestamp: number): Promise<{ event: EventSession; sheetTimestamp: number }> {
+// The event a check-in at this moment belongs to, and the moment in Sheet form. The kiosk names the event in
+// the URL when the day has several to choose from.
+async function eventNow(request: Request, env: Env, timestamp: number): Promise<{ event: EventSession; sheetTimestamp: number } | Response> {
   const sheetTimestamp = timestampForSheet(timestamp, env.TIME_ZONE)
-  return { event: await eventAtSheetTimestamp(env, sheetTimestamp), sheetTimestamp }
+  const chosen = new URL(request.url).searchParams.get("event")
+  if (!chosen) return { event: await eventAtSheetTimestamp(env, sheetTimestamp), sheetTimestamp }
+  const event = (await eventChoices(env, sheetTimestamp)).find(({ id }) => id === chosen)
+  return event ? { event, sheetTimestamp } : json({ message: "That event isn't available anymore. Choose another event." }, 400)
 }
 
 export async function handleCheckin(request: Request, env: Env, timestamp = Date.now()): Promise<Response> {
   const attendee = await readCheckinAttendee(request, env)
   if (attendee instanceof Response) return attendee
 
-  const { event, sheetTimestamp } = await eventNow(env, timestamp)
+  const now = await eventNow(request, env, timestamp)
+  if (now instanceof Response) return now
+  const { event, sheetTimestamp } = now
   const guard = env.CHECKIN_GUARD.getByName(event.sessionDate)
   if (!await guard.isCheckedIn(attendee, event.id)) {
     const tickets = ticketsToOffer(event)
@@ -235,7 +242,9 @@ async function handleDoor(request: Request, env: Env, path: string, timestamp = 
     const { ticketId } = (await request.clone().json().catch(() => ({}))) as { ticketId?: unknown }
     const attendee = await readCheckinAttendee(request, env)
     if (attendee instanceof Response) return attendee
-    const { event } = await eventNow(env, timestamp)
+    const now = await eventNow(request, env, timestamp)
+    if (now instanceof Response) return now
+    const { event } = now
     const ticket = findTicket(event, ticketId)
     if (!ticket?.amount) return json({ message: "Choose a ticket" }, 400)
     if (await env.CHECKIN_GUARD.getByName(event.sessionDate).isCheckedIn(attendee, event.id)) {
@@ -250,7 +259,9 @@ async function handleDoor(request: Request, env: Env, path: string, timestamp = 
     if (method !== "cash" && method !== "free" && method !== "waived") return json({ message: "Choose how to pay" }, 400)
     const attendee = await readCheckinAttendee(request, env)
     if (attendee instanceof Response) return attendee
-    const { event } = await eventNow(env, timestamp)
+    const now = await eventNow(request, env, timestamp)
+    if (now instanceof Response) return now
+    const { event } = now
     const ticket = method === "waived" ? volunteerTicket(event) : findTicket(event, ticketId)
     if (!ticket || (method === "cash") !== ticket.amount > 0) return json({ message: "Choose a ticket" }, 400)
     // Another laptop already checked them in, unless this is a retry of the same payment.
@@ -295,7 +306,9 @@ async function handleDoor(request: Request, env: Env, path: string, timestamp = 
 export async function handleCheckinStatus(request: Request, env: Env, timestamp = Date.now()): Promise<Response> {
   const attendee = await readCheckinAttendee(request, env)
   if (attendee instanceof Response) return attendee
-  const { event } = await eventNow(env, timestamp)
+  const now = await eventNow(request, env, timestamp)
+  if (now instanceof Response) return now
+  const { event } = now
   const guard = env.CHECKIN_GUARD.getByName(event.sessionDate)
   return json({ checkedIn: await guard.isCheckedIn(attendee, event.id), next: await nextSteps(env, attendee) })
 }
@@ -308,8 +321,17 @@ async function nextSteps(env: Env, attendee: Attendee): Promise<NextSteps> {
   return { waiver: person?.generalRisk ? null : "cornell", joinCampusGroups: !person?.member }
 }
 
+// The events the kiosk can choose between right now.
+async function handleEvents(env: Env, timestamp = Date.now()): Promise<Response> {
+  const sessions = await eventChoices(env, timestampForSheet(timestamp, env.TIME_ZONE))
+  return json({ events: sessions.map(({ id, title, time }) => ({ id, title, time })) })
+}
+
 async function handleWaiver(request: Request, env: Env): Promise<Response> {
-  if (request.method === "GET") return json(await readWaiver(env))
+  if (request.method === "GET") {
+    const now = await eventNow(request, env, Date.now())
+    return now instanceof Response ? now : json(await readWaiver(now.event))
+  }
   if (request.method !== "POST") return json({ message: "Method not allowed" }, 405)
   let payload: unknown
   try {
@@ -330,7 +352,9 @@ async function handleWaiver(request: Request, env: Env): Promise<Response> {
   // A waiver signed on staging must not reach the real CampusGroups form.
   if (env.STAGING) return json({ message: "Waiver signed" }, 201)
   const timestamp = Date.now()
-  const event = await eventAtSheetTimestamp(env, timestampForSheet(timestamp, env.TIME_ZONE))
+  const now = await eventNow(request, env, timestamp)
+  if (now instanceof Response) return now
+  const { event } = now
   const eventName = waiverEventName(event)
   const responseId = await submitWaiver({ name, phone, signature }, eventName)
   // CampusGroups holds the signed waiver, so a failed log entry shouldn't make the attendee sign again.
@@ -649,6 +673,10 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
     if (pathname === CHECKIN_STATUS_PATH) {
       if (request.method !== "POST") return json({ message: "Method not allowed" }, 405)
       return await handleCheckinStatus(request, env)
+    }
+    if (pathname === EVENTS_PATH) {
+      if (request.method !== "GET") return json({ message: "Method not allowed" }, 405)
+      return await handleEvents(env)
     }
     if (pathname.startsWith(DOOR_PATH)) return await handleDoor(request, env, pathname.slice(DOOR_PATH.length))
     if (pathname === WAIVER_PATH) {

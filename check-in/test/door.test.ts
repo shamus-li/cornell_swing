@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { handleApiRequest, handleCheckin, handleCheckinStatus } from "../worker"
 import { storeMemberCache } from "../worker/cache"
-import { findSession } from "../worker/events"
+import { eventChoices, findSession } from "../worker/events"
 import { dateKeyInTimeZone, timestampForSheet } from "../worker/google"
 import { syncPayments, syncSquare } from "../../src/events/square"
 import { resetEventsDb } from "./events-db"
@@ -19,6 +19,7 @@ vi.mock("../worker/google", async (importOriginal) => ({
 const DAY = 86_400_000
 const today = () => dateKeyInTimeZone(Date.now(), "America/New_York")
 const tomorrow = () => dateKeyInTimeZone(Date.now() + DAY, "America/New_York")
+const nextWeek = () => dateKeyInTimeZone(Date.now() + 7 * DAY, "America/New_York")
 const ada = { memberId: null, name: "Ada Lovelace", email: "ada@example.com", phone: "607-555-0100", affiliation: "Staff" }
 const tickets = [
   { id: "student", name: "Student", price: "10", days: 1 },
@@ -372,5 +373,50 @@ describe("which session a moment belongs to", () => {
   it("keeps a check-in just after midnight with the night before", async () => {
     await add("dance", "special", "2027-03-05", "20:00", "23:00")
     expect(await findSession(env, at("2027-03-06T05:30:00Z"))).toMatchObject({ id: "dance", sessionDate: "2027-03-05" })
+  })
+
+  it("offers every event on that day, even after midnight", async () => {
+    await add("dance", "special", "2027-03-05", "20:00", "23:00")
+    await add("workshop", "special", "2027-03-05", "15:00", "17:00")
+    await add("tomorrow", "special", "2027-03-06", "15:00", "17:00")
+    const sessions = await eventChoices(env, at("2027-03-06T05:30:00Z"))
+    expect(sessions.map(({ id }) => id)).toEqual(["workshop", "dance"])
+  })
+})
+
+describe("choosing the event at the kiosk", () => {
+  const checkinAt = (eventId: string, body: unknown = ada) => post(`checkins?event=${eventId}`, body)
+  beforeEach(async () => {
+    await env.EVENTS_DB.prepare("INSERT INTO events (id, kind, title, date, startTime, endTime, tickets, updatedAt) VALUES ('workshop', 'special', 'Workshop', ?, '00:00', '23:59', '[]', '')").bind(today()).run()
+  })
+
+  it("lists the day's events and checks in to each one separately", async () => {
+    const choices = (await (await get("events")).json()) as { events: { id: string }[] }
+    expect(choices.events.map(({ id }) => id).sort()).toEqual(["weekend", "workshop"])
+    expect((await checkinAt("workshop")).status).toBe(201)
+    expect((await checkinAt("workshop")).status).toBe(409)
+    expect((await post("checkins/status?event=workshop", ada).then((response) => response.json()) as { checkedIn: boolean }).checkedIn).toBe(true)
+    expect((await post("checkins/status?event=weekend", ada).then((response) => response.json()) as { checkedIn: boolean }).checkedIn).toBe(false)
+  })
+
+  it("offers a Monday lesson beside a paid event, covering its lesson and social dance, and checks in to it for free", async () => {
+    await env.EVENTS_DB.prepare("INSERT INTO events (id, kind, title, date, startTime, endTime, lessonEndTime, socialStartTime, updatedAt) VALUES ('lesson', 'normal', 'Monday Night Swing', ?, '20:00', '22:00', '21:00', '19:30', '')").bind(today()).run()
+    const { events } = (await (await get("events")).json()) as { events: { id: string; title: string; time: string }[] }
+    expect(events).toContainEqual({ id: "lesson", title: "Monday Night Swing", time: "7:30–10:00 PM" })
+    expect((await checkinAt("lesson")).status).toBe(201)
+    expect((await checkinAt("weekend")).status).toBe(402)
+  })
+
+  it("charges for the chosen event", async () => {
+    expect((await checkinAt("weekend")).status).toBe(402)
+    const created = await post("door/charges?event=weekend", general)
+    const { id } = (await created.json()) as { id: string }
+    expect(await env.EVENTS_DB.prepare("SELECT eventId FROM door_charges WHERE id = ?").bind(id).first("eventId")).toBe("weekend")
+  })
+
+  it("refuses an event that isn't on that day", async () => {
+    await env.EVENTS_DB.prepare("INSERT INTO events (id, kind, title, date, tickets, updatedAt) VALUES ('later', 'special', 'Later', ?, '[]', '')").bind(nextWeek()).run()
+    expect((await checkinAt("later")).status).toBe(400)
+    expect((await checkinAt("missing")).status).toBe(400)
   })
 })

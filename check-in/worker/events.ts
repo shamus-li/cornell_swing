@@ -1,4 +1,4 @@
-import { nightSpan, type EventDay } from "../../src/events/model"
+import { formatEventTime, nightSpan, type EventDay } from "../../src/events/model"
 import { dateKeyForSheetTimestamp } from "./google"
 
 export type CheckinEvent = { id: string; kind: string; title: string; date: string; startTime: string; endTime: string; lessonEndTime: string; socialStartTime: string; moreDays: string; tickets: string }
@@ -15,22 +15,27 @@ const minutesOf = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.
 const nextDay = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10)
 const scheduledDays = (event: CheckinEvent): EventDay[] => [{ date: event.date, ...nightSpan(event) }, ...JSON.parse(event.moreDays) as EventDay[]]
 
+// The sessions scheduled today and yesterday, with minutes counted from the start of today.
+async function sessionsNear(env: Env, today: string) {
+  const yesterday = nextDay(today, -1)
+  const { results } = await env.EVENTS_DB
+    .prepare(`SELECT ${COLUMNS} FROM events WHERE date != '' AND date <= ?1 AND (date >= ?2 OR lastDate >= ?2) ORDER BY id`)
+    .bind(today, yesterday)
+    .all<CheckinEvent>()
+  return results.flatMap((event) => scheduledDays(event).filter((day) => day.date === today || day.date === yesterday).map((day) => {
+    const base = day.date === today ? 0 : -DAY_MINUTES
+    return { event, day, date: day.date, start: base + (day.startTime ? minutesOf(day.startTime) : 0), end: base + (day.endTime ? minutesOf(day.endTime) : DAY_MINUTES) }
+  }))
+}
+
 // The event on at this Sheet timestamp, or the one someone is arriving for or leaving: a session under way
 // comes first, then one about to start, then one just ended, with special events ahead of lessons when they tie.
 // With `nearest`, a moment outside all of those takes the day's closest session.
 export async function findSession(env: Env, timestamp: number, { nearest = false } = {}): Promise<EventSession | null> {
   const today = dateKeyForSheetTimestamp(timestamp)!
-  const yesterday = nextDay(today, -1)
   // Sheet timestamps are days since 1899-12-30 in New York time, so the fraction is the time of day.
   const now = Math.floor((timestamp - Math.floor(timestamp)) * DAY_MINUTES + 1e-6)
-  const { results } = await env.EVENTS_DB
-    .prepare(`SELECT ${COLUMNS} FROM events WHERE date != '' AND date <= ?1 AND (date >= ?2 OR lastDate >= ?2) ORDER BY id`)
-    .bind(today, yesterday)
-    .all<CheckinEvent>()
-  const sessions = results.flatMap((event) => scheduledDays(event).filter((day) => day.date === today || day.date === yesterday).map((day) => {
-    const base = day.date === today ? 0 : -DAY_MINUTES
-    return { event, date: day.date, start: base + (day.startTime ? minutesOf(day.startTime) : 0), end: base + (day.endTime ? minutesOf(day.endTime) : DAY_MINUTES) }
-  }))
+  const sessions = await sessionsNear(env, today)
   type Session = (typeof sessions)[number]
   const specialFirst = (a: Session, b: Session) => Number(b.event.kind === "special") - Number(a.event.kind === "special")
   const pick = (matches: Session[], order: (a: Session, b: Session) => number) => [...matches].sort((a, b) => order(a, b) || specialFirst(a, b))[0]
@@ -39,6 +44,16 @@ export async function findSession(env: Env, timestamp: number, { nearest = false
     ?? pick(sessions.filter(({ end }) => end < now && now - end <= LATE_MINUTES), (a, b) => b.end - a.end)
     ?? (nearest ? pick(sessions.filter(({ date }) => date === today), (a, b) => Math.max(a.start - now, now - a.end) - Math.max(b.start - now, now - b.end)) : undefined)
   return chosen ? { ...chosen.event, sessionDate: chosen.date } : null
+}
+
+// What the kiosk can check people in to: every event on the same day as the session at this Sheet timestamp, earliest first.
+export async function eventChoices(env: Env, timestamp: number): Promise<(EventSession & { time: string })[]> {
+  const current = await findSession(env, timestamp, { nearest: true })
+  if (!current) return []
+  return (await sessionsNear(env, dateKeyForSheetTimestamp(timestamp)!))
+    .filter(({ date }) => date === current.sessionDate)
+    .sort((a, b) => a.start - b.start)
+    .map(({ event, day, date }) => ({ ...event, sessionDate: date, time: formatEventTime(day) }))
 }
 
 // The session a check-in or waiver at this Sheet timestamp belongs to. A night with no event gets an

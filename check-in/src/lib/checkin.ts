@@ -28,6 +28,11 @@ export const AFFILIATION_LABELS: Record<Affiliation, string> = {
   Student: "Cornell Student",
 }
 
+// An event the kiosk can check people in to.
+export type EventChoice = { id: string; title: string; time: string }
+// Names the event in a request when the day has several; without it the server goes by the time.
+export const eventQuery = (eventId: string | null) => eventId ? `?event=${encodeURIComponent(eventId)}` : ""
+
 // A ticket type offered at the door; amount is in cents.
 export type DoorTicket = { id: string; name: string; amount: number; days: number }
 
