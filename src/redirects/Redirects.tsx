@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useId, useState } from "react"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select"
@@ -88,18 +88,19 @@ export default function Redirects() {
 }
 
 function EditRow({ draft, saving, error, onChange, onSave, onCancel }: { draft: Draft; saving: boolean; error: string; onChange: (draft: Draft) => void; onSave: () => void; onCancel: () => void }) {
+  const type = useId()
   // Escape from the open Type menu, which renders outside the form, only closes the menu.
   return <form className="redirect-edit" onSubmit={event => { event.preventDefault(); onSave() }} onKeyDown={event => { if (event.key === "Escape" && event.currentTarget.contains(event.target as Node)) onCancel() }}>
     <div className="redirect-fields">
       <label className="redirect-field"><span>Short link</span><Input autoFocus disabled={saving} placeholder="/new-link" value={draft.source} onChange={event => onChange({ ...draft, source: event.target.value })} /></label>
       <label className="redirect-field"><span>Destination</span><Input disabled={saving} placeholder="https://example.com" value={draft.destination} onChange={event => onChange({ ...draft, destination: event.target.value })} /></label>
-      <label className="redirect-field"><span>Type</span><Select disabled={saving} value={draft.code} onValueChange={code => onChange({ ...draft, code })}>
-        <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+      <div className="redirect-field"><label htmlFor={type}>Type</label><Select disabled={saving} value={draft.code} onValueChange={code => onChange({ ...draft, code })}>
+        <SelectTrigger id={type} className="w-full"><SelectValue /></SelectTrigger>
         <SelectContent>
           <SelectItem value="301">301 Permanent</SelectItem>
           <SelectItem value="302">302 Temporary</SelectItem>
         </SelectContent>
-      </Select></label>
+      </Select></div>
     </div>
     {error && <p role="alert" className="event-error">{error}</p>}
     <div className="normal-event-actions">

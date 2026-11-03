@@ -191,6 +191,8 @@ components:
     height: 32px
   menu-row-touch:
     height: 40px
+  menu-row-check-in:
+    typography: "{typography.body}"
   calendar-day:
     rounded: "{rounded.inner}"
     size: 28px
@@ -211,7 +213,7 @@ Sizes are set per page area in `src/theme.css`. Public pages are roomy, the mana
 
 ## Colors
 
-- **Primary (#a13a5e):** berry, the only accent. Main buttons, focus rings, the next event's date tile, links in the manager's editors.
+- **Primary (#a13a5e):** berry, the only accent. Main buttons, focus rings, the next event's date tile, text link buttons.
 - **Surface (#ffffff) and on-surface (#232019):** white pages and warm ink. All text and form text uses the ink, never pure black.
 - **Muted (#f4f3f1) and on-muted (#5f5c55):** grouped panels, hover backgrounds, secondary text.
 - **Border (#e6e4e0) and input-border (#cfcdc7):** dividers and field outlines.
@@ -242,9 +244,10 @@ Controls have 8px corners, parts inside a control (segments, menu rows, calendar
 
 ## Components
 
-- **Buttons:** public 40, or 44 on touch. Main actions 44 at 16px. Manager 32, or 40 on touch. Small buttons (28 at 13px) only in manager table and heading rows.
+- **Buttons:** public 40, or 44 on touch. Main actions 44 at 16px. Manager 32, or 40 on touch. Small buttons (28 at 13px) only in manager table and heading rows, the newsletter link bar and the newsletter's hover Add announcement.
 - **Fields:** public label-above 40 at 16px. Floating-label 56. Manager 32, or 40 on touch. Text is 16px in every field, including selects.
 - **Icons:** 14 in small buttons and table status, 16 by default, 20 only for the next event's pin.
+- **Menus:** rows 32, or 40 on touch, at 14px. Check-in's are 16px to match its large fields.
 - **Tabs:** underlined line style, on Base UI.
 - **Switches and chips:** Toggle Group on Base UI. Segmented switch for one choice, chips for filters and multiple choices.
 - **Checkboxes:** 16px with 4px corners, inside a label that takes the click. On Base UI.

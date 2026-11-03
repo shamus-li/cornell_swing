@@ -8,7 +8,8 @@ import { api, errorMessage } from "./api"
 
 const normalizedQuery = (text: string) => text.trim().replace(/\s+/g, " ").toLowerCase()
 
-export function LocationPicker({ value, url, room = "", onChange, onRoomChange, disabled = false, icon = true }: {
+export function LocationPicker({ id, value, url, room = "", onChange, onRoomChange, disabled = false, icon = true }: {
+  id?: string
   value: string
   url?: string
   room?: string
@@ -57,7 +58,7 @@ export function LocationPicker({ value, url, room = "", onChange, onRoomChange, 
         }}
         onValueChange={place => { if (place) { controller.current?.abort(); setQuery(null); setBusy(false); setSelected(place); onChange(place.label, place.url); setOpen(false) } }}
         itemToStringLabel={place => place.label} itemToStringValue={place => place.url} isItemEqualToValue={(place, other) => place.url === other.url} autoHighlight>
-        <ComboboxInput disabled={disabled} aria-label="Location" aria-busy={busy} placeholder="Location" maxLength={300} className="w-full flex-1" showTrigger={false}>
+        <ComboboxInput id={id} disabled={disabled} aria-label="Location" aria-busy={busy} placeholder="Location" maxLength={300} className="w-full flex-1" showTrigger={false}>
           {icon && <InputGroupAddon align="inline-start"><MapPin aria-hidden="true" /></InputGroupAddon>}
           {url && <InputGroupAddon align="inline-end"><a href={url} target="_blank" rel="noreferrer" className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Open in Google Maps" title="Open in Google Maps"><ExternalLink className="size-3.5" /></a></InputGroupAddon>}
         </ComboboxInput>

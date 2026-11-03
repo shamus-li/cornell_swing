@@ -51,9 +51,9 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .normal-event-edit :is([data-slot="input"], [data-slot="textarea"], [data-slot="input-group"]) { background: var(--background); }
 .normal-event-fields { display: grid; gap: 12px; margin-bottom: 16px; }
 .editor-row { display: grid; grid-template-columns: 80px minmax(0, 1fr); align-items: center; gap: 12px; }
-.editor-row > span { color: var(--muted-foreground); font-size: var(--small-font-size); }
+.editor-row > :is(span, label) { justify-self: start; color: var(--muted-foreground); font-size: var(--small-font-size); }
 .editor-row-top { align-items: start; }
-.editor-row-top > span { padding-top: calc((var(--field-height) - 1lh) / 2); }
+.editor-row-top > :is(span, label) { padding-top: calc((var(--field-height) - 1lh) / 2); }
 .lesson-times { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .normal-event-edit .segmented { background: var(--border); }
 .time-range { display: grid; grid-template-columns: minmax(0, 9rem) auto minmax(0, 9rem); justify-content: start; align-items: center; gap: 8px; color: var(--muted-foreground); }
@@ -224,7 +224,7 @@ html:has(.manage-page) { scroll-behavior: auto; }
   /* The date takes its own line above the times. */
   /* Lesson labels sit above their fields, so a start and end time fit side by side. */
   .normal-event-edit .editor-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
-  .normal-event-edit .editor-row-top > span { padding-top: 0; }
+  .normal-event-edit .editor-row-top > :is(span, label) { padding-top: 0; }
   .time-range { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
   [data-slot="tabs-trigger"][aria-selected="true"]::after { inset: auto 10px -1px; }
 }

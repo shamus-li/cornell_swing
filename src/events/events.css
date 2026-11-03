@@ -27,11 +27,11 @@
   .dialog-close { top: 4px; right: 4px; }
 }
 .calendar-menu { inset: auto; position-area: bottom span-right; position-try-fallbacks: flip-block; margin: 4px 0; min-width: 12rem; padding: 4px; color: var(--foreground); background: var(--background); border: 1px solid var(--border); border-radius: var(--radius); }
-.calendar-menu a { display: flex; align-items: center; min-height: var(--menu-row-height); padding-inline: 8px; border-radius: var(--radius-inner); text-decoration: none; }
+.calendar-menu a { display: flex; align-items: center; min-height: var(--menu-row-height); padding-inline: 8px; border-radius: var(--radius-inner); font-size: var(--small-font-size); text-decoration: none; }
 .calendar-menu a:is(:hover, :focus-visible) { background: var(--muted); outline: none; }
 [data-slot="button"]:has(+ .calendar-menu:popover-open) { background: var(--muted); }
 [data-slot] { font-family: var(--sans); }
-[data-slot="button"] { text-decoration: none; }
+[data-slot="button"]:not([data-variant="link"]) { text-decoration: none; }
 .is-past { color: var(--muted-foreground); }
 .event-dialog { width: min(440px, calc(100% - 32px)); max-height: calc(100dvh - 40px); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 0; color: var(--foreground); font-family: var(--sans); }
 .event-dialog-body { padding: 36px; }
