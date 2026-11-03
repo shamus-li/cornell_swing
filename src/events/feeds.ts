@@ -6,16 +6,20 @@ import { danceStyles, todayInNewYork } from './model'
 // Every Cornell club's events in one file of about 5 MB; each CampusGroups feed keeps one club's events from it.
 const campusGroupsCalendar = 'https://cornell.campusgroups.com/ical/cornell/ical_cornell.ics'
 
-export interface DanceFeed { id: string; name: string; style: string; city: string; siteUrl: string; feedUrl: string; skipTitles: string; checkedAt: string | null; feedError: string | null }
+export interface DanceFeed { id: string; name: string; style: string; city: string; siteUrl: string; feedUrl: string; skipTitles: string; eventPages: string; checkedAt: string | null; feedError: string | null }
 type FeedEvent = { sourceId: string; title: string; date: string; startTime: string; endTime: string; location: string; city: string; url: string }
 // A problem the organizer can fix, shown with the feed in /manage.
 class FeedError extends Error {}
 type SquarespaceEvents = { upcoming?: { id: string; title: string; startDate: number; endDate: number; fullUrl: string; location?: { addressTitle?: string; addressLine2?: string } }[] }
 
+// "Lindy Jam https://example.org/jam, Ball https://example.org/ball" names the page for events whose titles contain those words.
+const parseEventPages = (pages: string) => pages.split(',').map(entry => entry.trim()).filter(Boolean).map(entry => entry.match(/^(.+)\s+(https:\/\/\S+)$/))
+
 export function validateFeed(value: unknown): Omit<DanceFeed, 'id' | 'checkedAt' | 'feedError'> {
   const input = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>
   const text = (key: string, limit: number) => typeof input[key] === 'string' && input[key].length <= limit ? input[key].trim() : ''
-  const feed = { name: text('name', 120), style: text('style', 40), city: text('city', 80) || 'Ithaca', siteUrl: text('siteUrl', 2000), feedUrl: text('feedUrl', 2000), skipTitles: text('skipTitles', 300) }
+  const feed = { name: text('name', 120), style: text('style', 40), city: text('city', 80) || 'Ithaca', siteUrl: text('siteUrl', 2000), feedUrl: text('feedUrl', 2000), skipTitles: text('skipTitles', 300), eventPages: text('eventPages', 2000) }
+  if (parseEventPages(feed.eventPages).includes(null)) throw new Error('Write each event page as words from the title, then a link that starts with https://.')
   if (!feed.name) throw new Error('Enter the group name.')
   if (!(danceStyles as readonly string[]).includes(feed.style)) throw new Error('Choose a dance style.')
   let url: URL | undefined
@@ -81,6 +85,13 @@ function repeatDates(rule: string, start: string, skipped: string[]): string[] {
   return dates
 }
 
+// Google calendars have no link field, so an event's page is written in its description. Video-call, map and form
+// links aren't the event's page, and a link to a whole site isn't either.
+const descriptionLink = (description: string) => description.match(/https:\/\/[^\s"'<>]+/g)?.map(link => link.replace(/[.,;)]+$/, '')).find(link => {
+  const url = URL.parse(link)
+  return url && url.pathname !== '/' && !/google\.|goo\.gl|forms\.gle/.test(url.hostname)
+}) ?? ''
+
 // Each date of a series gets its own id. A changed or cancelled date arrives as its own entry naming the date it replaces.
 export function icsEvents(text: string): FeedEvent[] {
   const found = new Map<string, FeedEvent>()
@@ -96,7 +107,7 @@ export function icsEvents(text: string): FeedEvent[] {
     // Some calendars pack the caller and band into the title after a comma.
     const title = decode(props.get('SUMMARY') ?? '').replace(/,.*\b(callers?|music)\b.*$/i, '').slice(0, 160)
     if (!start || !uid || !title) continue
-    const event = { sourceId: uid, title, date: start.date, startTime: start.time, endTime: sameDayEnd(start, icsTime(props.get('DTEND'))), ...place(decode(props.get('LOCATION') ?? '')), url: props.get('URL') ?? '' }
+    const event = { sourceId: uid, title, date: start.date, startTime: start.time, endTime: sameDayEnd(start, icsTime(props.get('DTEND'))), ...place(decode(props.get('LOCATION') ?? '')), url: props.get('URL') || descriptionLink(decode(props.get('DESCRIPTION') ?? '')) }
     const cancelled = props.get('STATUS') === 'CANCELLED'
     const rule = props.get('RRULE')
     const replaced = icsTime(props.get('RECURRENCE-ID'))
@@ -162,7 +173,9 @@ function stylesFrom(title: string, usual: string) {
 function saveEvents(db: D1Database, feed: DanceFeed, events: FeedEvent[], today: string, checkedAt: string) {
   const skip = feed.skipTitles.toLowerCase().split(',').map(word => word.trim()).filter(Boolean)
   const kept = events.filter(event => event.date >= today && !skip.some(word => event.title.toLowerCase().includes(word)))
-  const rows = JSON.stringify(kept.map(event => ({ ...event, url: event.url || feed.siteUrl, styles: JSON.stringify(stylesFrom(event.title, feed.style)) })))
+  const pages = parseEventPages(feed.eventPages).filter(page => page !== null)
+  const pageFor = (title: string) => pages.find(([, words]) => title.toLowerCase().includes(words.toLowerCase()))?.[2]
+  const rows = JSON.stringify(kept.map(event => ({ ...event, url: event.url || pageFor(event.title) || feed.siteUrl, styles: JSON.stringify(stylesFrom(event.title, feed.style)) })))
   return db.batch([
     db.prepare(`INSERT INTO outside_events (id, groupId, sourceId, title, date, startTime, endTime, location, city, styles, url, published, updatedAt)
       SELECT lower(hex(randomblob(16))), ?1, value ->> 'sourceId', value ->> 'title', value ->> 'date', value ->> 'startTime', value ->> 'endTime', value ->> 'location', iif(value ->> 'city' = '', ?2, value ->> 'city'), value ->> 'styles', value ->> 'url', 1, ?3 FROM json_each(?4) WHERE true
@@ -174,7 +187,7 @@ function saveEvents(db: D1Database, feed: DanceFeed, events: FeedEvent[], today:
 }
 
 export async function listFeeds(db: D1Database, id?: string): Promise<DanceFeed[]> {
-  const query = 'SELECT id, name, style, city, siteUrl, feedUrl, skipTitles, checkedAt, feedError FROM dance_groups WHERE feedUrl != \'\''
+  const query = 'SELECT id, name, style, city, siteUrl, feedUrl, skipTitles, eventPages, checkedAt, feedError FROM dance_groups WHERE feedUrl != \'\''
   return (await (id ? db.prepare(`${query} AND id = ?`).bind(id) : db.prepare(`${query} ORDER BY name`)).all<DanceFeed>()).results
 }
 

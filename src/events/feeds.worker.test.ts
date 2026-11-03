@@ -3,7 +3,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest'
 import { setupNetwork } from '@msw/cloudflare'
 import { http, HttpResponse } from 'msw'
 import { resetEventsDb } from '../../check-in/test/events-db'
-import { icsEvents, readFeeds } from './feeds'
+import { icsEvents, readFeeds, validateFeed } from './feeds'
 
 const network = setupNetwork()
 const ics = (...events: string[]) => `BEGIN:VCALENDAR\r\nVERSION:2.0\r\n${events.map(event => `BEGIN:VEVENT\r\n${event.trim().replace(/\n\s*/g, '\r\n')}\r\nEND:VEVENT\r\n`).join('')}END:VCALENDAR\r\n`
@@ -98,6 +98,35 @@ it('reads the city from a calendar location, and leaves it to the group when the
   const located = (location: string) => icsEvents(ics(`UID:a\n  DTSTART:20991114T181500\n  SUMMARY:Dance\n  LOCATION:${location}`))[0]
   expect(located('Flynn Hall\\, 1 Main St\\, Rochester\\, NY 14620\\, United States')).toMatchObject({ location: 'Flynn Hall, 1 Main St', city: 'Rochester' })
   expect(located('Flynn Hall')).toMatchObject({ location: 'Flynn Hall', city: '' })
+})
+
+it('finds an event\'s page in its description, passing over call, map and form links and whole sites', () => {
+  const linked = (description: string) => icsEvents(ics(`UID:a\n  DTSTART:20991114T181500\n  SUMMARY:Dance\n  DESCRIPTION:${description}`))[0].url
+  expect(linked('Join with Google Meet: https://meet.google.com/abc\\nMaps https://goo.gl/maps/x\\, form https://forms.gle/y\\, host https://host.example/\\, details at https://group.example/events/ball.aspx.')).toBe('https://group.example/events/ball.aspx')
+  expect(linked('<a href="https://group.example/ball">the ball</a>')).toBe('https://group.example/ball')
+  expect(linked('Join with Google Meet: https://meet.google.com/abc')).toBe('')
+})
+
+it('links a feed event to its own page, then a page named for its title, then the group\'s site', async () => {
+  const id = 'ithaca-swing-dance-network'
+  network.use(http.get('https://example.org/links.ics', () => new HttpResponse(ics(
+    'UID:own\n  DTSTART:20991114T181500\n  SUMMARY:Lindy Jam Special\n  URL:https://example.org/special',
+    'UID:jam\n  DTSTART:20991115T181500\n  SUMMARY:Rochester lindy jam',
+    'UID:ball\n  DTSTART:20991116T181500\n  SUMMARY:Holiday Ball',
+  ))))
+  await env.EVENTS_DB.prepare("UPDATE dance_groups SET feedUrl = 'https://example.org/links.ics', siteUrl = 'https://example.org/', eventPages = 'Lindy Jam https://example.org/jam' WHERE id = ?").bind(id).run()
+  await readFeeds(env, id)
+  expect((await saved()).filter(event => event.groupId === id).map(event => [event.title, event.url])).toEqual([
+    ['Lindy Jam Special', 'https://example.org/special'],
+    ['Rochester lindy jam', 'https://example.org/jam'],
+    ['Holiday Ball', 'https://example.org/'],
+  ])
+})
+
+it('refuses event pages it cannot read', () => {
+  const feed = { name: 'Group', style: 'Swing', feedUrl: 'https://example.org/a.ics' }
+  expect(validateFeed({ ...feed, eventPages: 'Lindy Jam https://example.org/jam, Ball https://example.org/ball' }).eventPages).toContain('Ball')
+  expect(() => validateFeed({ ...feed, eventPages: 'https://example.org/jam' })).toThrow('Write each event page')
 })
 
 it('expands weekly series, skipping removed dates and applying changed ones', () => {
