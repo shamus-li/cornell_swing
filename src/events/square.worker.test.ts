@@ -6,6 +6,7 @@ import { exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { resetEventsDb } from '../../check-in/test/events-db'
 import worker from './worker'
 import { syncSquare } from './square'
+import type { EventActivity, FinanceOverview } from './finance'
 
 vi.mock('../../check-in/worker/google', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../check-in/worker/google')>(),
@@ -45,11 +46,20 @@ beforeAll(async () => {
       const begin = new URL(request.url).searchParams.get('begin_time')!
       return HttpResponse.json({ payments: payments.filter(item => String(item.created_at) >= begin) })
     }),
-    http.get('https://sheets.googleapis.com/v4/spreadsheets/:id/values:batchGet', () => {
+    http.get('https://sheets.googleapis.com/v4/spreadsheets/:id/values:batchGet', ({ request }) => {
+      // The Finances tab's read of the Balance Sheet.
+      const ranges = new URL(request.url).searchParams.getAll('ranges')
+      if (ranges[0].endsWith('A2:H')) return HttpResponse.json({ valueRanges: [
+        { values: [['26-27', 46283, 10, 'Cash', 'Y', 'Fall 26 The Lindy Haunt: Cash Profits', '', 'haunt'], ['26-27', 46286, -400, 'GPSA', 'Y', 'Fall 26 The Lindy Haunt: Ageless Jazz Band']] },
+        { values: [['GPSA', 0, 3500, -950, 2550], ['Venmo', 0, 0, 0, 0], ['Cash', 989, 225, 0, 1214], ['Totals', 989, 3725, -950, 3764]] },
+        { values: [[1214.78]] },
+      ].slice(0, ranges.length) })
       const rows = Math.max(1, ...Object.keys(sheet).map(Number))
       const column = (read: (row: SheetRow) => string, header: string) => ({ values: Array.from({ length: rows }, (_, index) => [index ? read(sheet[index + 1] ?? { id: '', source: '' }) : header]) })
       return HttpResponse.json({ valueRanges: [column(() => '2026-09-01', 'Date'), column(row => row.source, 'Source'), column(row => row.id, 'Event ID')] })
     }),
+    // The check-in sheet: Oct 17, 2026 at 7:12 PM.
+    http.get('https://sheets.googleapis.com/v4/spreadsheets/:id/values/:range', () => HttpResponse.json({ values: [[46312.8, 'Maya', 'maya@example.edu', '', 'Community Member', '', 'haunt'], [46312.8, 'Lesson', 'lesson@example.edu', '', 'Community Member', '', 'normal-2026-10-17']] })),
     http.post('https://sheets.googleapis.com/v4/spreadsheets/:id/values:batchUpdate', async ({ request }) => {
       const { data } = await request.json() as { data: { range: string; values: unknown[][] }[] }
       ledger.push(...data)
@@ -79,10 +89,10 @@ beforeEach(async () => {
 describe('Square feed', () => {
   it('connects the Square account an officer authorizes', async () => {
     await env.EVENTS_DB.exec('DELETE FROM square_connection')
-    expect(await (await manage('/square')).json()).toEqual({ square: null, payments: [] })
+    expect(await (await manage('/square')).json()).toEqual({ square: null })
     expect((await callback('state=forged&code=abc', 'square_state=real')).status).toBe(400)
     const response = await callback('state=real&code=abc', 'square_state=real')
-    expect(response.headers.get('location')).toBe('/manage?tab=finances')
+    expect(response.headers.get('location')).toBe('/manage?tab=settings')
     expect(await (await manage('/square')).json()).toMatchObject({ square: 'Swing Syndicate' })
     await manage('/square', 'DELETE')
     expect(await (await manage('/square')).json()).toMatchObject({ square: null })
@@ -99,7 +109,17 @@ describe('Square feed', () => {
     expect(ledgerRow('haunt', 'Square')).toEqual(['26-27', 46312, 14.31, 'Square', 'Y', 'Fall 26 The Lindy Haunt: Square Profits'])
     expect(ledgerRow('haunt', 'Cash')).toEqual(['26-27', 46312, 10, 'Cash', 'Y', 'Fall 26 The Lindy Haunt: Cash Profits'])
     expect(ledgerRow('payments-2026-10-17', 'Square')).toEqual(['26-27', 46312, 19.33, 'Square', 'Y', 'Square payments'])
-    expect(await (await manage('/square')).json()).toMatchObject({ payments: [{ id: 'cash-1', event: 'The Lindy Haunt 👻', cash: true, amount: 1000 }, { id: 'card-2' }, { id: 'card-1' }, { id: 'shirt', event: null }] })
+    const overview = await (await manage('/finance')).json() as FinanceOverview
+    expect(overview.accounts).toEqual([
+      { name: 'GPSA', start: 0, moneyIn: 3500, moneyOut: 950, balance: 2550, check: null },
+      { name: 'Cash box', start: 989, moneyIn: 225, moneyOut: 0, balance: 1214, check: { source: 'Last count', difference: 0.78 } },
+    ])
+    expect(overview.transactions.find(item => item.id === 'cash-1')).toMatchObject({ eventId: 'haunt', eventName: 'The Lindy Haunt 👻', amount: 10, account: 'Cash' })
+    expect(overview.transactions.some(item => item.description === 'Square Profits')).toBe(false)
+    const activity = await (await manage('/events/haunt/activity')).json() as EventActivity
+    expect(activity.checkins).toEqual([{ name: 'Maya', email: 'maya@example.edu', time: '7:12 PM', ticket: null }])
+    expect(activity.transactions.map(item => item.description)).toContain('Ageless Jazz Band')
+    expect(activity.transactions.some(item => item.id === 'shirt')).toBe(false)
 
     // A refund the next day updates the event's row in place.
     ledger = []

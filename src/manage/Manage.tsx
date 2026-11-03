@@ -1,17 +1,18 @@
 import { addDays, differenceInCalendarDays, format, parseISO } from "date-fns"
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react"
-import { CalendarIcon, Check, Copy, MapPinIcon, MusicIcon, TicketIcon, XIcon } from "lucide-react"
+import { CalendarIcon, MapPinIcon, MusicIcon, TicketIcon, XIcon } from "lucide-react"
 import { Button } from "../../check-in/src/components/ui/button"
 import { Input } from "../../check-in/src/components/ui/input"
 import { StylePicker } from "../events/StylePicker"
-import { isUpcoming, isValidPrice, todayInNewYork, type EventDay, type EventRecord, type EventTicket, type ManagedEvent, type RSVP } from "../events/model"
+import { isUpcoming, isValidPrice, todayInNewYork, type EventDay, type EventRecord, type EventTicket, type ManagedEvent } from "../events/model"
 import { EventTimePicker } from "./EventTimePicker"
 import { LocationPicker } from "./LocationPicker"
 import { EventDatePicker } from "./EventDatePicker"
 import { NormalEventRow, type NormalEventHandle } from "./NormalEventRow"
 import { DiscardChangesButton, DiscardChangesDialog } from "./DiscardChangesButton"
 import { DeleteEventButton } from "./DeleteEventButton"
-import { ConfirmButton } from "./ConfirmButton"
+import { CopyButton } from "./CopyButton"
+import { EventGuests, EventOverview } from "./EventOverview"
 import { SheetConnection } from "./SheetConnection"
 import { CampusGroupsUpload } from "./CampusGroupsUpload"
 import { api, ApiError, errorMessage } from "./api"
@@ -24,10 +25,9 @@ import { Newsletter } from "./Newsletter"
 import { AlertEmail } from "./AlertEmail"
 import { DanceFeeds } from "./DanceFeeds"
 import { FinanceOverview } from "./FinanceOverview"
-import { Finances } from "./Finances"
+import { SquareConnection } from "./SquareConnection"
 import { blankOutsideEvent, OutsideEventForm, outsideSummary } from "./OutsideEventForm"
 import type { OutsideEvent } from "../events/outside"
-import { Person } from "../../check-in/src/components/ui/person"
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../../check-in/src/components/ui/input-group"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../check-in/src/components/ui/select"
 
@@ -167,7 +167,7 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
         {notice && <p role="status" className="manage-notice">{notice}</p>}
         {error && <p role="alert" className="event-error manage-notice">{error} <Button variant="link" size="sm" onClick={() => window.location.reload()}>Reload</Button></p>}
         <div role="tabpanel" className="manage-panel" aria-label={tabLabel}>
-          {tab === "settings" ? <><SheetConnection onSync={load} /><CampusGroupsUpload /><DanceFeeds /><AlertEmail /></> : tab === "finances" ? <><FinanceOverview /><Finances /></> : loading ? <p role="status" className="event-muted manage-notice">Loading events…</p> : tab === "newsletter" ? <Newsletter events={events} actions={titleActions} /> : tab === "special"
+          {tab === "settings" ? <><SheetConnection onSync={load} /><SquareConnection /><CampusGroupsUpload /><DanceFeeds /><AlertEmail /></> : tab === "finances" ? <FinanceOverview /> : loading ? <p role="status" className="event-muted manage-notice">Loading events…</p> : tab === "newsletter" ? <Newsletter events={events} actions={titleActions} /> : tab === "special"
             ? <>{review.length > 0 && <section className="manage-group" aria-label="Waiting for review"><h2>Waiting for review</h2><div className="manage-list">{review.map(outsideRow)}</div></section>}<EventGroups<ManagedEvent | OutsideEvent> events={[...events.filter(event => event.kind === "special" && groupFilter !== "theirs"), ...shownOutside.filter(event => !review.includes(event))].sort(byDate)} render={item => item.kind === "outside" ? outsideRow(item) : specialRow(item)} empty="No special events yet." first={editingOutside === "" && <OutsideEventForm event={blankOutsideEvent()} groups={groups} onSave={acceptOutside} onCancel={() => setEditingOutside(null)} />} /></>
             : <EventGroups events={events.filter(event => event.kind === "normal")} render={lessonRow} empty="No weekly lessons yet." first={activeNormal === "" && <NormalEventRow ref={normalEditor} editing onEdit={() => {}} event={newEvent("normal")} onSave={saveNormal} onCancel={() => setActiveNormal(null)} />} />}
         </div>
@@ -190,7 +190,7 @@ function EventGroups<T extends { date: string }>({ events, render, empty, first 
 
 function EventEditor({ event, leaveGuard, onSave, onReplace, onDelete, onCancel, onRsvpChange }: { event: ManagedEvent; leaveGuard: RefObject<(() => void) | null>; onRsvpChange: () => void; onSave: (event: EventRecord) => void; onReplace: (event: EventRecord) => void; onDelete: () => void; onCancel: () => void }) {
   const [draft, setDraft] = useState<EventRecord>(event)
-  const [tab, setTab] = useState<"details" | "guests">("details")
+  const [tab, setTab] = useState<"overview" | "guests" | "details">(event.id ? "overview" : "details")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const [editorError, setEditorError] = useState("")
@@ -243,8 +243,9 @@ function EventEditor({ event, leaveGuard, onSave, onReplace, onDelete, onCancel,
   return <div className="event-editor-shell">
     <DiscardChangesDialog open={leaving} onOpenChange={setLeaving} onDiscard={onCancel} />
     <DiscardChangesButton variant="ghost" size="sm" className="back-button" dirty={dirty} onDiscard={onCancel} disabled={busy}>← Events</DiscardChangesButton>
-    {event.id && <Tabs label="Event sections" tabs={[{ value: "details", label: "Details" }, { value: "guests", label: <>Guests <span className="tab-count">{event.rsvpCount}</span></> }]} value={tab} onChange={setTab} />}
-    {tab === "guests" ? <div role="tabpanel" className="guest-panel" aria-label="Guests"><GuestList event={event} onChange={onRsvpChange} /></div> :
+    {event.id && tab !== "details" && <div className="event-page-title"><DateTile date={event.date} /><h1>{event.title}</h1></div>}
+    {event.id && <Tabs label="Event sections" tabs={[{ value: "overview", label: "Overview" }, { value: "guests", label: <>Guests <span className="tab-count">{event.rsvpCount}</span></> }, { value: "details", label: "Details" }]} value={tab} onChange={setTab} />}
+    {tab === "overview" ? <div role="tabpanel" className="guest-panel" aria-label="Overview"><EventOverview event={event} rsvpCount={event.rsvpCount} /></div> : tab === "guests" ? <div role="tabpanel" className="guest-panel" aria-label="Guests"><EventGuests event={event} onChange={onRsvpChange} /></div> :
     <form role={event.id ? "tabpanel" : undefined} className="event-editor" aria-label={event.id ? "Edit event" : "New event"} onSubmit={e => { e.preventDefault(); if (e.currentTarget.reportValidity()) void save(event.published) }}>
       <div className="editor-title">
         <DateTile date={draft.date} />
@@ -345,42 +346,4 @@ function TicketTypes({ tickets, eventDays, disabled, onChange }: { tickets: Even
     </div>)}
     <Button ref={addTicket} type="button" variant="link" size="sm" className="editor-link" disabled={disabled} onClick={() => onChange([...tickets, { id: crypto.randomUUID(), name: "", price: "", days: 1 }])}>Add ticket type</Button>
   </div>
-}
-
-// Tab-separated rows paste into Google Sheets as Name and Email columns.
-function CopyButton({ text, label }: { text: string; label: string }) {
-  const [copied, setCopied] = useState(false)
-  async function copy() {
-    await navigator.clipboard.writeText(text)
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 2000)
-  }
-  return <Button type="button" variant="outline" size="sm" onClick={() => void copy()}>{copied ? <Check /> : <Copy />}{label}<span className="sr-only" aria-live="polite">{copied ? "Copied" : ""}</span></Button>
-}
-
-const rsvpDate = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "America/New_York" })
-
-function GuestList({ event, onChange }: { event: EventRecord; onChange: () => void }) {
-  const [rsvps, setRsvps] = useState<RSVP[] | null>(null)
-  const [error, setError] = useState("")
-  useEffect(() => { void api<{ rsvps: RSVP[] }>(`/events/${event.id}/rsvps`).then(data => setRsvps(data.rsvps)).catch(err => setError(errorMessage(err))) }, [event.id])
-  async function remove(email: string) {
-    setError("")
-    try {
-      await api(`/events/${event.id}/rsvps`, { method: "DELETE", body: JSON.stringify({ email }) })
-      setRsvps(current => current!.filter(guest => guest.email !== email)); onChange()
-    } catch (err) { setError(errorMessage(err)) }
-  }
-  return <>
-    {error && <p role="alert" className="event-error manage-notice">{error}</p>}
-    {rsvps === null ? !error && <p role="status" className="event-muted manage-notice">Loading guests…</p> : rsvps.length ? <>
-      <div className="guest-summary"><span className="event-muted">{rsvps.length} guest{rsvps.length === 1 ? "" : "s"}</span><CopyButton text={rsvps.map(rsvp => `${rsvp.name}\t${rsvp.email}`).join("\n")} label="Copy names and emails" /></div>
-      <ul className="guest-list">
-      {rsvps.map(rsvp => <li className="guest-row" key={rsvp.email}>
-        <Person name={rsvp.name} detail={rsvp.email} />
-        <time dateTime={rsvp.createdAt} title="RSVP date">{rsvpDate.format(new Date(rsvp.createdAt))}</time>
-        <ConfirmButton size="sm" aria-label={`Remove ${rsvp.name}`} confirmLabel="Confirm" busyLabel="Removing…" onConfirm={() => remove(rsvp.email)}>Remove</ConfirmButton>
-      </li>)}
-    </ul></> : <p className="event-muted manage-notice">No RSVPs yet. Guests appear here when they RSVP on the website.</p>}
-  </>
 }

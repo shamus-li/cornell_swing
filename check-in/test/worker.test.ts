@@ -366,7 +366,7 @@ describe("check-in", () => {
     expect(affiliation).toBe("Community Member")
     expect(String(memberId)).toMatch(MEMBER_ID_PATTERN)
     // A night with no event in /manage gets an unpublished one.
-    expect(await env.EVENTS_DB.prepare("SELECT id, kind, title, date, published FROM events").all()).toMatchObject({
+    expect(await env.EVENTS_DB.prepare("SELECT id, kind, title, date, published FROM events WHERE kind = 'normal'").all()).toMatchObject({
       results: [{ id: eventId, kind: "normal", title: "Swing Dance", date: "2026-08-25", published: 0 }],
     })
   })

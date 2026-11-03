@@ -5,7 +5,7 @@ import { DancesPage } from "../src/site/DancesPage"
 import { EventPage } from "../src/site/EventPage"
 import { todayInNewYork, validateEvent, type ManagedEvent } from "../src/events/model"
 import { baseSlug } from "../src/events/slugs"
-import { events as sampleEvents, finance, outsideEvents, square } from "./mock-data"
+import { activity, eventRsvps, events as sampleEvents, finance, outsideEvents, square } from "./mock-data"
 
 // Stands in for the Worker under `npm run dev`, so every page has data without signing in.
 // Saves run the real event validation and last until this code changes or the dev server restarts.
@@ -14,7 +14,7 @@ let events = sampleEvents.map(withSlug)
 let outside = [...outsideEvents]
 let feeds: { id: string }[] = []
 const template: Record<string, string> = {}
-const rsvps: Record<string, { name: string; email: string; createdAt: string }[]> = {}
+const rsvps: Record<string, { name: string; email: string; createdAt: string }[]> = { "mock-special-1": eventRsvps }
 // In the Worker's order: by date, undated events last.
 const sorted = () => [...events].sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999") || a.startTime.localeCompare(b.startTime))
 const published = () => sorted().filter(event => event.published)
@@ -47,6 +47,7 @@ async function respond(req: IncomingMessage, path: string): Promise<object | nul
   if (path === "/api/event-requests") return { success: true }
   if (!path.startsWith("/manage/api/")) return null
   const route = path.slice("/manage/api".length)
+  if (/^\/events\/[^/]+\/activity$/.test(route)) return activity
   const event = route.match(/^\/events\/([^/]+)(\/rsvps)?$/)
   if (event?.[2]) return { rsvps: rsvps[event[1]] ?? [] }
   if (route === "/events") return method === "POST" ? saveEvent(req) : { events: sorted() }

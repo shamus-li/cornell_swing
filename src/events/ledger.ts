@@ -17,7 +17,7 @@ const DAY_MS = 86_400_000
 const SHEET_EPOCH_MS = Date.UTC(1899, 11, 30)
 
 // The tab's Year column: "26-27" runs from August 2026 through July 2027.
-function fiscalYear(date: string): string {
+export function fiscalYear(date: string): string {
   const start = Number(date.slice(2, 4)) - (Number(date.slice(5, 7)) < 8 ? 1 : 0)
   return `${start}-${start + 1}`
 }

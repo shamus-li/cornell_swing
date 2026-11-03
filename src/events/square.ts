@@ -2,11 +2,11 @@ import { findCharge, settleCardCharge } from '../../check-in/worker/door'
 import { findSession } from '../../check-in/worker/events'
 import { sendAlert } from './alert-email'
 import { dateKeyInTimeZone, timestampForSheet } from '../../check-in/worker/google'
-import type { SquareFeed, SquarePayment } from './finance'
+import type { SquareFeed } from './finance'
 import { upsertLedgerRows, type LedgerRow } from './ledger'
 import { logError } from './logging'
 
-// An officer connects the club's Square account from the Finances tab. The site then reads its payments
+// An officer connects the club's Square account from the Settings tab. The site then reads its payments
 // each morning and files them on the Balance Sheet.
 const SQUARE = 'https://connect.squareup.com'
 const VERSION = '2025-01-23'
@@ -116,7 +116,7 @@ export async function syncPayments(env: Env): Promise<void> {
       cursor = page.cursor
     } while (cursor)
   } catch (error) {
-    // Access was removed in Square, so the Finances tab asks to connect again.
+    // Access was removed in Square, so the Settings tab asks to connect again.
     if (!(error instanceof SquareAuthError)) throw error
     await env.EVENTS_DB.prepare('DELETE FROM square_connection').run()
     logError('Square access was revoked', error)
@@ -134,7 +134,7 @@ export async function syncSquare(env: Env): Promise<void> {
 type Stored = { id: string; paidAt: string; amount: number; fee: number; cash: number; note: string; eventId: string | null }
 
 // "Fall 26 The Lindy Haunt", the way the Balance Sheet names an event.
-function eventLabel(title: string, date: string): string {
+export function eventLabel(title: string, date: string): string {
   const name = title.replace(/\p{Extended_Pictographic}|\uFE0F/gu, '').trim()
   return `${Number(date.slice(5, 7)) < 8 ? 'Spring' : 'Fall'} ${date.slice(2, 4)} ${name}`
 }
@@ -168,9 +168,5 @@ async function syncLedger(env: Env): Promise<void> {
 }
 
 export async function squareFeed(env: Env): Promise<SquareFeed> {
-  const [square, payments] = await Promise.all([
-    env.EVENTS_DB.prepare('SELECT name FROM square_connection').first<string>('name'),
-    env.EVENTS_DB.prepare('SELECT p.id, p.paidAt, p.amount, p.cash, p.note, e.title AS event FROM square_payments p LEFT JOIN events e ON e.id = p.eventId ORDER BY p.paidAt DESC LIMIT 50').all<Omit<SquarePayment, 'cash'> & { cash: number }>(),
-  ])
-  return { square, payments: payments.results.map(payment => ({ ...payment, cash: payment.cash === 1 })) }
+  return { square: await env.EVENTS_DB.prepare('SELECT name FROM square_connection').first<string>('name') }
 }

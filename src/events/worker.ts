@@ -12,6 +12,7 @@ import { isValidEmail } from '../lib/email'
 import { buildCampusGroups, campusGroupsKey, summarizeCampusGroups, type CampusGroupsData } from './campusgroups'
 import { formatEventDate, formatEventLocation, formatEventTime, formatLessonSchedule, hasEventDetails, isUpcoming, todayInNewYork, validateEvent, validateRSVP, type EventRecord, type ManagedEvent, type RSVP } from './model'
 import { connectSquare, disconnectSquare, squareConnectUrl, squareFeed } from './square'
+import { eventActivity, financeOverview, saveCampusGroupsTransactions } from './finance-data'
 import { listGroupNames, listOutsideEvents, saveOutsideEvent, validateEventRequest, validateOutsideEvent } from './outside'
 import { listFeeds, readFeeds, validateFeed } from './feeds'
 import { assignSlug } from './slugs'
@@ -264,16 +265,27 @@ async function route(request: Request, env: Env): Promise<Response> {
   }
   if (path === '/manage/square/callback' && method === 'GET') {
     const state = request.headers.get('cookie')?.match(/(?:^|;\s*)square_state=([^;]+)/)?.[1]
-    if (!state || state !== url.searchParams.get('state')) throw new HttpError(400, 'Connect Square again from the Finances tab.')
+    if (!state || state !== url.searchParams.get('state')) throw new HttpError(400, 'Connect Square again from the Settings tab.')
     const code = url.searchParams.get('code')
     if (code) await connectSquare(env, url.origin, code)
-    return new Response(null, { status: 302, headers: { Location: '/manage?tab=finances', 'Set-Cookie': 'square_state=; Path=/manage/square; Max-Age=0' } })
+    return new Response(null, { status: 302, headers: { Location: '/manage?tab=settings', 'Set-Cookie': 'square_state=; Path=/manage/square; Max-Age=0' } })
   }
   if (path === '/manage/api/square') {
     if (method === 'GET') return json(await squareFeed(env))
     if (method !== 'DELETE') throw new HttpError(405, 'Method not allowed.')
     await disconnectSquare(env)
     return json({ success: true })
+  }
+  if (path === '/manage/api/finance' && method === 'GET') return json(await financeOverview(env))
+  if (path === '/manage/api/finance/campusgroups' && method === 'PUT') {
+    try { await saveCampusGroupsTransactions(env, await readBody(request, 2_000_000)) } catch (error) { if (error instanceof HttpError) throw error; throw new HttpError(400, (error as Error).message) }
+    return json(await financeOverview(env))
+  }
+  const activityMatch = path.match(/^\/manage\/api\/events\/([^/]+)\/activity$/)
+  if (activityMatch && method === 'GET') {
+    const activity = await eventActivity(env, activityMatch[1])
+    if (!activity) throw new HttpError(404, 'Event not found.')
+    return json(activity)
   }
   if (path === '/manage/api/campusgroups') {
     if (method === 'GET') return json(summarizeCampusGroups(await env.MEMBER_CACHE.get<CampusGroupsData>(campusGroupsKey, 'json')))

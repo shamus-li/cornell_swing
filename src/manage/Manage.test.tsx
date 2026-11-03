@@ -64,6 +64,7 @@ it("edits rendered Markdown in place, preserves headings and lists on save, and 
   const description = "**Live music**\n\n[Details](https://example.com)\n\n## Program\n\n- Jazz and swing"
   let current = events.map(event => ({ ...event, description }))
   const fetcher = vi.fn(async (_url: string, init?: RequestInit) => {
+    if (_url.endsWith("/activity")) return Response.json({ attendance: null, tickets: [], transactions: [], checkins: [] })
     if (_url.endsWith("/rsvps")) return Response.json({ rsvps: [] })
     if (init?.method === "PUT") {
       const saved = JSON.parse(init.body as string) as ManagedEvent
@@ -77,6 +78,7 @@ it("edits rendered Markdown in place, preserves headings and lists on save, and 
   expect(container.querySelectorAll(".event-row-button")).toHaveLength(1)
   expect(container.querySelector(".guest-count")?.textContent).toBe("1 RSVP")
   await act(async () => container.querySelector<HTMLButtonElement>(".event-row-button")!.click())
+  await clickButton(container, "Details")
   await act(async () => { await import("./MarkdownEditorContent") })
   await enter(inputByLabel(container, "Event name"), "Autumn dance updated")
   await enter(inputByLabel(container, "Start time"), "6:07 PM")
@@ -117,6 +119,7 @@ it("creates a special event as a draft with unconfirmed times, opens its private
       current = [...current, created]
       return Response.json({ event: created })
     }
+    if (url.endsWith("/activity")) return Response.json({ attendance: null, tickets: [], transactions: [], checkins: [] })
     if (url.endsWith("/rsvps")) return Response.json({ rsvps: [{ name: "Test Dancer", email: "dancer@example.com", createdAt: base.updatedAt }] })
     return Response.json({ events: current })
   })
@@ -134,7 +137,7 @@ it("creates a special event as a draft with unconfirmed times, opens its private
   expect(container.querySelector(".status-badge")?.textContent).toBe("Draft")
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>(".event-row-button")].find(row => row.textContent?.includes("Winter dance"))!.click())
   await clickButton(container, "Guests")
-  expect(fetcher).toHaveBeenLastCalledWith("/manage/api/events/new-special/rsvps", expect.anything())
+  expect(fetcher).toHaveBeenCalledWith("/manage/api/events/new-special/rsvps", expect.anything())
   expect(container.querySelector(".guest-list")?.textContent).toContain("Test Dancer")
   expect(container.querySelector(".guest-list")?.textContent).toContain("dancer@example.com")
   await clickButton(container, "Details")
