@@ -161,6 +161,7 @@ html:has(.manage-page) { scroll-behavior: auto; }
 .newsletter-field > .segmented { justify-self: start; }
 .newsletter-community .newsletter-check { align-items: flex-start; font-weight: 400; }
 .newsletter-community .newsletter-check [data-slot="checkbox"] { margin-top: 4px; }
+.newsletter-none { margin: 0; font-weight: 400; }
 .newsletter-status { margin: 0; font-size: var(--small-font-size); }
 .newsletter-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 16px; border-top: 1px solid var(--border); }
 .newsletter-compose { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-card); overflow: clip; }
