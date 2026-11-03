@@ -1,6 +1,8 @@
 import { createCachedGoogleAccessTokenProvider, getGoogleAccessToken } from '../../check-in/worker/google'
-import { validateRSVP, todayInNewYork, type EventRecord } from './model'
+import { logError } from './logging'
+import { validateRSVP, type EventRecord } from './model'
 
+export const SHEET_CRON = '* * * * *'
 type Connection = { spreadsheetId: string; sheetId: number; tabTitle: string; error: string | null }
 type Participant = { eventId: string; title: string; name: string; email: string; row: number }
 const failure = 'Could not update Google Sheets. Check spreadsheet sharing and try again.'
@@ -175,21 +177,31 @@ export async function disconnectSheet(env: Env): Promise<void> {
   if (!result.meta.changes && await connectionFor(env)) throw new SheetError('An RSVP update is in progress. Please try again.')
 }
 
-export async function saveRSVP(env: Env, event: EventRecord, attendee: { name: string; email: string }): Promise<void> {
-  const save = async (participant: { name: string; email: string }, authoritative = false) => {
-    await env.EVENTS_DB.prepare("INSERT INTO rsvps (eventId, name, email, createdAt) SELECT id, ?, ?, ? FROM events WHERE id = ? AND kind = 'special' ON CONFLICT(eventId,email) DO UPDATE SET name = excluded.name WHERE ?").bind(participant.name, participant.email, new Date().toISOString(), event.id, authoritative ? 1 : 0).run()
+// An RSVP never waits on Google or on another RSVP: it is saved here, and deliverRSVPs carries it to the sheet.
+export async function saveRSVP(env: Env, eventId: string, attendee: { name: string; email: string }): Promise<void> {
+  const saved = await env.EVENTS_DB.prepare("INSERT INTO rsvps (eventId, name, email, createdAt, sheetPending) SELECT id, ?, ?, ?, EXISTS (SELECT 1 FROM rsvp_sheet_connection) FROM events WHERE id = ? AND kind = 'special' ON CONFLICT(eventId,email) DO UPDATE SET sheetPending = excluded.sheetPending").bind(attendee.name, attendee.email, new Date().toISOString(), eventId).run()
+  if (!saved.meta.changes) throw new EventConflict('RSVPs are closed for this event.')
+}
+
+// Sends every waiting RSVP in one read and one append, however many arrived. Reading first means a delivery
+// repeated after a failure adds no duplicates. A failure stays on the connection for organizers and is retried on the next run.
+export async function deliverRSVPs(env: Env): Promise<void> {
+  if (!await env.EVENTS_DB.prepare('SELECT 1 FROM rsvps WHERE sheetPending = 1 LIMIT 1').first()) return
+  try {
+    await withSheet(env, async (connection, token, signal) => {
+      const rows = await readParticipants(env, connection, token, signal)
+      const onSheet = new Map(rows.map(row => [participantKey(row.eventId, row.email), row]))
+      const pending = (await env.EVENTS_DB.prepare('SELECT rsvps.eventId, rsvps.name, rsvps.email, events.title FROM rsvps JOIN events ON events.id = rsvps.eventId WHERE sheetPending = 1').all<Omit<Participant, 'row'>>()).results
+      const missing = pending.filter(row => !onSheet.has(participantKey(row.eventId, row.email)))
+      if (missing.length) await request(`${endpoint(connection.spreadsheetId)}/values/${encodeURIComponent(range(connection))}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, token, signal, 'POST', { values: missing.map(row => [row.title, row.name, row.email, row.eventId]) })
+      // A name organizers already corrected on the sheet wins.
+      if (pending.length) await env.EVENTS_DB.batch(pending.map(row => env.EVENTS_DB.prepare('UPDATE rsvps SET sheetPending = 0, name = ? WHERE eventId = ? AND email = ?').bind(onSheet.get(participantKey(row.eventId, row.email))?.name ?? row.name, row.eventId, row.email)))
+      return true
+    })
+  } catch (error) {
+    if (!(error instanceof SheetError)) throw error
+    if (error.cause) logError('RSVP sheet delivery failed', error.cause)
   }
-  const connected = await withSheet(env, async (connection, token, signal) => {
-    const current = await env.EVENTS_DB.prepare('SELECT * FROM events WHERE id = ?').bind(event.id).first<EventRecord>()
-    if (!current || current.kind !== 'special' || (current.date && current.date < todayInNewYork())) throw new EventConflict('RSVPs are closed for this event.')
-    event = current
-    const rows = await readParticipants(env, connection, token, signal)
-    const existing = rows.find(row => row.eventId === event.id && row.email === attendee.email)
-    if (!existing) await request(`${endpoint(connection.spreadsheetId)}/values/${encodeURIComponent(range(connection))}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, token, signal, 'POST', { values: [[event.title, attendee.name, attendee.email, event.id]] })
-    await save(existing ?? attendee, true)
-    return true
-  })
-  if (!connected) await save(attendee)
 }
 
 export async function removeRSVP(env: Env, eventId: string, email: string): Promise<void> {
@@ -213,7 +225,8 @@ export async function importSheet(env: Env): Promise<void> {
     }
     const statements = [...participants.values()].map(row => env.EVENTS_DB.prepare('INSERT INTO rsvps (eventId, name, email, createdAt) VALUES (?, ?, ?, ?) ON CONFLICT(eventId,email) DO UPDATE SET name = excluded.name WHERE rsvps.name != excluded.name').bind(row.eventId, row.name, row.email, new Date().toISOString()))
     const existing = (await env.EVENTS_DB.prepare("SELECT rsvps.eventId, rsvps.email FROM rsvps JOIN events ON events.id = rsvps.eventId WHERE events.kind = 'special'").all<{ eventId: string; email: string }>()).results
-    for (const row of existing) if (!participants.has(participantKey(row.eventId, row.email))) statements.push(env.EVENTS_DB.prepare('DELETE FROM rsvps WHERE eventId = ? AND email = ?').bind(row.eventId, row.email))
+    // An RSVP still on its way to the sheet is missing from it, which doesn't mean an organizer removed it.
+    for (const row of existing) if (!participants.has(participantKey(row.eventId, row.email))) statements.push(env.EVENTS_DB.prepare('DELETE FROM rsvps WHERE eventId = ? AND email = ? AND sheetPending = 0').bind(row.eventId, row.email))
     if (statements.length) await env.EVENTS_DB.batch(statements)
     return true
   })

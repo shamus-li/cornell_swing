@@ -6,7 +6,8 @@ import { exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { resetEventsDb } from '../../check-in/test/events-db'
 import worker from './worker'
 import siteWorker from '../worker'
-import { changeEventWithSheet } from './sheets'
+import { changeEventWithSheet, SHEET_CRON } from './sheets'
+import { todayInNewYork } from './model'
 import { getGoogleAccessToken } from '../../check-in/worker/google'
 import { campusGroupsKey, generalRiskTag } from './campusgroups'
 
@@ -210,6 +211,7 @@ describe('event storage and RSVPs', () => {
 })
 
 describe('Sheets source of truth', () => {
+  const deliver = () => siteWorker.scheduled({ cron: SHEET_CRON } as ScheduledController, env)
   async function connect(rows: string[][], failWrites = false) {
     await env.EVENTS_DB.prepare("INSERT INTO rsvp_sheet_connection (id,spreadsheetId,sheetId,tabTitle) VALUES (1,'test-sheet',1,'RSVPs')").run()
     let registry: string[][] = []
@@ -285,14 +287,16 @@ describe('Sheets source of truth', () => {
       expect(token).toHaveBeenCalledTimes(3)
     } finally { clock.mockRestore() }
   })
-  it('awaits sheet persistence, deduplicates retries, and deletes a freshly reordered row', async () => {
+  it('delivers to the sheet, deduplicates retries, and deletes a freshly reordered row', async () => {
     const created = await create()
     const rows = [['Event','Name','Email'],[created.title,'Existing','existing@example.com']]
     await connect(rows)
     const path = `/api/events/${created.id}/rsvp`
     expect((await call(path,'POST',{name:'Jane',email:'jane@example.com'})).status).toBe(200)
+    await deliver()
     expect(rows).toHaveLength(3)
     expect((await call(path,'POST',{name:'Jane',email:'jane@example.com'})).status).toBe(200)
+    await deliver()
     expect(rows).toHaveLength(3)
     rows.splice(1,0,rows.pop()!)
     expect((await call(`/manage/api/events/${created.id}/rsvps`,'DELETE',{email:'jane@example.com'},true)).status).toBe(200)
@@ -310,10 +314,15 @@ describe('Sheets source of truth', () => {
     sheet.requests.length = 0
     const path = `/api/events/${created.id}/rsvp`
     expect((await call(path,'POST',{name:'Jane',email:'jane@example.com'})).status).toBe(200)
+    expect(sheet.requests).toEqual([])
+    await deliver()
     expect(sheet.requests).toEqual(['metadata','registry','participants','append'])
     expect(rows[1]).toEqual([created.title,'Jane','jane@example.com',created.id])
     sheet.requests.length = 0
+    await deliver()
+    expect(sheet.requests).toEqual([])
     expect((await call(path,'POST',{name:'Jane',email:'jane@example.com'})).status).toBe(200)
+    await deliver()
     expect(sheet.requests).toEqual(['metadata','registry','participants'])
     expect(rows).toHaveLength(2)
     await env.EVENTS_DB.exec("CREATE TRIGGER reject_unchanged_rsvp BEFORE UPDATE ON rsvps WHEN old.name = new.name BEGIN SELECT RAISE(ABORT, 'Unnecessary RSVP write'); END")
@@ -345,11 +354,74 @@ describe('Sheets source of truth', () => {
     const stored = await env.EVENTS_DB.prepare('SELECT * FROM events WHERE id = ?').bind(created.id).first()
     expect(stored).toMatchObject({ title: created.title, date: created.date, kind: created.kind, updatedAt: created.updatedAt })
   })
-  it('does not return success or persist D1 when the connected sheet rejects a write', async () => {
+  it('saves two simultaneous RSVPs and sends both to the sheet in one append', async () => {
     const created = await create()
-    await connect([['Event','Name','Email']],true)
-    expect((await call(`/api/events/${created.id}/rsvp`,'POST',{name:'Jane',email:'jane@example.com'})).status).toBe(502)
-    expect(await env.EVENTS_DB.prepare('SELECT COUNT(*) AS count FROM rsvps').first('count')).toBe(0)
+    const rows = [['Event','Name','Email']]
+    const sheet = await connect(rows)
+    const path = `/api/events/${created.id}/rsvp`
+    const responses = await Promise.all([call(path,'POST',{name:'Jane',email:'jane@example.com'}), call(path,'POST',{name:'Sam',email:'sam@example.com'})])
+    expect(responses.map(response => response.status)).toEqual([200,200])
+    expect(await env.EVENTS_DB.prepare('SELECT COUNT(*) AS count FROM rsvps').first('count')).toBe(2)
+    await deliver()
+    expect(sheet.requests.filter(name => name === 'append')).toHaveLength(1)
+    expect(rows.slice(1).map(row => row[2]).sort()).toEqual(['jane@example.com','sam@example.com'])
+  })
+  it('accepts an RSVP on the last day of a multi-day event, after its first day has passed', async () => {
+    const today = todayInNewYork()
+    const created = await create({ date: todayInNewYork(new Date(Date.now() - 86400000)), moreDays: [{ date: today, startTime: '10:00', endTime: '17:00' }] })
+    const rows = [['Event','Name','Email']]
+    await connect(rows)
+    expect((await call(`/api/events/${created.id}/rsvp`,'POST',{name:'Jane',email:'jane@example.com'})).status).toBe(200)
+    await deliver()
+    expect(rows[1]).toEqual([created.title,'Jane','jane@example.com',created.id])
+  })
+  it('accepts RSVPs while the sheet is busy and delivers them once it is free', async () => {
+    const created = await create()
+    const rows = [['Event','Name','Email']]
+    await connect(rows)
+    await env.EVENTS_DB.prepare('UPDATE rsvp_sheet_connection SET lockUntil = ?').bind(Date.now() + 30000).run()
+    expect((await call(`/api/events/${created.id}/rsvp`,'POST',{name:'Jane',email:'jane@example.com'})).status).toBe(200)
+    await deliver()
+    expect(rows).toHaveLength(1)
+    await env.EVENTS_DB.exec('UPDATE rsvp_sheet_connection SET lockUntil = 0')
+    await deliver()
+    expect(rows).toHaveLength(2)
+  })
+  it('keeps an RSVP when the sheet rejects it, shows organizers the error, and delivers on the next run', async () => {
+    const created = await create()
+    const rows = [['Event','Name','Email']]
+    await connect(rows)
+    network.use(http.post('https://sheets.googleapis.com/v4/spreadsheets/test-sheet/values/:range', () => new HttpResponse(null, { status: 503 }), { once: true }))
+    expect((await call(`/api/events/${created.id}/rsvp`,'POST',{name:'Jane',email:'jane@example.com'})).status).toBe(200)
+    await deliver()
+    expect(await env.EVENTS_DB.prepare('SELECT sheetPending FROM rsvps').first('sheetPending')).toBe(1)
+    expect(await env.EVENTS_DB.prepare('SELECT error FROM rsvp_sheet_connection').first('error')).toBeTruthy()
+    await deliver()
+    expect(rows).toHaveLength(2)
+    expect(await env.EVENTS_DB.prepare('SELECT sheetPending FROM rsvps').first('sheetPending')).toBe(0)
+    expect(await env.EVENTS_DB.prepare('SELECT error FROM rsvp_sheet_connection').first('error')).toBeNull()
+  })
+  it('keeps a name organizers corrected on the sheet when the same person RSVPs again', async () => {
+    const created = await create()
+    const rows = [['Event','Name','Email'],[created.title,'Jane Corrected','jane@example.com']]
+    await connect(rows)
+    expect((await call(`/api/events/${created.id}/rsvp`,'POST',{name:'jane',email:'jane@example.com'})).status).toBe(200)
+    await deliver()
+    expect(rows).toHaveLength(2)
+    expect(await env.EVENTS_DB.prepare('SELECT name FROM rsvps').first('name')).toBe('Jane Corrected')
+  })
+  it('keeps an undelivered RSVP through a sheet sync, and never delivers one an organizer removed', async () => {
+    const created = await create()
+    const rows = [['Event','Name','Email']]
+    await connect(rows)
+    const path = `/api/events/${created.id}/rsvp`
+    expect((await call(path,'POST',{name:'Jane',email:'jane@example.com'})).status).toBe(200)
+    expect((await call(path,'POST',{name:'Sam',email:'sam@example.com'})).status).toBe(200)
+    expect((await call('/manage/api/rsvp-sheet/sync','POST',undefined,true)).status).toBe(200)
+    expect(await env.EVENTS_DB.prepare('SELECT COUNT(*) AS count FROM rsvps').first('count')).toBe(2)
+    expect((await call(`/manage/api/events/${created.id}/rsvps`,'DELETE',{email:'sam@example.com'},true)).status).toBe(200)
+    await deliver()
+    expect(rows.slice(1).map(row => row[2])).toEqual(['jane@example.com'])
   })
   it('mirrors sheet additions and removals without changing sheet rows', async () => {
     const created = await create()
