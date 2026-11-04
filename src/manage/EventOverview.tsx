@@ -75,7 +75,7 @@ export function EventGuests({ records: { rsvps, activityError, rsvpError, guests
   return <>
     {error && <p role="alert" className="event-error manage-notice">{error}</p>}
     {rsvps === null ? !rsvpError && <p role="status" className="event-muted manage-notice">Loading guests…</p> : guests.length ? <>
-      <div className="guest-summary"><span className="event-muted">{guests.length} guest{guests.length === 1 ? "" : "s"}</span><CopyButton text={guests.map(guest => `${guest.rsvp?.name ?? guest.checkin!.name}\t${guest.email}`).join("\n")} label="Copy names and emails" /></div>
+      <div className="guest-summary"><span className="event-muted">{guests.length} guest{guests.length === 1 ? "" : "s"}</span><CopyButton size="sm" copy={() => navigator.clipboard.writeText(guests.map(guest => `${guest.rsvp?.name ?? guest.checkin!.name}\t${guest.email}`).join("\n"))} label="Copy names and emails" /></div>
       <Card><Table className="guest-list">
         <TableHeader><TableRow><TableHead>Name</TableHead><TableHead className="hidden sm:table-cell">Email</TableHead><TableHead>RSVP</TableHead><TableHead>Checked in</TableHead><TableHead className="hidden sm:table-cell">Ticket</TableHead><TableHead><span className="sr-only">Remove RSVP</span></TableHead></TableRow></TableHeader>
         <TableBody>{guests.map(({ email, rsvp, checkin }) => <TableRow key={email}>

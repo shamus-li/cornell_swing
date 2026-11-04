@@ -1,21 +1,19 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactElement } from "react"
-import { createPortal } from "react-dom"
 import { renderToStaticMarkup } from "react-dom/server"
-import { Bold, Check, Copy, ExternalLink, GripVertical, Italic, Link, Plus, RotateCcw, Save, X } from "lucide-react"
+import { Bold, ExternalLink, GripVertical, Italic, Link, Plus, RotateCcw, Save, Star, X } from "lucide-react"
 import { Button } from "../components/ui/button"
-import { Checkbox } from "../components/ui/checkbox"
-import { ToggleChoice, ToggleGroupItem } from "../components/ui/toggle-group"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select"
-import { formatEventDate, hasEventDetails, isUpcoming, ithacaArea, todayInNewYork, type EventRecord } from "../events/model"
+import { formatEventDate, hasEventDetails, isUpcoming, todayInNewYork, type EventRecord } from "../events/model"
 import type { OutsideEvent } from "../events/outside"
-import { StyleFilter } from "../events/StylePicker"
 import { api, errorMessage } from "./api"
+import { CommunityPicker } from "./CommunityPicker"
+import { CopyButton } from "./CopyButton"
+import { ToggleRow } from "./ToggleRow"
 import { ConfirmButton } from "./ConfirmButton"
 import { AnnouncementBlock, Card, CommunityBlock, EmailFrame, EventsBlock, FeaturedBlock, FooterBlock, GlanceBlock, GreetingBlock, InvolvedBlock, LessonBlock, longDate, PracticeBlock, SignOffBlock } from "./NewsletterEmail"
 
 const none = "none"
 type Placement = "featured" | "listed" | "out"
-const placements: { value: Placement; label: string }[] = [{ value: "featured", label: "Featured" }, { value: "listed", label: "Listed" }, { value: "out", label: "Left out" }]
 const shortDate = (event: Pick<EventRecord, "date">) => formatEventDate(event.date, { weekday: "short", month: "short", day: "numeric" })
 
 // Parts that repeat every week. Organizers can save their edits to these for future newsletters.
@@ -37,16 +35,6 @@ function clean(html: string) {
   return doc.body.innerHTML
 }
 
-function CopyButton({ label, copy, primary }: { label: string; copy: () => Promise<void>; primary?: boolean }) {
-  const [copied, setCopied] = useState(false)
-  async function run() {
-    await copy()
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 2000)
-  }
-  return <Button variant={primary ? "default" : "outline"} onClick={() => void run()}>{copied ? <Check /> : <Copy />}{label}<span className="sr-only" aria-live="polite">{copied ? "Copied" : ""}</span></Button>
-}
-
 // One editable part of the email. Its HTML is written only when the generated HTML or the key changes,
 // so typing in it is kept until the event it was built from changes or the edits are reset.
 // React would rewrite dangerouslySetInnerHTML on every render, losing the typing.
@@ -59,8 +47,7 @@ function Block({ html, part }: { html: string; part?: Part }) {
 }
 
 // Builds the weekly newsletter from published events. Organizers edit it in place and paste it into Gmail.
-// The copy buttons go in the page header, `actions`, where other tabs put their main action.
-export function Newsletter({ events, outside, actions }: { events: EventRecord[]; outside: OutsideEvent[]; actions: HTMLElement | null }) {
+export function Newsletter({ events, outside }: { events: EventRecord[]; outside: OutsideEvent[] }) {
   const today = todayInNewYork()
   const upcoming = events.filter(event => event.published && event.date >= today)
   const lessons = upcoming.filter(event => event.kind === "normal")
@@ -71,8 +58,6 @@ export function Newsletter({ events, outside, actions }: { events: EventRecord[]
   const [placement, setPlacement] = useState<Record<string, Placement>>(() => Object.fromEntries(specials.map((event, index) => [event.id, index ? "listed" : "featured"])))
   // Other groups' dances stay out until an organizer ticks them.
   const [communityIds, setCommunityIds] = useState<string[]>([])
-  const [nearby, setNearby] = useState(true)
-  const [styles, setStyles] = useState<string[]>([])
   const [theme, setTheme] = useState(false)
   const [glanceShown, setGlanceShown] = useState(true)
   const [subject, setSubject] = useState<string | null>(null)
@@ -111,8 +96,6 @@ export function Newsletter({ events, outside, actions }: { events: EventRecord[]
   const communityEvents = outside.filter(event => event.published && isUpcoming(event, today))
   const community = communityEvents.filter(event => communityIds.includes(event.id))
   // The filters only narrow the list to pick from, so ticked events stay listed and stay in the email.
-  const inArea = communityEvents.filter(event => !nearby || ithacaArea.includes(event.city) || communityIds.includes(event.id))
-  const communityShown = inArea.filter(event => !styles.length || event.styles.some(style => styles.includes(style)) || communityIds.includes(event.id))
   // The mailing list adds "[Swing Syndicate]" to every subject.
   const defaultSubject = [lesson && `${longDate(lesson.date)} Dance`, ...featured.map(event => event.title)].filter(Boolean).join(" & ") || "Weekly Newsletter"
   // Each section is one card. The lesson card ends with the etiquette and practice note, which organizers can save for future weeks.
@@ -154,6 +137,7 @@ export function Newsletter({ events, outside, actions }: { events: EventRecord[]
     setNotes(current => [...current, id])
     setOrder([...present.slice(0, at), id, ...present.slice(at)])
   }
+  const setPlace = (id: string, place: Placement) => setPlacement(current => ({ ...current, [id]: place }))
   // Removing an event's section also clears its choice in the sidebar, so the two always agree.
   function remove(id: string) {
     if (id === "lesson") setLessonId(none)
@@ -223,10 +207,6 @@ export function Newsletter({ events, outside, actions }: { events: EventRecord[]
   })() : null
 
   return <div className="newsletter">
-    {actions && createPortal(<>
-      <CopyButton label="Copy subject" copy={() => navigator.clipboard.writeText(subject ?? defaultSubject)} />
-      <CopyButton primary label="Copy email" copy={copyEmail} />
-    </>, actions)}
     <aside className="newsletter-controls">
       <div className="newsletter-group">
         <label className="newsletter-field"><span>Lesson</span><Select value={lessonId} onValueChange={setLessonId}>
@@ -236,42 +216,37 @@ export function Newsletter({ events, outside, actions }: { events: EventRecord[]
             {lessons.map(event => <SelectItem key={event.id} value={event.id}>{shortDate(event)}</SelectItem>)}
           </SelectContent>
         </Select></label>
-        {lesson && <label className="newsletter-check"><Checkbox checked={theme} onCheckedChange={setTheme} />Secret social dance theme</label>}
+        {lesson && <ToggleRow on={theme} onChange={setTheme}>Secret social dance theme</ToggleRow>}
       </div>
       {specials.length > 0 && <fieldset className="newsletter-field"><legend>Special events</legend>
-        <ul className="newsletter-specials">{specials.map(event => <li key={event.id}>
-          <span className="event-row-text"><span>{event.title}</span><span className="event-muted">{shortDate(event)}</span></span>
-          <Select value={placement[event.id] ?? "out"} onValueChange={value => setPlacement(current => ({ ...current, [event.id]: value as Placement }))}>
-            <SelectTrigger aria-label={`Show ${event.title}`}><SelectValue /></SelectTrigger>
-            <SelectContent>{placements.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
-          </Select>
-        </li>)}</ul>
+        <ul className="newsletter-rows">{specials.map(event => {
+          const place = placement[event.id] ?? "out"
+          const label = place === "featured" ? `Stop featuring ${event.title}` : `Feature ${event.title}`
+          return <li key={event.id} className="newsletter-special">
+            <ToggleRow on={place !== "out"} onChange={on => setPlace(event.id, on ? "listed" : "out")}><span>{event.title}</span><span className="event-muted">{shortDate(event)}{place === "featured" && " · Featured"}</span></ToggleRow>
+            <Button type="button" variant="ghost" size="icon" aria-label={label} title={label} aria-pressed={place === "featured"} onClick={() => setPlace(event.id, place === "featured" ? "listed" : "featured")}><Star /></Button>
+          </li>
+        })}</ul>
       </fieldset>}
-      {communityEvents.length > 0 && <fieldset className="newsletter-field"><legend>Community events</legend>
-        <ToggleChoice variant="segmented" aria-label="Area" value={nearby ? "ithaca" : "upstate"} onValueChange={area => setNearby(area === "ithaca")}>
-          <ToggleGroupItem value="ithaca">Ithaca</ToggleGroupItem>
-          <ToggleGroupItem value="upstate">All upstate</ToggleGroupItem>
-        </ToggleChoice>
-        <StyleFilter events={communityEvents} available={inArea} chosen={styles} onChange={setStyles} />
-        {communityShown.length ? <ul className="newsletter-specials newsletter-community">{communityShown.map(event => <li key={event.id}>
-          <label className="newsletter-check"><Checkbox checked={communityIds.includes(event.id)} onCheckedChange={checked => setCommunityIds(current => checked ? [...current, event.id] : current.filter(id => id !== event.id))} />
-            <span className="event-row-text"><span>{event.title}</span><span className="event-muted">{shortDate(event)} · {event.groupName}</span></span></label>
-        </li>)}</ul> : <p className="event-muted newsletter-none">No matching events.</p>}
-      </fieldset>}
-      <div className="newsletter-actions">
-        <Button variant="outline" onClick={() => addNote(present.length)}><Plus />Add announcement</Button>
-        <ConfirmButton confirmLabel="Confirm" busyLabel="Resetting…" onConfirm={async () => reset()}>Reset edits</ConfirmButton>
-      </div>
-      {status && <p role="status" className="event-muted newsletter-status">{status}</p>}
-      {error && <p role="alert" className="event-error newsletter-status">{error}</p>}
+      {communityEvents.length > 0 && <CommunityPicker events={communityEvents} chosen={communityIds} onChange={setCommunityIds} />}
     </aside>
     <div className="newsletter-compose">
-      <label className="newsletter-subject"><span>Subject</span><input value={subject ?? defaultSubject} onChange={e => setSubject(e.target.value)} /></label>
-      {/* Buttons keep focus in the email, so the selection they format stays selected. */}
-      <div className="newsletter-toolbar" role="toolbar" aria-label="Formatting" onMouseDown={e => e.preventDefault()}>
-        <Button variant="ghost" size="icon" aria-label="Bold" onClick={() => document.execCommand("bold")}><Bold /></Button>
-        <Button variant="ghost" size="icon" aria-label="Italic" onClick={() => document.execCommand("italic")}><Italic /></Button>
-        <Button variant="ghost" size="icon" aria-label="Link" onClick={addLink}><Link /></Button>
+      <div className="newsletter-subject">
+        <label><span>Subject</span><input value={subject ?? defaultSubject} onChange={e => setSubject(e.target.value)} /></label>
+        <CopyButton label="Copy subject" copy={() => navigator.clipboard.writeText(subject ?? defaultSubject)} />
+      </div>
+      <div className="newsletter-toolbar">
+        {/* Buttons keep focus in the email, so the selection they format stays selected. */}
+        <div className="newsletter-format" role="toolbar" aria-label="Formatting" onMouseDown={e => e.preventDefault()}>
+          <Button variant="ghost" size="icon" aria-label="Bold" onClick={() => document.execCommand("bold")}><Bold /></Button>
+          <Button variant="ghost" size="icon" aria-label="Italic" onClick={() => document.execCommand("italic")}><Italic /></Button>
+          <Button variant="ghost" size="icon" aria-label="Link" onClick={addLink}><Link /></Button>
+        </div>
+        <Button variant="outline" onClick={() => addNote(present.length)}><Plus />Add announcement</Button>
+        <ConfirmButton confirmLabel="Confirm" busyLabel="Resetting…" onConfirm={async () => reset()}>Reset edits</ConfirmButton>
+        <CopyButton variant="default" label="Copy email" copy={copyEmail} />
+        {status && <p role="status" className="event-muted newsletter-status">{status}</p>}
+        {error && <p role="alert" className="event-error newsletter-status">{error}</p>}
       </div>
       <div ref={canvas} className="newsletter-canvas" data-dragging={dragging !== null || undefined}
         onClick={e => { const anchor = (e.target as Element).closest<HTMLAnchorElement>(".newsletter-block a"); if (anchor) e.preventDefault(); setActiveLink(anchor) }}

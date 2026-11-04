@@ -151,28 +151,36 @@ html:has(.manage-page) { scroll-behavior: auto; }
 /* Newsletter */
 .newsletter { display: grid; gap: 24px; }
 .manage-title-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-.newsletter-controls { display: grid; gap: 16px; align-content: start; }
+.newsletter-controls { display: grid; gap: 24px; align-content: start; }
 .newsletter-group { display: grid; gap: 8px; }
-.newsletter-field { display: grid; gap: 6px; min-width: 0; margin: 0; padding: 0; border: 0; font-size: var(--small-font-size); font-weight: 500; }
-.newsletter-field > :is(span, legend) { padding: 0; color: var(--muted-foreground); }
-.newsletter-check { display: flex; align-items: center; gap: 8px; font-size: var(--body-font-size); }
-.newsletter-specials { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; font-weight: 400; }
-.newsletter-specials li { display: flex; align-items: center; gap: 8px; font-size: var(--body-font-size); }
-.newsletter-specials li > span { flex: 1; }
-.newsletter-specials [data-slot="select-trigger"] { flex: none; width: 112px; }
-.newsletter-community { max-height: 320px; overflow-y: auto; }
-.newsletter-field > .segmented { justify-self: start; }
-.newsletter-community .newsletter-check { align-items: flex-start; font-weight: 400; }
-.newsletter-community .newsletter-check [data-slot="checkbox"] { margin-top: 4px; }
-.newsletter-none { margin: 0; font-weight: 400; }
-.newsletter-status { margin: 0; font-size: var(--small-font-size); }
-.newsletter-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 16px; border-top: 1px solid var(--border); }
+.newsletter-field { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; color: var(--muted-foreground); font: 500 var(--small-font-size) var(--sans); }
+label.newsletter-field { gap: 4px; }
+.newsletter-field > legend { padding: 0 0 4px; }
+.newsletter-rows { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.toggle-row { display: grid; grid-template-columns: 16px minmax(0, 1fr); align-content: center; gap: 12px; width: 100%; min-height: var(--field-height); padding: 4px 8px; border: 0; border-radius: var(--radius); background: none; color: var(--foreground); font: var(--body-font-weight) var(--body-font-size)/1.5 var(--sans); text-align: left; cursor: pointer; touch-action: manipulation; }
+.toggle-row > svg { width: 16px; height: 16px; margin-top: calc((1lh - 16px) / 2); color: var(--muted-foreground); }
+.toggle-row[aria-pressed="true"] > svg { color: var(--foreground); }
+.toggle-row[aria-pressed="true"] .event-row-text { font-weight: 600; }
+.toggle-row .event-muted { font-weight: var(--body-font-weight); }
+@media (hover: hover) { .toggle-row:hover { background: var(--muted); } }
+.toggle-row:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.newsletter-special { position: relative; }
+.newsletter-special .toggle-row { padding-right: calc(var(--icon-button-size) + 8px); }
+.newsletter-special [data-slot="button"] { position: absolute; top: 50%; right: 0; color: var(--muted-foreground); translate: 0 -50%; }
+.newsletter-special [data-slot="button"]:hover { color: var(--foreground); }
+.newsletter-special [data-slot="button"][aria-pressed="true"] { color: var(--primary); }
+.newsletter-special [data-slot="button"][aria-pressed="true"] svg { fill: currentColor; }
+.community-filters { display: grid; gap: 8px; justify-items: start; }
+.community-none { margin: 0; padding: 4px 8px; font: var(--body-font-weight) var(--body-font-size) var(--sans); }
+.newsletter-status { flex-basis: 100%; margin: 0; font-size: var(--small-font-size); text-align: right; }
 .newsletter-compose { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-card); overflow: clip; }
-.newsletter-subject { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--background); font: 500 var(--body-font-size) var(--sans); }
+.newsletter-subject { display: flex; align-items: center; gap: 8px; padding: 4px 16px; border-bottom: 1px solid var(--border); background: var(--background); }
 .newsletter-subject:focus-within { box-shadow: inset 0 -2px 0 var(--primary); }
-.newsletter-subject > span { flex: none; color: var(--muted-foreground); font-weight: 400; }
-.newsletter-subject input { flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: none; color: var(--foreground); font: inherit; }
-.newsletter-toolbar { position: sticky; top: 0; z-index: 1; display: flex; gap: 2px; padding: 4px 8px; border-bottom: 1px solid var(--border); background: var(--background); }
+.newsletter-subject label { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; }
+.newsletter-subject label > span { flex: none; color: var(--muted-foreground); font: var(--body-font-weight) var(--small-font-size) var(--sans); }
+.newsletter-subject input { flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: none; color: var(--foreground); font: var(--body-font-weight) var(--body-font-size) var(--sans); }
+.newsletter-toolbar { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 4px 16px 4px 8px; border-bottom: 1px solid var(--border); background: var(--background); }
+.newsletter-format { display: flex; gap: 2px; margin-right: auto; }
 /* The email shows only its own inline styles, as Gmail will, on the email's own page gray. It keeps its light colors in dark mode. */
 .newsletter-canvas { position: relative; background: #f9f8f6; overflow-x: auto; }
 /* The editor's own controls in the margins keep the manager's styles. */
@@ -213,14 +221,21 @@ html:has(.manage-page) { scroll-behavior: auto; }
   .newsletter-canvas .newsletter-tools { left: calc(-2px - var(--icon-button-size)); padding-right: 2px; }
   .newsletter-canvas .newsletter-part > .newsletter-tools { left: calc(-23px - var(--icon-button-size)); }
 }
-/* Wide screens: the editor reaches past the page width on both sides, so the header stays where the other tabs have it. */
-@media (min-width: 1100px) {
-  .newsletter { grid-template-columns: 260px minmax(0, 1fr); align-items: start; margin-inline: calc((866px - min(1100px, 100vw - 64px)) / 2); }
-  .newsletter-controls { position: sticky; top: 16px; }
+/* Wide screens: the editor starts under the title and reaches past the page width on the right, so the header stays where the other tabs have it. */
+@media (min-width: 1130px) {
+  .newsletter { grid-template-columns: minmax(260px, 340px) minmax(674px, 1fr); align-items: start; width: min(1100px, 50vw + 401px); }
+  .manage-main:has(.newsletter) [data-slot="tabs-list"] { width: min(1100px, 50vw + 401px); }
+  /* The small margin keeps focus rings from being clipped, and lines the first field up with the toolbar's buttons when scrolled. */
+  .newsletter-controls { position: sticky; top: 4px; max-height: calc(100dvh - 8px); margin: -4px; padding: 4px; overflow-y: auto; scrollbar-width: none; }
 }
 
 @media (max-width: 620px) {
   .manage-main { padding-top: 16px; }
+  /* The toolbar takes three lines here, too tall to stay pinned while scrolling. */
+  .newsletter-toolbar { position: static; }
+  /* The subject gets its own line, with room to read it. */
+  .newsletter-subject { flex-wrap: wrap; justify-content: flex-end; }
+  .newsletter-subject label { flex-basis: 100%; min-height: 40px; }
   :is(.event-row-button, .normal-event-summary) { gap: 12px; }
   [data-slot="tabs-trigger"] { padding: 0 10px; }
   /* Tighter columns keep Remove RSVP in view. */

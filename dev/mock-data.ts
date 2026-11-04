@@ -42,6 +42,12 @@ export const outsideEvents: OutsideEvent[] = [
   outside("mock-outside-1", "First Friday Contra", "Ithaca Contra Dance", 4, "19:30", "22:30", "Bethel Grove Community Center", "Contra", "$10, students free"),
   outside("mock-outside-2", "Salsa Social", "Cornell Salsa", 9, "20:00", "23:00", "Willard Straight Hall", "Salsa", ""),
   { ...outside("mock-outside-3", "Solo Jazz Weekend", "Ithaca Swing", 11, "", "", "Bethel Grove Community Center", "Swing", "Weekend pass $125"), lastDate: daysFromToday(nextMonday + 13), city: "Rochester" },
+  outside("mock-outside-5", "Tuesday Night Blues", "Ithaca Blues", 8, "20:00", "22:00", "Bethel Grove Community Center", "Blues", "$5"),
+  outside("mock-outside-6", "Second Saturday Contra", "Ithaca Contra Dance", 19, "19:30", "22:30", "Bethel Grove Community Center", "Contra", "$10, students free"),
+  outside("mock-outside-7", "Thanksgiving Swing Social", "Ithaca Swing", 22, "19:00", "22:00", "Big Red Barn", "Swing", ""),
+  { ...outside("mock-outside-8", "Lindy on the Lake", "Syracuse Swings", 5, "19:00", "23:00", "The Palace Theater", "Swing", "$12"), city: "Syracuse" },
+  { ...outside("mock-outside-9", "Rochester Contra Weekend with a Very Long Event Name to Check Wrapping", "Rochester Traditional Dance Society", 15, "", "", "Lovin' Cup", "Contra", "$80"), lastDate: daysFromToday(nextMonday + 16), city: "Rochester" },
+  { ...outside("mock-outside-10", "Salsa on the Waterfront", "Binghamton Latin Dance", 17, "20:00", "23:30", "The Lost Dog", "Salsa", ""), city: "Binghamton" },
   { ...outside("mock-outside-4", "Tango Night", "Cornell Tango", 6, "19:00", "21:00", "Willard Straight Hall", "Tango", ""), published: false, needsReview: true, sourceNote: "Requested by tango@example.edu" },
 ]
 

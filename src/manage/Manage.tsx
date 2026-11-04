@@ -44,8 +44,6 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
   const [loading, setLoading] = useState(initialEvents === undefined)
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
-  // The Newsletter tab puts its copy buttons here, beside the title.
-  const [titleActions, setTitleActions] = useState<HTMLDivElement | null>(null)
   const [tab, setTab] = useState<ManagerTab>(() => managerTabs.find(item => item.value === searchParam("tab"))?.value ?? "special")
   const [editingId, setEditingId] = useState<string | null>(() => searchParam("event"))
   const editing = editingId === "new" ? { ...newEvent("special"), rsvpCount: 0 } : events.find(event => event.id === editingId) ?? null
@@ -159,7 +157,6 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
             <Button disabled={editingOutside !== null} onClick={() => { void openEvent(() => openSpecial(newEvent("special"))) }}>New event</Button>
           </div>}
           {tab === "lessons" && <Button onClick={() => { if (activeNormal !== "") void openEvent(() => setActiveNormal("")) }}>Add lesson</Button>}
-          {tab === "newsletter" && <div ref={setTitleActions} className="manage-title-actions" />}
         </div>
         <Tabs value={tab} onValueChange={changeTab}>
         <TabsList aria-label="Manager sections">{managerTabs.map(({ value, label }) => <TabsTrigger key={value} value={value}>{label}</TabsTrigger>)}</TabsList>
@@ -169,7 +166,7 @@ export default function Manage({ initialEvents }: { initialEvents?: ManagedEvent
         {notice && <p role="status" className="manage-notice">{notice}</p>}
         {error && <p role="alert" className="event-error manage-notice">{error} <Button variant="link" size="sm" onClick={() => window.location.reload()}>Reload</Button></p>}
         <TabsContent value={tab} className="manage-panel">
-          {tab === "settings" ? <><SheetConnection onSync={load} /><SquareConnection /><CampusGroupsUpload /><DanceFeeds /><AlertEmail /></> : tab === "finances" ? <FinanceOverview /> : loading ? <p role="status" className="event-muted manage-notice">Loading events…</p> : tab === "newsletter" ? <Newsletter outside={outside} events={events} actions={titleActions} /> : tab === "special"
+          {tab === "settings" ? <><SheetConnection onSync={load} /><SquareConnection /><CampusGroupsUpload /><DanceFeeds /><AlertEmail /></> : tab === "finances" ? <FinanceOverview /> : loading ? <p role="status" className="event-muted manage-notice">Loading events…</p> : tab === "newsletter" ? <Newsletter outside={outside} events={events} /> : tab === "special"
             ? <>{review.length > 0 && <section className="manage-group" aria-label="Waiting for review"><h2>Waiting for review</h2><div className="manage-list">{review.map(outsideRow)}</div></section>}<EventGroups<ManagedEvent | OutsideEvent> events={[...events.filter(event => event.kind === "special" && groupFilter !== "theirs"), ...shownOutside.filter(event => !review.includes(event))].sort(byDate)} render={item => item.kind === "outside" ? outsideRow(item) : specialRow(item)} empty="No special events yet." first={editingOutside === "" && <OutsideEventForm event={blankOutsideEvent()} groups={groups} onSave={acceptOutside} onCancel={() => setEditingOutside(null)} />} /></>
             : <EventGroups events={events.filter(event => event.kind === "normal")} render={lessonRow} empty="No weekly lessons yet." first={activeNormal === "" && <NormalEventRow ref={normalEditor} editing onEdit={() => {}} event={newEvent("normal")} onSave={saveNormal} onCancel={() => setActiveNormal(null)} />} />}
         </TabsContent>
@@ -248,7 +245,7 @@ function EventEditor({ event, leaveGuard, onSave, onReplace, onDelete, onCancel,
     await onDelete()
   }
   const form = <form id={formId} className="event-editor" aria-label={event.id ? "Edit event" : "New event"} onSubmit={e => { e.preventDefault(); if (e.currentTarget.reportValidity()) void save(event.published) }}>
-      {event.published && event.slug && <div className="editor-share"><a href={`/events/${event.slug}`} target="_blank" rel="noreferrer">swingsyndicate.club/events/{event.slug}</a><CopyButton text={`${window.location.origin}/events/${event.slug}`} label="Copy link" /></div>}
+      {event.published && event.slug && <div className="editor-share"><a href={`/events/${event.slug}`} target="_blank" rel="noreferrer">swingsyndicate.club/events/{event.slug}</a><CopyButton size="sm" copy={() => navigator.clipboard.writeText(`${window.location.origin}/events/${event.slug}`)} label="Copy link" /></div>}
       <div className="editor-card editor-card-sections">
         <div className="editor-field"><CalendarIcon aria-hidden="true" /><EventDays event={draft} disabled={busy} onChange={(days, tickets) => setDraft(current => ({ ...current, ...days, tickets }))} /></div>
         <div className="editor-field"><MapPinIcon aria-hidden="true" /><div className="grid gap-2"><LocationPicker icon={false} value={draft.location} url={draft.locationUrl} room={draft.room} onRoomChange={room => change("room", room)} onChange={(location, locationUrl) => setDraft(current => ({ ...current, location, locationUrl }))} disabled={busy} /><Input aria-label="City" placeholder="City" maxLength={80} value={draft.city} onChange={e => change("city", e.target.value)} disabled={busy} /></div></div>

@@ -1,14 +1,13 @@
-import { useState } from "react"
+import { useState, type ComponentProps } from "react"
 import { Check, Copy } from "lucide-react"
 import { Button } from "../components/ui/button"
 
-// Tab-separated rows paste into Google Sheets as Name and Email columns.
-export function CopyButton({ text, label }: { text: string; label: string }) {
+export function CopyButton({ copy, label, variant = "outline", size }: { copy: () => Promise<void>; label: string } & Pick<ComponentProps<typeof Button>, "variant" | "size">) {
   const [copied, setCopied] = useState(false)
-  async function copy() {
-    await navigator.clipboard.writeText(text)
+  async function run() {
+    await copy()
     setCopied(true)
     window.setTimeout(() => setCopied(false), 2000)
   }
-  return <Button type="button" variant="outline" size="sm" onClick={() => void copy()}>{copied ? <Check /> : <Copy />}{label}<span className="sr-only" aria-live="polite">{copied ? "Copied" : ""}</span></Button>
+  return <Button type="button" variant={variant} size={size} onClick={() => void run()}>{copied ? <Check /> : <Copy />}{label}<span className="sr-only" aria-live="polite">{copied ? "Copied" : ""}</span></Button>
 }

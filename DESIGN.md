@@ -90,7 +90,6 @@ typography:
     lineHeight: 1
     letterSpacing: 0.04em
 rounded:
-  checkbox: 4px
   control: 8px
   inner: 6px
   card: 12px
@@ -211,7 +210,7 @@ Sizes are set per page area in `src/theme.css`. Public pages are roomy, the mana
 
 ## Colors
 
-- **Primary (#a13a5e):** berry, the only accent. Main buttons, focus rings, the next event's date tile, text link buttons.
+- **Primary (#a13a5e):** berry, the only accent. Main buttons, focus rings, the next event's date tile, text link buttons, a featured event's star.
 - **Surface (#ffffff) and on-surface (#232019):** white pages and warm ink. All text and form text uses the ink, never pure black.
 - **Muted (#f4f3f1) and on-muted (#5f5c55):** grouped panels, hover backgrounds, secondary text.
 - **Border (#e6e4e0) and input-border (#cfcdc7):** dividers and field outlines.
@@ -248,7 +247,7 @@ Controls have 8px corners, parts inside a control (segments, menu rows, calendar
 - **Menus:** rows 32, or 40 on touch, at 16px so an option matches its field once chosen.
 - **Tabs:** underlined line style, on Base UI.
 - **Switches and chips:** Toggle Group on Base UI. Segmented switch for one choice, chips for filters and multiple choices.
-- **Checkboxes:** 16px with 4px corners, inside a label that takes the click. On Base UI.
+- **Choosing from a list:** the whole row is the target. Off shows a muted plus, on shows an ink check and a 600 title, and hover tints the row like other manager rows. A berry star marks a featured event.
 - **Check-in:** 44 buttons, 56 fields and 64 rows. Payment screens leave out the site header so each shows a single question.
 
 ## Do's and Don'ts
