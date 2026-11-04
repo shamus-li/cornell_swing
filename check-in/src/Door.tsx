@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 
 import { Button } from "@shared/components/ui/button"
+import { REQUEST_TIMEOUT_MS } from "@/lib/checkin"
 import { formatAmount } from "@/Payment"
 
 const POLL_MS = 2000
@@ -38,9 +39,8 @@ export default function Door() {
   const returning = useRef(new URLSearchParams(window.location.search).get("data"))
   const tapped = useRef<{ id: string; at: number } | null>(null)
 
-  // Square returns by opening a new Safari tab. That tab reports back, tells the open list to update and
-  // closes itself right away, so one tab stays open however many people pay. Confirming a payment can take
-  // a few seconds, so only a cancellation, which unlocks the name, is waited for.
+  // Square returns by opening a new Safari tab. That tab reports back, which checks them in or unlocks their
+  // name, then tells the open list to update and closes itself, so one tab stays open however many people pay.
   useEffect(() => {
     const listen = ({ data }: MessageEvent) => {
       if (data !== "returned") return
@@ -56,10 +56,7 @@ export default function Door() {
     returning.current = null
     void (async () => {
       const { state, status } = JSON.parse(data) as { state?: string; status?: string }
-      if (state) {
-        const report = fetch(`/check-in/api/door/charges/${state}/return`, { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ok: status === "ok" }) }).catch(console.error)
-        if (status !== "ok") await report
-      }
+      if (state) await fetch(`/check-in/api/door/charges/${state}/return`, { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ok: status === "ok" }) }).catch(console.error)
       channel.onmessage = ({ data: message }) => { if (message === "here") window.close() }
       channel.postMessage("returned")
       window.setTimeout(() => {
@@ -74,7 +71,7 @@ export default function Door() {
 
   async function refresh() {
     try {
-      const response = await fetch("/check-in/api/door/queue", { headers: { Accept: "application/json" } })
+      const response = await fetch("/check-in/api/door/queue", { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
       if (!response.ok) throw new Error(`Queue failed with ${response.status}`)
       setQueue((await response.json()) as Queue)
       setError(false)
@@ -106,17 +103,19 @@ export default function Door() {
     }
   }
 
-  // Safari pauses a page while Square's app is open, so it also updates as soon as it's back on screen.
+  // Safari pauses a page while Square's app is open, and the page can come back showing an old list that it
+  // never updates. Loading it again whenever it's back on screen always shows the current list.
   useEffect(() => {
     if (closing) return
     const interval = window.setInterval(() => void refresh(), POLL_MS)
-    const wake = () => { if (document.visibilityState === "visible") void refresh() }
+    const wake = () => { if (document.visibilityState === "visible") window.location.reload() }
+    const restored = ({ persisted }: PageTransitionEvent) => { if (persisted) window.location.reload() }
     document.addEventListener("visibilitychange", wake)
-    window.addEventListener("pageshow", wake)
+    window.addEventListener("pageshow", restored)
     return () => {
       window.clearInterval(interval)
       document.removeEventListener("visibilitychange", wake)
-      window.removeEventListener("pageshow", wake)
+      window.removeEventListener("pageshow", restored)
     }
   }, [closing])
 

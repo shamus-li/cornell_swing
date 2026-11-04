@@ -14,7 +14,7 @@ import {
 } from "../src/lib/checkin"
 import type { CheckinStats } from "../src/lib/member-search"
 import { cachedMembers, searchCachedMembers, storeCheckinStats, storeMemberCache } from "./cache"
-import { cancelCharge, findCharge, findTicket, isVerifying, justPaidCharges, openCardCharge, queuedCharges, settleAtDoor, ticketsToOffer, useHeldTicket, volunteerTicket, type DoorCharge } from "./door"
+import { cancelCharge, findCharge, findTicket, isVerifying, justPaidCharges, openCardCharge, queuedCharges, settleAtDoor, settleCardCharge, ticketsToOffer, useHeldTicket, volunteerTicket, type DoorCharge } from "./door"
 import { eventAtSheetTimestamp, eventChoices, findCheckinEvent, type EventSession } from "./events"
 import {
   type CheckinRow,
@@ -223,8 +223,8 @@ async function syncSquareIfStale(env: Env): Promise<void> {
   if (claimed.meta.changes) await syncSquareQuietly(env)
 }
 
-// The laptop's payment step and the iPhone's list. A card charge is settled when its payment shows up
-// in Square, whether the return from Square arrives or not.
+// The laptop's payment step and the iPhone's list. A card charge is settled by Square's return, or by its
+// payment showing up in Square if the return never arrives.
 async function handleDoor(request: Request, env: Env, path: string, timestamp = Date.now()): Promise<Response> {
   if (path === "queue" && request.method === "GET") {
     let charges = await queuedCharges(env)
@@ -282,8 +282,8 @@ async function handleDoor(request: Request, env: Env, path: string, timestamp = 
   }
   if (match[2] === "return" && request.method === "POST") {
     const { ok } = (await request.json()) as { ok?: boolean }
-    if (ok) await syncSquareIfStale(env)
-    else await env.EVENTS_DB.prepare("UPDATE door_charges SET tappedAt = NULL WHERE id = ? AND status = 'pending'").bind(charge.id).run()
+    if (!ok) await env.EVENTS_DB.prepare("UPDATE door_charges SET tappedAt = NULL WHERE id = ? AND status = 'pending'").bind(charge.id).run()
+    else if (charge.status === "pending") await settleCardCharge(env, charge, null, timestamp)
     const current = (await findCharge(env, charge.id))!
     return json({ status: isPaid(current) ? "paid" : "pending", name: firstName(current) })
   }

@@ -1,4 +1,4 @@
-import { findCharge, settleCardCharge, UNSENT_CASH } from '../../check-in/worker/door'
+import { findCharge, isAwaitingPayment, settleCardCharge, UNSENT_CASH } from '../../check-in/worker/door'
 import { findSession } from '../../check-in/worker/events'
 import { sendAlert } from './alert-email'
 import { dateKeyInTimeZone, timestampForSheet } from '../../check-in/worker/google'
@@ -16,6 +16,7 @@ const FILE_NOW_RELIST_MS = 365 * 86_400_000
 const FILING_LOCK_MS = 2 * 60_000
 // Someone is waiting at the door, and a payment that doesn't get through is sent again by the next sync.
 const SEND_CASH_TIMEOUT_MS = 5_000
+const MISSING_PAYMENT_MS = 60 * 60_000
 
 type Connection = { merchantId: string; accessToken: string; refreshToken: string; expiresAt: string; syncedAt: string }
 type Money = { amount: number }
@@ -125,7 +126,7 @@ async function savePayment(env: Env, token: string, payment: Payment, seen?: See
   const paidAt = Date.parse(payment.created_at)
   const chargeId = await doorChargeId(token, payment)
   const charge = chargeId ? await findCharge(env, chargeId) : null
-  const settles = charge?.status === 'pending' && payment.amount_money.amount === charge.amount
+  const settles = charge && (charge.status === 'pending' || isAwaitingPayment(charge)) && payment.amount_money.amount === charge.amount
   // This runs first so a failed check-in leaves the payment unsaved, and the next sync tries it again.
   if (settles) await settleCardCharge(env, charge, payment.id, paidAt)
   const eventId = charge?.eventId ?? (await findSession(env, timestampForSheet(paidAt, env.TIME_ZONE)))?.id ?? null
@@ -137,6 +138,18 @@ async function savePayment(env: Env, token: string, payment: Payment, seen?: See
   await sendAlert(env, 'A door payment needs checking', [
     `Square took $${(payment.amount_money.amount / 100).toFixed(2)} for ${charge.email}, whose ${charge.ticketName} ticket costs $${(charge.amount / 100).toFixed(2)} and was ${charge.status === 'pending' ? 'still waiting for payment' : `already marked ${charge.status}`}.`,
     'They may need a refund in Square, or to be checked in by hand.',
+  ]).catch((error: unknown) => logError('Door payment alert failed', error))
+}
+
+// Square's return said these sales went through, but no payment has appeared since. Clearing callbackAt alerts
+// about each one once, and a payment that appears later is still matched to its charge.
+async function alertMissingPayments(env: Env): Promise<void> {
+  const { results } = await env.EVENTS_DB.prepare("UPDATE door_charges SET callbackAt = NULL WHERE status = 'card' AND paymentId IS NULL AND callbackAt < ? RETURNING email, ticketName")
+    .bind(new Date(Date.now() - MISSING_PAYMENT_MS).toISOString()).all<{ email: string; ticketName: string }>()
+  if (!results.length) return
+  await sendAlert(env, 'A door payment needs checking', [
+    `These people were checked in after Square's app said they paid, but Square hasn't listed a payment: ${results.map(charge => `${charge.email} (${charge.ticketName})`).join(', ')}.`,
+    'Look for the sales in Square. An offline sale can take longer to appear.',
   ]).catch((error: unknown) => logError('Door payment alert failed', error))
 }
 
@@ -162,6 +175,7 @@ export async function syncPayments(env: Env, relistMs = RELIST_MS): Promise<void
       for (const payment of page.payments ?? []) if (payment.status === 'COMPLETED') await savePayment(env, token, payment, seen.get(payment.id))
       cursor = page.cursor
     } while (cursor)
+    await alertMissingPayments(env)
   } catch (error) {
     // Access was removed in Square, so the Settings tab asks to connect again.
     if (!(error instanceof SquareAuthError)) throw error

@@ -70,12 +70,16 @@ export const cancelCharge = (env: Env, id: string) =>
 const checkInOn = (env: Env, sessionDate: string, attendee: Attendee, eventId: string, timestamp: number) =>
   env.CHECKIN_GUARD.getByName(sessionDate).checkin(attendee, eventId, timestampForSheet(timestamp, env.TIME_ZONE))
 
-// A card payment found in Square. Records the check-in first, so if that fails the payment isn't saved and
-// the next sync tries again, and a retry after a later failure finds the check-in already there.
-export async function settleCardCharge(env: Env, charge: DoorCharge, paymentId: string, paidAt: number): Promise<void> {
+// Square's return says the sale went through, and its payment hasn't been found yet.
+export const isAwaitingPayment = ({ status, paymentId }: DoorCharge) => status === "card" && paymentId === null
+
+// A card sale, from Square's return (no payment ID, and callbackAt marks it as still to find) or from a payment
+// found in Square, which also fills in the ID after a return. Records the check-in first, so if that fails the
+// payment isn't saved and the next sync tries again, and a retry finds the check-in already there.
+export async function settleCardCharge(env: Env, charge: DoorCharge, paymentId: string | null, paidAt: number): Promise<void> {
   await checkInOn(env, charge.sessionDate, JSON.parse(charge.attendee) as Attendee, charge.eventId, paidAt)
   await env.EVENTS_DB.batch([
-    env.EVENTS_DB.prepare("UPDATE door_charges SET status = 'card', paymentId = ?, settledAt = ? WHERE id = ? AND status = 'pending'").bind(paymentId, new Date(paidAt).toISOString(), charge.id),
+    env.EVENTS_DB.prepare("UPDATE door_charges SET status = 'card', paymentId = ?1, settledAt = COALESCE(settledAt, ?2), callbackAt = CASE WHEN ?1 IS NULL THEN ?2 END WHERE id = ?3 AND (status = 'pending' OR (status = 'card' AND paymentId IS NULL))").bind(paymentId, new Date(paidAt).toISOString(), charge.id),
     env.EVENTS_DB.prepare("INSERT OR IGNORE INTO door_ticket_days (chargeId, date) VALUES (?, ?)").bind(charge.id, charge.sessionDate),
   ])
 }

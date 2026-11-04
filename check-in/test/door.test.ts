@@ -136,12 +136,49 @@ describe("door tickets", () => {
 
     await tap(id)
     payments.push(squarePayment(id))
-    expect(await (await post(`door/charges/${id}/return`, { ok: true })).json()).toEqual({ status: "paid", name: "Ada" })
+    await syncPayments(env)
     expect(await isCheckedIn()).toBe(true)
     expect(await queue()).toEqual([])
     expect(await (await get("door/queue")).json()).toMatchObject({ justPaid: ["Ada"] })
     expect(await (await get(`door/charges/${id}`)).json()).toMatchObject({ status: "paid" })
     expect(await env.EVENTS_DB.prepare("SELECT eventId, fee FROM square_payments").first()).toEqual({ eventId: "weekend", fee: 54 })
+  })
+
+  it("checks someone in on Square's return, then attaches the payment when Square lists it", async () => {
+    const send = vi.fn()
+    const { id } = (await (await post("door/charges", general)).json()) as { id: string }
+    await tap(id)
+    expect(await (await post(`door/charges/${id}/return`, { ok: true })).json()).toEqual({ status: "paid", name: "Ada" })
+    expect(await isCheckedIn()).toBe(true)
+    expect(await queue()).toEqual([])
+    expect(await (await get(`door/charges/${id}`)).json()).toMatchObject({ status: "paid" })
+
+    payments.push(squarePayment(id, 1500, "paid-later"))
+    await syncPayments({ ...env, ALERT_EMAIL: { send } } as unknown as Env)
+    expect(await env.EVENTS_DB.prepare("SELECT status, paymentId, callbackAt FROM door_charges").first()).toEqual({ status: "card", paymentId: "paid-later", callbackAt: null })
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it("alerts once when Square's return said paid but no payment appears within an hour", async () => {
+    const send = vi.fn()
+    const alertEnv = { ...env, ALERT_EMAIL: { send } } as unknown as Env
+    const { id } = (await (await post("door/charges", general)).json()) as { id: string }
+    await post(`door/charges/${id}/return`, { ok: true })
+    await syncPayments(alertEnv)
+    expect(send).not.toHaveBeenCalled()
+
+    await env.EVENTS_DB.prepare("UPDATE door_charges SET callbackAt = ?").bind(new Date(Date.now() - 2 * 3_600_000).toISOString()).run()
+    await syncPayments(alertEnv)
+    await syncPayments(alertEnv)
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+
+  it("doesn't check someone in when Square's return arrives after their charge was canceled", async () => {
+    const { id } = (await (await post("door/charges", general)).json()) as { id: string }
+    await handleApiRequest(new Request(`https://example.com/check-in/api/door/charges/${id}`, { method: "DELETE" }), env)
+    await post(`door/charges/${id}/return`, { ok: true })
+    expect(await isCheckedIn()).toBe(false)
+    expect(await env.EVENTS_DB.prepare("SELECT status FROM door_charges").first("status")).toBe("canceled")
   })
 
   it("gives each payment to its own person when two phones finish in the opposite order", async () => {
@@ -232,15 +269,6 @@ describe("door tickets", () => {
     expect(await queue()).toMatchObject([{ id }])
   })
 
-  it("settles once Square has the payment after a return that says paid", async () => {
-    const { id } = (await (await post("door/charges", general)).json()) as { id: string }
-    await tap(id)
-    await post(`door/charges/${id}/return`, { ok: true })
-    expect(await queue()).toMatchObject([{ id, verifying: true }])
-    payments.push(squarePayment(id))
-    await env.EVENTS_DB.prepare("UPDATE square_connection SET syncedAt = ?").bind(new Date(Date.now() - 60_000).toISOString()).run()
-    expect(await queue()).toEqual([])
-  })
 })
 
 describe("door cash in Square", () => {
