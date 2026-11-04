@@ -226,7 +226,7 @@ label.newsletter-field { gap: 4px; }
   .newsletter { grid-template-columns: minmax(260px, 340px) minmax(674px, 1fr); align-items: start; width: min(1100px, 50vw + 401px); }
   .manage-main:has(.newsletter) [data-slot="tabs-list"] { width: min(1100px, 50vw + 401px); }
   /* The small margin keeps focus rings from being clipped, and lines the first field up with the toolbar's buttons when scrolled. */
-  .newsletter-controls { position: sticky; top: 4px; max-height: calc(100dvh - 8px); margin: -4px; padding: 4px; overflow-y: auto; scrollbar-width: none; }
+  .newsletter-controls { position: sticky; top: 4px; max-height: calc(100dvh - 8px); margin: -4px; padding: 4px; overflow-y: auto; scrollbar-width: thin; scrollbar-gutter: stable; }
 }
 
 @media (max-width: 620px) {

@@ -48,6 +48,8 @@ export const outsideEvents: OutsideEvent[] = [
   { ...outside("mock-outside-8", "Lindy on the Lake", "Syracuse Swings", 5, "19:00", "23:00", "The Palace Theater", "Swing", "$12"), city: "Syracuse" },
   { ...outside("mock-outside-9", "Rochester Contra Weekend with a Very Long Event Name to Check Wrapping", "Rochester Traditional Dance Society", 15, "", "", "Lovin' Cup", "Contra", "$80"), lastDate: daysFromToday(nextMonday + 16), city: "Rochester" },
   { ...outside("mock-outside-10", "Salsa on the Waterfront", "Binghamton Latin Dance", 17, "20:00", "23:30", "The Lost Dog", "Salsa", ""), city: "Binghamton" },
+  // The real list runs to dozens of events across upstate New York.
+  ...Array.from({ length: 40 }, (_, index) => ({ ...outside(`mock-outside-more-${index}`, `${["Swing", "Contra", "Salsa", "Tango", "Blues"][index % 5]} Night ${index + 1}`, ["Syracuse Swings", "Rochester Dance Society", "Binghamton Latin Dance", "Albany Tango", "Buffalo Blues"][index % 5], 2 + index * 2, "19:30", "22:00", "Community Hall", ["Swing", "Contra", "Salsa", "Tango", "Blues"][index % 5], ""), city: ["Syracuse", "Rochester", "Binghamton", "Albany", "Buffalo"][index % 5] })),
   { ...outside("mock-outside-4", "Tango Night", "Cornell Tango", 6, "19:00", "21:00", "Willard Straight Hall", "Tango", ""), published: false, needsReview: true, sourceNote: "Requested by tango@example.edu" },
 ]
 
