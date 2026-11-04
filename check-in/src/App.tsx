@@ -57,10 +57,6 @@ const MEMBER_SEARCH_CACHE_LIMIT = 12
 const IDLE_RESET_MS = 90_000
 const EVENTS_REFRESH_MS = 60_000
 const NO_RESULTS = { key: "", members: [], failed: false }
-// /check-in/?demo offers this person when someone types "demo". They aren't stored as a member, and a new email
-// each time lets a demo run again at the same event.
-const DEMO_MODE = new URLSearchParams(window.location.search).has("demo")
-const demoMember = (): Member => ({ id: "", name: "Demo Person", email: `demo.${Date.now()}@cornell.edu`, phone: "(607) 555-0100", affiliation: "Graduate/Professional Student" })
 
 function memberSearchKey(query: string): string {
   return query.toLocaleLowerCase()
@@ -157,11 +153,6 @@ export default function App() {
       return
     }
 
-    if (DEMO_MODE && "demo person".startsWith(query.trim().toLowerCase())) {
-      setResults({ key: searchKey, members: [demoMember()], failed: false })
-      setMemberSearchOpen(true)
-      return
-    }
     const cached = memberSearchCache.current.get(searchKey)
     if (cached) {
       setResults({ key: searchKey, members: cached, failed: false })
