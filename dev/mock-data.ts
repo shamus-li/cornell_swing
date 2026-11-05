@@ -115,6 +115,7 @@ export const finance: FinanceOverview = {
     { id: "special-2026-10-17", title: "The Lindy Haunt 👻", date: "2026-10-17" },
     { id: "special-2026-03-13", title: "Pre-Spring Swing Fling", date: "2026-03-13" },
     { id: "special-2025-11-08", title: "Sweater Weather Swing 2025", date: "2025-11-08" },
+    ...Array.from({ length: 60 }, (_, week) => ({ id: `mock-lesson-${week}`, title: `Past dance ${week + 1}`, date: new Date(Date.UTC(2025, 9, 1 - week * 7)).toISOString().slice(0, 10) })),
   ],
   campusGroupsUploadedAt: "2026-09-27T20:47:00.000Z",
 }

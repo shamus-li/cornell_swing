@@ -255,7 +255,20 @@ label.newsletter-field { gap: 4px; }
 .finance-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; margin-bottom: 12px; }
 .finance-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .finance-actions label:has(input:focus-visible) { outline: 2px solid var(--primary); outline-offset: 2px; }
-.finance-event { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+/* The vertical margin keeps rows the same height with or without this button. */
+.finance-event-edit { margin-block: calc(var(--button-small-height) / -2 + 8px); vertical-align: middle; opacity: 0; pointer-events: none; }
+/* After a name it takes up no width, so it can't narrow the name or wrap onto a blank line. */
+a + .finance-event-edit { margin-left: 4px; margin-right: calc(-4px - var(--button-small-height)); }
+/* On its own, its label lines up with the column heading. */
+.finance-event-edit:first-child { margin-left: -11px; }
+tr:hover .finance-event-edit, .finance-event-edit:focus-visible, .finance-event-edit[data-popup-open] { opacity: 1; pointer-events: auto; }
+/* Touch screens have no hover, so it stays shown and needs its width. */
+@media (pointer: coarse) {
+  .finance-event { display: flex; align-items: center; gap: 4px; }
+  .finance-event-edit { opacity: 1; pointer-events: auto; }
+  a + .finance-event-edit { margin-inline: 0; }
+}
+.finance-event-edit:disabled, tr:hover .finance-event-edit:disabled { opacity: .5; }
 .finance-check { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .finance-check svg { flex: none; width: 14px; height: 14px; color: var(--muted-foreground); }
 .finance-check.is-off svg { color: var(--destructive); }
