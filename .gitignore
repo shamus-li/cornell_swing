@@ -5,6 +5,10 @@
 !.github/workflows/
 !.github/workflows/deploy.yml
 
+# Local agent instructions and design notes
+AGENTS.md
+DESIGN.md
+
 # Local design explorations
 logo-concepts-*/
 favicon-concepts-*/
