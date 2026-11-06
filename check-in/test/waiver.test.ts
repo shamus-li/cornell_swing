@@ -141,7 +141,10 @@ describe("participant waiver", () => {
 
     network.use(http.get("https://cornell.campusgroups.com/RMI/survey", () =>
       new HttpResponse(FORM_HTML.replace("free_text_919c0e74", "free_text_renamed"), { headers: { "Content-Type": "text/html" } })))
+    const log = vi.spyOn(console, "error").mockImplementation(() => {})
     await checkWaiverForm(alertEnv)
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("is missing free_text_919c0e74-e2d4-11ee-bde0-0a80ef5ee5f9"))
+    log.mockRestore()
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ to: "officer@example.com", subject: "The CampusGroups waiver form changed" }))
   })
 

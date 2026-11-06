@@ -683,7 +683,7 @@ export async function handleApiRequest(request: Request, env: Env): Promise<Resp
       } catch (error) {
         if (error instanceof WaiverFormChanged) {
           // The kiosk skips the waiver without telling the attendee; an officer gets the email.
-          await alertWaiverFormChanged(env)
+          await alertWaiverFormChanged(env, error)
           return json({ formChanged: true }, 503)
         }
         // CampusGroups is down or refused the submission, so the kiosk has the attendee sign on their phone.
@@ -711,13 +711,14 @@ export async function checkWaiverForm(env: Env): Promise<void> {
     await loadWaiverForm()
   } catch (error) {
     if (!(error instanceof WaiverFormChanged)) throw error
-    await alertWaiverFormChanged(env)
+    await alertWaiverFormChanged(env, error)
   }
 }
 
 // Emails an officer, at most once a day, when the CampusGroups waiver form no longer has the fields
 // the kiosk fills in. The kiosk skips the waiver until waiver.ts is updated to match.
-async function alertWaiverFormChanged(env: Env): Promise<void> {
+async function alertWaiverFormChanged(env: Env, error: WaiverFormChanged): Promise<void> {
+  console.error(JSON.stringify({ message: "waiver form check failed", error: error.message }))
   const key = `waiver-form-alert:${dateKeyInTimeZone(Date.now(), env.TIME_ZONE)}`
   if (await env.MEMBER_CACHE.get(key)) return
   await sendAlert(env, "The CampusGroups waiver form changed", [

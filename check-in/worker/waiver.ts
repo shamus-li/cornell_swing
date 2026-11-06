@@ -57,7 +57,11 @@ export async function loadWaiverForm(): Promise<WaiverForm> {
   let skipped = 0
   let bold = 0
   let italic = 0
+  let title = ""
   await new HTMLRewriter()
+    .on("head > title", {
+      text(text) { title += text.text },
+    })
     .on("#survey input, #survey select", {
       element(element) {
         const name = element.getAttribute("name")
@@ -104,7 +108,14 @@ export async function loadWaiverForm(): Promise<WaiverForm> {
   const endpoint = html.match(/\/survey_submission_endpoint\?[^`"'\s]+/)?.[0]
   const waiver = blocks.map(tidyBlock).filter((block) => block.runs.length > 0)
   if (!endpoint || !hidden._csrf || waiver.length === 0 || !Object.values(FIELDS).every((name) => fieldNames.has(name))) {
-    throw new WaiverFormChanged("The CampusGroups waiver form changed")
+    const missing = [
+      ...(endpoint ? [] : ["submission endpoint"]),
+      ...(hidden._csrf ? [] : ["_csrf"]),
+      ...(waiver.length > 0 ? [] : ["waiver text"]),
+      ...Object.values(FIELDS).filter((name) => !fieldNames.has(name)),
+    ]
+    // The page title tells a changed form apart from a maintenance or bot-check page.
+    throw new WaiverFormChanged(`The CampusGroups waiver page "${decodeHTML(title).trim()}" is missing ${missing.join(", ")}`)
   }
   return { cookies, hidden, endpoint, blocks: waiver }
 }
