@@ -181,8 +181,8 @@ label.newsletter-field { gap: 4px; }
 .newsletter-subject input { flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: none; color: var(--foreground); font: var(--body-font-weight) var(--body-font-size) var(--sans); }
 .newsletter-toolbar { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 4px 16px 4px 8px; border-bottom: 1px solid var(--border); background: var(--background); }
 .newsletter-format { display: flex; gap: 2px; margin-right: auto; }
-/* The email shows only its own inline styles, as Gmail will, on the email's own page gray. It keeps its light colors in dark mode. */
-.newsletter-canvas { position: relative; background: #f9f8f6; overflow-x: auto; }
+/* The email shows only its own inline styles, as Gmail will, on white. It keeps its light colors in dark mode. */
+.newsletter-canvas { position: relative; background: #ffffff; overflow-x: auto; }
 /* The editor's own controls in the margins keep the manager's styles. */
 .newsletter-canvas :where(:not(.newsletter-chrome, .newsletter-chrome *)) { all: revert; }
 .newsletter-block { border-radius: var(--radius-inner); outline: 1px dashed transparent; outline-offset: 4px; }

@@ -7,12 +7,12 @@ import { parsePrograms } from "./NormalEventRow"
 
 // Inline styles only, since Gmail keeps nothing else from pasted HTML.
 // The website's warm ink, gray, and berry, with berry kept for things to click: links and the RSVP button.
-// Each section is a white card on a light gray page, so it is clear where one ends.
+// Each section is an outlined white card, so it is clear where one ends. The email has no page color of its own:
+// Apple Mail's dark mode draws one as a lighter rectangle with hard edges inside its window.
 const font = "'Helvetica Neue', Helvetica, Arial, sans-serif"
 const ink = "#232019"
 const gray = "#5f5c55"
 const berry = "#a13a5e"
-const page = "#f9f8f6"
 const cardBorder = "#e6e4e0"
 const text: CSSProperties = { margin: "0 0 16px", fontSize: 16, lineHeight: "24px" }
 const meta: CSSProperties = { ...text, color: gray }
@@ -70,13 +70,11 @@ export const Card = ({ children }: { children: ReactNode }) => <table role="pres
 </table>
 const Title = ({ children }: { children: ReactNode }) => <h2 style={{ margin: "0 0 8px", fontSize: 22, lineHeight: "28px", fontWeight: 700 }}>{children}</h2>
 
-// The gray page fills the reading pane, with a centered 600px column for the editable blocks.
+// A centered 600px column for the editable blocks.
 export function EmailFrame({ children }: { children: ReactNode }) {
-  return <table role="presentation" cellPadding={0} cellSpacing={0} border={0} width="100%" style={{ width: "100%", borderCollapse: "collapse", backgroundColor: page }}><tbody><tr><td>
-    <table role="presentation" align="center" cellPadding={0} cellSpacing={0} border={0} width="100%" style={{ width: "100%", maxWidth: 600, margin: "0 auto", borderCollapse: "collapse", fontFamily: font, color: ink }}>
-      <tbody><tr><td style={{ padding: "24px 8px" }}>{children}</td></tr></tbody>
-    </table>
-  </td></tr></tbody></table>
+  return <table role="presentation" align="center" cellPadding={0} cellSpacing={0} border={0} width="100%" style={{ width: "100%", maxWidth: 600, margin: "0 auto", borderCollapse: "collapse", fontFamily: font, color: ink }}>
+    <tbody><tr><td style={{ padding: "24px 8px" }}>{children}</td></tr></tbody>
+  </table>
 }
 
 // The opening is the first text in the email, so inboxes show its hook as the preview.
