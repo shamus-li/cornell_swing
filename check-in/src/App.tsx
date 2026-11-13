@@ -355,10 +355,11 @@ export default function App() {
     setNext(null)
   }
 
-  // A half-filled form or an open waiver clears itself after 90 seconds without a touch, keypress, or
-  // scroll, so the next person at the kiosk never sees it.
+  // A half-filled form clears itself after 90 seconds without a touch, keypress, or scroll, so the next
+  // person at the kiosk never sees it. Waivers take longer to read and sign, often on a phone, so a
+  // waiver screen stays until the attendee taps a button.
   useEffect(() => {
-    if (confirmation || !hasEntry) return
+    if (confirmation || !hasEntry || waiverAttendee) return
     const events = ["pointerdown", "keydown", "input", "scroll"]
     let timeout = window.setTimeout(resetForm, IDLE_RESET_MS)
     const restart = () => {
@@ -370,7 +371,7 @@ export default function App() {
       window.clearTimeout(timeout)
       for (const type of events) window.removeEventListener(type, restart, true)
     }
-  }, [confirmation, hasEntry])
+  }, [confirmation, hasEntry, waiverAttendee])
 
   if (confirmation) {
     return (
