@@ -55,7 +55,9 @@ export class CheckinGuard extends DurableObject<Env> {
     return duplicateKeys(attendee, eventId).some((key) => this.hasKey(key))
   }
 
-  async checkin(attendee: CheckinAttendee, eventId: string, timestamp: number): Promise<"created" | "duplicate"> {
+  // Returns the Member ID the check-in was recorded under, which is new for a first-timer, or null if they were
+  // already checked in.
+  async checkin(attendee: CheckinAttendee, eventId: string, timestamp: number): Promise<string | null> {
     const memberId = attendee.memberId ?? createMemberId()
     const entry: CheckinEntry = { ...attendee, memberId, eventId, timestamp }
     const created = this.ctx.storage.transactionSync(() => {
@@ -66,9 +68,9 @@ export class CheckinGuard extends DurableObject<Env> {
       this.ctx.storage.sql.exec("INSERT INTO pending (entry) VALUES (?)", JSON.stringify(entry))
       return true
     })
-    if (!created) return "duplicate"
+    if (!created) return null
     await this.ctx.storage.setAlarm(Date.now())
-    return "created"
+    return memberId
   }
 
   async alarm(): Promise<void> {

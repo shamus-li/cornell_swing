@@ -136,7 +136,7 @@ describe('Square feed', () => {
     await manage('/finance?fresh=1')
     expect(sheetReads).toBe(2)
     const activity = await (await manage('/events/haunt/activity')).json() as EventActivity
-    expect(activity.checkins).toEqual([{ name: 'Maya', email: 'maya@example.edu', time: '7:12 PM', ticket: null }])
+    expect(activity.checkins).toEqual([{ name: 'Maya', email: 'maya@example.edu', memberId: '', time: '7:12 PM', ticket: null }])
     expect(activity.transactions.map(item => item.description)).toContain('Ageless Jazz Band')
     expect(activity.transactions.some(item => item.id === 'shirt')).toBe(false)
 

@@ -32,10 +32,19 @@ export function useEventRecords(eventId: string, onRsvpRemoved: () => void) {
     } catch (err) { setRsvpError(errorMessage(err)) }
   }
   const checkins = activity?.checkins ?? []
-  const emails = [...new Set([...(rsvps ?? []).map(rsvp => rsvp.email), ...checkins.map(checkin => checkin.email)])]
-  const guests = emails.map(email => ({ email, rsvp: rsvps?.find(item => item.email === email), checkin: checkins.find(item => item.email === email) }))
-  // People, since someone can check in on more than one day of an event.
-  const attended = new Set(checkins.map(checkin => checkin.email)).size || activity?.attendance
+  // One row per member, since people can share an email and someone can check in on more than one day. A row
+  // an officer added by hand has no Member ID until the nightly sync.
+  const person = (checkin: EventActivity["checkins"][number]) => checkin.memberId || checkin.email
+  const people = checkins.filter((checkin, index) => checkins.findIndex(other => person(other) === person(checkin)) === index)
+  const guests: { key: string; email: string; rsvp?: RSVP; checkin?: EventActivity["checkins"][number] }[] = people.map(checkin => ({ key: person(checkin), email: checkin.email, checkin }))
+  // An RSVP goes with the person who checked in under its email, preferring the one with its name.
+  for (const rsvp of rsvps ?? []) {
+    const sameEmail = guests.filter(guest => guest.checkin && !guest.rsvp && guest.email === rsvp.email)
+    const guest = sameEmail.find(item => item.checkin!.name.toLowerCase() === rsvp.name.toLowerCase()) ?? sameEmail[0]
+    if (guest) guest.rsvp = rsvp
+    else guests.push({ key: rsvp.email, email: rsvp.email, rsvp })
+  }
+  const attended = people.length || activity?.attendance
   return { rsvps, activity, activityError, rsvpError, guests, attended, removeRsvp }
 }
 type EventRecords = ReturnType<typeof useEventRecords>
@@ -78,7 +87,7 @@ export function EventGuests({ records: { rsvps, activityError, rsvpError, guests
       <div className="guest-summary"><span className="event-muted">{guests.length} guest{guests.length === 1 ? "" : "s"}</span><CopyButton size="sm" copy={() => navigator.clipboard.writeText(guests.map(guest => `${guest.rsvp?.name ?? guest.checkin!.name}\t${guest.email}`).join("\n"))} label="Copy names and emails" /></div>
       <Card><Table className="guest-list">
         <TableHeader><TableRow><TableHead>Name</TableHead><TableHead className="hidden sm:table-cell">Email</TableHead><TableHead>RSVP</TableHead><TableHead>Checked in</TableHead><TableHead className="hidden sm:table-cell">Ticket</TableHead><TableHead><span className="sr-only">Remove RSVP</span></TableHead></TableRow></TableHeader>
-        <TableBody>{guests.map(({ email, rsvp, checkin }) => <TableRow key={email}>
+        <TableBody>{guests.map(({ key, email, rsvp, checkin }) => <TableRow key={key}>
           <TableCell className="font-medium">{rsvp?.name ?? checkin!.name}</TableCell>
           <TableCell className="hidden sm:table-cell">{email}</TableCell>
           <TableCell className="whitespace-nowrap tabular-nums">{rsvp ? day.format(new Date(rsvp.createdAt)) : "No"}</TableCell>

@@ -125,10 +125,11 @@ export const activity: EventActivity = {
   tickets: [{ name: "Student", count: 2, amount: 20 }, { name: "General", count: 2, amount: 30 }],
   transactions: sweaterRows,
   checkins: [
-    { name: "Maya Rivera", email: "maya@example.edu", time: "6:32 PM", ticket: "Student" },
-    { name: "Ben Kim", email: "ben@example.com", time: "6:35 PM", ticket: "General" },
-    { name: "Ada Lovelace", email: "ada@cornell.edu", time: "6:41 PM", ticket: "Student" },
-    { name: "Jeff Bishop", email: "jpb@cornell.edu", time: "6:50 PM", ticket: "General" },
+    { name: "Maya Rivera", email: "maya@example.edu", memberId: "mock-maya", time: "6:32 PM", ticket: "Student" },
+    { name: "Ben Kim", email: "ben@example.com", memberId: "mock-ben", time: "6:35 PM", ticket: "General" },
+    { name: "Ada Lovelace", email: "ada@cornell.edu", memberId: "mock-ada", time: "6:41 PM", ticket: "Student" },
+    { name: "Jeff Bishop", email: "jpb@cornell.edu", memberId: "mock-jeff", time: "6:50 PM", ticket: "General" },
+    { name: "Teresa Kim", email: "ben@example.com", memberId: "mock-teresa", time: "6:36 PM", ticket: null },
   ],
 }
 export const eventRsvps = [

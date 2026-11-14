@@ -121,6 +121,19 @@ describe("door tickets", () => {
     expect(await env.EVENTS_DB.prepare("SELECT COUNT(*) AS count FROM door_ticket_days").first("count")).toBe(2)
   })
 
+  it("keeps tickets apart for members who share an email", async () => {
+    const alan = { memberId: "Alan_0000001", name: "Alan Morrow", email: "morrow@example.com", phone: "607-555-0101", affiliation: "Community Member" as const }
+    const teresa = { ...alan, memberId: "Teresa_00001", name: "Teresa Morrow", phone: "607-555-0102" }
+    await storeMemberCache(env, [alan, teresa].map(({ memberId, name, email, phone, affiliation }) => ({ id: memberId, name, email, phone, affiliation })))
+    expect((await post("door/settle", { ...alan, id: "alan", ticketId: "general", method: "cash" })).status).toBe(201)
+    expect((await post("checkins", teresa)).status).toBe(402)
+    const { id } = (await (await post("door/charges", { ...teresa, ticketId: "general" })).json()) as { id: string }
+    expect((await post("door/settle", { ...teresa, id: "teresa", ticketId: "general", method: "cash" })).status).toBe(201)
+    expect(await (await get(`door/charges/${id}`)).json()).toEqual({ status: "canceled" })
+    expect(await env.EVENTS_DB.prepare("SELECT memberId, status FROM door_charges WHERE status != 'canceled' ORDER BY memberId").all().then(({ results }) => results))
+      .toEqual([{ memberId: "Alan_0000001", status: "cash" }, { memberId: "Teresa_00001", status: "cash" }])
+  })
+
   it("asks a one-day ticket holder to buy again on the second day, without offering tickets too long for it", async () => {
     await settle("general", "cash")
     const response = await checkInOn(TOMORROW())

@@ -215,7 +215,7 @@ export async function eventActivity(env: Env, eventId: string, fresh = false): P
     readBalanceSheet(env, fresh),
     readPayments(env, 'WHERE p.eventId = ?', eventId),
     // A ticket's money follows its payment, which a refund lowers. Door cash waits under an unsent ID until Square has it.
-    env.EVENTS_DB.prepare("SELECT c.email, c.ticketName, c.amount, p.amount AS paid FROM door_charges c LEFT JOIN square_payments p ON p.id IN (c.paymentId, 'unsent:' || c.id) WHERE c.eventId = ? AND c.status IN ('card', 'cash', 'free', 'waived')").bind(eventId).all<{ email: string; ticketName: string; amount: number; paid: number | null }>(),
+    env.EVENTS_DB.prepare("SELECT c.memberId, c.ticketName, c.amount, p.amount AS paid FROM door_charges c LEFT JOIN square_payments p ON p.id IN (c.paymentId, 'unsent:' || c.id) WHERE c.eventId = ? AND c.status IN ('card', 'cash', 'free', 'waived')").bind(eventId).all<{ memberId: string | null; ticketName: string; amount: number; paid: number | null }>(),
     env.MEMBER_CACHE.get<StoredExport>(campusGroupsTransactionsKey, 'json'),
     cached(env, fresh, 'finance:checkins:v2', async () => readCheckins(env, await accessToken(env))),
   ])
@@ -231,9 +231,9 @@ export async function eventActivity(env: Env, eventId: string, fresh = false): P
     tickets: [...tickets.values()],
     transactions: buildTransactions(parseSheetRows(sheet[0]), payments, stored, [event]).filter(item => item.eventId === eventId),
     checkins: checkins.filter(row => row.eventId === eventId).map(row => ({
-      name: row.name, email: row.email,
+      name: row.name, email: row.email, memberId: row.memberId,
       time: typeof row.timestamp === 'number' ? clock.format(new Date(SHEET_EPOCH_MS + row.timestamp * DAY_MS)) : '',
-      ticket: charges.results.find(charge => charge.email === row.email)?.ticketName ?? null,
+      ticket: charges.results.find(charge => charge.memberId === row.memberId)?.ticketName ?? null,
     })),
   }
 }

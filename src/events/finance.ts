@@ -21,7 +21,7 @@ export type EventActivity = {
   attendance: number | null
   tickets: { name: string; count: number; amount: number }[]
   transactions: Transaction[]
-  checkins: { name: string; email: string; time: string; ticket: string | null }[]
+  checkins: { name: string; email: string; memberId: string; time: string; ticket: string | null }[]
 }
 
 // "2026–27": the club's year runs August through July.

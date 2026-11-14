@@ -198,11 +198,11 @@ export async function handleCheckin(request: Request, env: Env, timestamp = Date
   const guard = env.CHECKIN_GUARD.getByName(event.sessionDate)
   if (!await guard.isCheckedIn(attendee, event.id)) {
     const tickets = ticketsToOffer(event)
-    if (tickets.length && !await useHeldTicket(env, event, attendee.email)) return json({ message: "Choose a ticket", event: event.title, tickets }, 402)
+    if (tickets.length && !await useHeldTicket(env, event, attendee)) return json({ message: "Choose a ticket", event: event.title, tickets }, 402)
   }
-  const result = await guard.checkin(attendee, event.id, sheetTimestamp)
+  const memberId = await guard.checkin(attendee, event.id, sheetTimestamp)
   const next = await nextSteps(env, attendee)
-  return result === "duplicate"
+  return memberId === null
     ? json({ message: "Already checked in", next }, 409)
     : json({ message: "Checked in", next }, 201)
 }
@@ -390,23 +390,18 @@ function rowAttendee(row: CheckinRow): Attendee {
 }
 
 // The Sheet is the source of truth, so a member's Notion details come from their newest check-in,
-// even when an older night is the one being synced.
+// even when an older night is the one being synced. People can share an email, so a row with a Member
+// ID only takes details from rows with that ID. Rows are in time order, so the last one wins.
 function newestDetails(rows: CheckinRow[]): (attendee: Attendee) => Attendee {
-  const byId = new Map<string, Attendee>()
-  const byEmail = new Map<string, Attendee>()
-  const order = new Map<Attendee, number>()
-  for (const [index, row] of rows.entries()) {
-    let attendee: Attendee
-    try { attendee = rowAttendee(row) } catch { continue }
-    order.set(attendee, index)
-    if (attendee.memberId) byId.set(attendee.memberId, attendee)
-    byEmail.set(attendee.email, attendee)
+  const newest = new Map<string, Attendee>()
+  const person = (attendee: Attendee) => attendee.memberId ? `id:${attendee.memberId}` : `email:${attendee.email}`
+  for (const row of rows) {
+    try {
+      const attendee = rowAttendee(row)
+      newest.set(person(attendee), attendee)
+    } catch { continue }
   }
-  return (attendee) => {
-    const candidates = [attendee.memberId ? byId.get(attendee.memberId) : undefined, byEmail.get(attendee.email)]
-      .filter((candidate): candidate is Attendee => candidate !== undefined)
-    return candidates.sort((left, right) => order.get(right)! - order.get(left)!)[0] ?? attendee
-  }
+  return (attendee) => newest.get(person(attendee)) ?? attendee
 }
 
 // How far back member search counts nights, about one semester.

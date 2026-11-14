@@ -85,6 +85,21 @@ describe("the Sheet as the source of truth", () => {
     expect(august.slice(1, 4)).toEqual(["Ada Byron", "ada@example.com", "Alumni"])
   })
 
+  it("keeps each member's own details when two members share an email", async () => {
+    const { sheets, notion } = useFakes()
+    notion.addMember({ memberId: "Alan_0000001", name: "Alan Morrow", email: "morrow@example.com", affiliation: "Community Member" })
+    notion.addMember({ memberId: "Teresa_00001", name: "Teresa Morrow", email: "morrow@example.com", affiliation: "Community Member" })
+    sheets.rows.push(
+      row(AUGUST_25, "Alan Morrow", "morrow@example.com", "Alan_0000001"),
+      row(AUGUST_25 + MINUTE, "Teresa Morrow", "morrow@example.com", "Teresa_00001"),
+    )
+    expect(await runNightlySync(env, token)).toEqual({ synced: 2, failed: 0 })
+    expect(notion.members.map(({ memberId, name }) => ({ memberId, name }))).toEqual([
+      { memberId: "Alan_0000001", name: "Alan Morrow" },
+      { memberId: "Teresa_00001", name: "Teresa Morrow" },
+    ])
+  })
+
   it("does not write to a row that moved while the sync ran, and fixes it on the next run", async () => {
     const { sheets } = useFakes()
     sheets.rows.push(
