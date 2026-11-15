@@ -1,5 +1,5 @@
 import { createCachedGoogleAccessTokenProvider, getGoogleAccessToken, readCheckins } from '../../check-in/worker/google'
-import type { CampusGroupsRow, EventActivity, FinanceEvent, FinanceOverview, Transaction } from './finance'
+import type { CampusGroupsRow, DoorTicketSold, EventActivity, FinanceEvent, FinanceOverview, Transaction } from './finance'
 import { appendLedgerRows, fiscalYear, linkLedgerRow } from './ledger'
 import { todayInNewYork } from './model'
 import { EventConflict } from './sheets'
@@ -206,6 +206,10 @@ export async function linkSheetRow(env: Env, body: unknown): Promise<void> {
   if (!linked) throw new EventConflict('The Balance Sheet is being updated. Try again in a minute.')
 }
 
+// Free and volunteer tickets never had a payment. A card sale not yet found in Square counts at its price.
+const ticketFor = (charge: { ticketName: string; amount: number; status: DoorTicketSold['method']; paid: number | null } | undefined): DoorTicketSold | null =>
+  charge ? { name: charge.ticketName, paid: (charge.paid ?? charge.amount) / 100, method: charge.status } : null
+
 const clock = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' })
 
 export async function eventActivity(env: Env, eventId: string, fresh = false): Promise<EventActivity | null> {
@@ -215,7 +219,7 @@ export async function eventActivity(env: Env, eventId: string, fresh = false): P
     readBalanceSheet(env, fresh),
     readPayments(env, 'WHERE p.eventId = ?', eventId),
     // A ticket's money follows its payment, which a refund lowers. Door cash waits under an unsent ID until Square has it.
-    env.EVENTS_DB.prepare("SELECT c.memberId, c.ticketName, c.amount, p.amount AS paid FROM door_charges c LEFT JOIN square_payments p ON p.id IN (c.paymentId, 'unsent:' || c.id) WHERE c.eventId = ? AND c.status IN ('card', 'cash', 'free', 'waived')").bind(eventId).all<{ memberId: string | null; ticketName: string; amount: number; paid: number | null }>(),
+    env.EVENTS_DB.prepare("SELECT c.memberId, c.ticketName, c.amount, c.status, p.amount AS paid FROM door_charges c LEFT JOIN square_payments p ON p.id IN (c.paymentId, 'unsent:' || c.id) WHERE c.eventId = ? AND c.status IN ('card', 'cash', 'free', 'waived')").bind(eventId).all<{ memberId: string | null; ticketName: string; amount: number; status: DoorTicketSold['method']; paid: number | null }>(),
     env.MEMBER_CACHE.get<StoredExport>(campusGroupsTransactionsKey, 'json'),
     cached(env, fresh, 'finance:checkins:v2', async () => readCheckins(env, await accessToken(env))),
   ])
@@ -233,7 +237,7 @@ export async function eventActivity(env: Env, eventId: string, fresh = false): P
     checkins: checkins.filter(row => row.eventId === eventId).map(row => ({
       name: row.name, email: row.email, memberId: row.memberId,
       time: typeof row.timestamp === 'number' ? clock.format(new Date(SHEET_EPOCH_MS + row.timestamp * DAY_MS)) : '',
-      ticket: charges.results.find(charge => charge.memberId === row.memberId)?.ticketName ?? null,
+      ticket: ticketFor(charges.results.find(charge => charge.memberId === row.memberId)),
     })),
   }
 }

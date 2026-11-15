@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
 import { ToggleChoice, ToggleGroupItem } from "../components/ui/toggle-group"
 import { Input } from "../components/ui/input"
 import { StylePicker } from "../events/StylePicker"
-import { isUpcoming, isValidPrice, todayInNewYork, type EventDay, type EventRecord, type EventTicket, type ManagedEvent } from "../events/model"
+import { isUpcoming, todayInNewYork, type EventDay, type EventRecord, type EventTicket, type ManagedEvent } from "../events/model"
 import { EventTimePicker } from "./EventTimePicker"
 import { LocationPicker } from "./LocationPicker"
 import { EventDatePicker } from "./EventDatePicker"
@@ -29,7 +29,8 @@ import { FinanceOverview } from "./FinanceOverview"
 import { SquareConnection } from "./SquareConnection"
 import { blankOutsideEvent, OutsideEventForm, outsideSummary } from "./OutsideEventForm"
 import type { OutsideEvent } from "../events/outside"
-import { InputGroup, InputGroupAddon, InputGroupInput } from "../components/ui/input-group"
+import { InputGroup, InputGroupInput } from "../components/ui/input-group"
+import { PriceInput } from "./PriceInput"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select"
 
 type ManagerTab = "special" | "lessons" | "newsletter" | "finances" | "settings"
@@ -274,7 +275,7 @@ function EventEditor({ event, leaveGuard, onSave, onReplace, onDelete, onCancel,
       <TabsTrigger value="guests">Guests{guestCount !== null && guestCount !== undefined && <> <span className="tab-count">{guestCount}</span></>}</TabsTrigger>
       <TabsTrigger value="details">Details</TabsTrigger>
     </TabsList>}
-    {tab !== "details" ? <TabsContent value={tab} className="guest-panel">{tab === "overview" ? <EventOverview records={records} rsvpCount={event.rsvpCount} /> : <EventGuests records={records} />}</TabsContent> : event.id ? <TabsContent value="details" render={form} /> : form}
+    {tab !== "details" ? <TabsContent value={tab} className="guest-panel">{tab === "overview" ? <EventOverview records={records} rsvpCount={event.rsvpCount} /> : <EventGuests records={records} tickets={event.tickets ?? []} />}</TabsContent> : event.id ? <TabsContent value="details" render={form} /> : form}
     </Tabs>
   </div>
 }
@@ -330,15 +331,6 @@ function EventDays({ event, disabled, onChange }: { event: EventRecord; disabled
 }
 
 // Keystrokes that would make an invalid price are ignored. Leaving the field writes cents in full, "12.5" as "12.50".
-function PriceInput({ label, value = "", disabled, onChange }: { label: string; value?: string; disabled: boolean; onChange: (value: string) => void }) {
-  return <InputGroup>
-    <InputGroupAddon>$</InputGroupAddon>
-    <InputGroupInput disabled={disabled} aria-label={`${label} ticket price`} placeholder="TBA" inputMode="decimal" value={value}
-      onChange={e => { if (isValidPrice(e.target.value.replace(/\.$/, ""))) onChange(e.target.value) }}
-      onBlur={() => onChange(value.replace(/\.$/, "").replace(/\.(\d)$/, (_, digit) => `.${digit}0`))} />
-  </InputGroup>
-}
-
 // The ticket types people choose from at check-in. Days only matters for an event with a last day.
 function TicketTypes({ tickets, eventDays, disabled, onChange }: { tickets: EventTicket[]; eventDays: number; disabled: boolean; onChange: (tickets: EventTicket[]) => void }) {
   const addTicket = useRef<HTMLButtonElement>(null)
@@ -346,7 +338,7 @@ function TicketTypes({ tickets, eventDays, disabled, onChange }: { tickets: Even
   return <div className="editor-tickets">
     {tickets.map((ticket, index) => <div className={eventDays > 1 ? "editor-ticket editor-ticket-days" : "editor-ticket"} key={ticket.id}>
       <InputGroup className="editor-ticket-name"><InputGroupInput disabled={disabled} aria-label="Ticket name" placeholder="Ticket name" maxLength={60} value={ticket.name} onChange={e => update(index, { name: e.target.value })} /></InputGroup>
-      <PriceInput label={ticket.name || "This"} disabled={disabled} value={ticket.price} onChange={price => update(index, { price })} />
+      <PriceInput label={`${ticket.name || "This"} ticket price`} placeholder="TBA" disabled={disabled} value={ticket.price} onChange={price => update(index, { price })} />
       {eventDays > 1 && <Select value={String(ticket.days)} disabled={disabled} onValueChange={days => update(index, { days: Number(days) })}>
         <SelectTrigger className="editor-ticket-select" aria-label={`Days ${ticket.name || "this ticket"} covers`}><SelectValue /></SelectTrigger>
         <SelectContent>{Array.from({ length: eventDays }, (_, day) => <SelectItem key={day} value={String(day + 1)}>{day + 1} {day ? "days" : "day"}</SelectItem>)}</SelectContent>

@@ -103,6 +103,27 @@ export async function sendUnsentCash(env: Env): Promise<void> {
   }
 }
 
+// Refunds door cash Square already has, when an officer corrects the ticket it paid for, and returns whether it did.
+// The key makes a retry refund once. The saved amount drops now, so the Balance Sheet is refiled without waiting
+// for Square to list the payment again.
+export async function refundCash(env: Env, paymentId: string, key: string): Promise<boolean> {
+  const token = await env.EVENTS_DB.prepare('SELECT accessToken FROM square_connection').first<string>('accessToken')
+  const amount = await env.EVENTS_DB.prepare('SELECT amount FROM square_payments WHERE id = ?').bind(paymentId).first<number>('amount')
+  if (!amount) return true
+  if (!token) return false
+  const response = await fetch(`${SQUARE}/v2/refunds`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Square-Version': VERSION },
+    body: JSON.stringify({ idempotency_key: key, payment_id: paymentId, amount_money: { amount, currency: 'USD' }, reason: 'Ticket corrected in the club manager' }),
+  })
+  if (!response.ok) {
+    logError('Square refused a door cash refund', new Error(await response.text()))
+    return false
+  }
+  await env.EVENTS_DB.prepare('UPDATE square_payments SET amount = 0, synced = 0 WHERE id = ?').bind(paymentId).run()
+  return true
+}
+
 type SeenPayment = { amount: number; fee: number }
 
 // The door phone sends its charge's ID as a note on the sale. Square keeps that note on the sale's order, not

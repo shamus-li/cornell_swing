@@ -16,12 +16,15 @@ export type EventOption = { id: string; title: string; date: string }
 export type FinanceOverview = { accounts: FinanceAccount[]; events: FinanceEvent[]; transactions: Transaction[]; eventOptions: EventOption[]; campusGroupsUploadedAt: string | null }
 export type CampusGroupsRow = { source: string; amount: string; paymentStatus: string; item: string; date: string }
 
+// A ticket from the door. paid is in dollars, after any refund. A card sale is paid through Square and can't be edited here.
+export type DoorTicketSold = { name: string; paid: number; method: "card" | "cash" | "free" | "waived" }
+
 // One event's money and who came. attendance is a headcount for events from before check-ins named their event.
 export type EventActivity = {
   attendance: number | null
   tickets: { name: string; count: number; amount: number }[]
   transactions: Transaction[]
-  checkins: { name: string; email: string; memberId: string; time: string; ticket: string | null }[]
+  checkins: { name: string; email: string; memberId: string; time: string; ticket: DoorTicketSold | null }[]
 }
 
 // "2026–27": the club's year runs August through July.

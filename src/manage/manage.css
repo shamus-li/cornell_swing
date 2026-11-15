@@ -127,6 +127,8 @@ html:has(.manage-page) { scroll-behavior: auto; }
 /* Guests */
 .guest-panel { padding-top: 16px; }
 .guest-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.ticket-edit { display: grid; gap: 8px; }
+.ticket-edit > button { justify-self: end; }
 
 /* Settings */
 .sheet-connection { display: grid; gap: 12px; padding: 16px; border-radius: var(--radius-card); background: var(--muted); }
@@ -258,15 +260,15 @@ label.newsletter-field { gap: 4px; }
 /* The vertical margin keeps rows the same height with or without this button. */
 .finance-event-edit { margin-block: calc(var(--button-small-height) / -2 + 8px); vertical-align: middle; opacity: 0; pointer-events: none; }
 /* After a name it takes up no width, so it can't narrow the name or wrap onto a blank line. */
-a + .finance-event-edit { margin-left: 4px; margin-right: calc(-4px - var(--button-small-height)); }
+:is(a, span) + .finance-event-edit { margin-left: 4px; margin-right: calc(-4px - var(--button-small-height)); }
 /* On its own, its label lines up with the column heading. */
 .finance-event-edit:first-child { margin-left: -11px; }
-tr:hover .finance-event-edit, .finance-event-edit:focus-visible, .finance-event-edit[data-popup-open] { opacity: 1; pointer-events: auto; }
+tr:hover .finance-event-edit, .finance-event-edit:focus-visible, .finance-event-edit:is([data-popup-open], [data-state="open"]) { opacity: 1; pointer-events: auto; }
 /* Touch screens have no hover, so it stays shown and needs its width. */
 @media (pointer: coarse) {
   .finance-event { display: flex; align-items: center; gap: 4px; }
   .finance-event-edit { opacity: 1; pointer-events: auto; }
-  a + .finance-event-edit { margin-inline: 0; }
+  :is(a, span) + .finance-event-edit { margin-inline: 0; }
 }
 .finance-event-edit:disabled, tr:hover .finance-event-edit:disabled { opacity: .5; }
 .finance-check { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }

@@ -1,5 +1,6 @@
 import { handleLocationSearch } from './locations'
 import { logError } from './logging'
+import { setDoorTicket, TicketEditError } from './ticket-edit'
 import { getSheetStatus, linkSheet, disconnectSheet, importSheet, saveRSVP, removeRSVP, changeEventWithSheet, createEventWithSheet, EventConflict, SheetError } from './sheets'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
 import { createElement } from 'react'
@@ -293,6 +294,13 @@ async function route(request: Request, env: Env): Promise<Response> {
     await linkSheetRow(env, await readBody(request))
     return json(await financeOverview(env, true))
   }
+  const ticketMatch = path.match(/^\/manage\/api\/events\/([^/]+)\/tickets$/)
+  if (ticketMatch && method === 'PUT') {
+    const { memberId, ticket, paid } = (await readBody(request) ?? {}) as { memberId?: unknown; ticket?: unknown; paid?: unknown }
+    if (typeof memberId !== 'string' || typeof ticket !== 'string' || typeof paid !== 'number') throw new HttpError(400, 'Choose a ticket.')
+    await setDoorTicket(env, ticketMatch[1], memberId, ticket, Math.round(paid * 100))
+    return json(await eventActivity(env, ticketMatch[1], true))
+  }
   const activityMatch = path.match(/^\/manage\/api\/events\/([^/]+)\/activity$/)
   if (activityMatch && method === 'GET') {
     const activity = await eventActivity(env, activityMatch[1], url.searchParams.has('fresh'))
@@ -469,7 +477,7 @@ export default {
         error = new HttpError(502, error.message)
       }
       if (error instanceof EventConflict) error = new HttpError(409, error.message)
-      if (error instanceof RedirectError) error = new HttpError(error.status, error.message)
+      if (error instanceof RedirectError || error instanceof TicketEditError) error = new HttpError(error.status, error.message)
       if (error instanceof AlertEmailError) error = new HttpError(502, error.message)
       if (!(error instanceof HttpError)) logError('Events request failed', error)
       response = json({ error: error instanceof HttpError ? error.message : 'Something went wrong. Please try again.', ...(error instanceof HttpError && error.code && { code: error.code }) }, error instanceof HttpError ? error.status : 500)
