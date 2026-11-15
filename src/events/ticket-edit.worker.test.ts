@@ -70,6 +70,11 @@ describe('changing a ticket from the manager', () => {
     expect((await charges()).map(charge => charge.status)).toEqual(['canceled', 'waived'])
   })
 
+  it('records cash a volunteer chose to pay', async () => {
+    await setDoorTicket(env, 'haunt', 'Ruby_0000001', 'volunteer', 500)
+    expect(await charges()).toEqual([{ ticketName: 'Volunteer', amount: 500, status: 'cash', paymentId: 'square-1' }])
+  })
+
   it('leaves a card sale to Square', async () => {
     await env.EVENTS_DB.prepare("INSERT INTO door_charges (id, eventId, sessionDate, email, memberId, attendee, ticketName, amount, days, status, paymentId, createdAt, settledAt) VALUES ('card', 'haunt', '2026-10-17', 'ruby@example.com', 'Ruby_0000001', '{}', 'General', 1500, 1, 'card', 'square-card', '2026-10-17T23:00:00Z', '2026-10-17T23:00:00Z')").run()
     await expect(setDoorTicket(env, 'haunt', 'Ruby_0000001', 'general', 500)).rejects.toThrow('Square')

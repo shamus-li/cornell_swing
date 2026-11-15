@@ -63,7 +63,7 @@ async function respond(req: IncomingMessage, path: string): Promise<object | nul
   if (ticketEdit && method === "PUT") {
     const { memberId, ticket, paid } = await body(req)
     const name = ticket === "volunteer" ? "Volunteer" : events.find(item => item.id === ticketEdit[1])?.tickets?.find(item => item.id === ticket)?.name ?? ticket
-    activity.checkins = activity.checkins.map(checkin => checkin.memberId === memberId ? { ...checkin, ticket: { name, paid, method: ticket === "volunteer" ? "waived" : paid ? "cash" : "free" } } : checkin)
+    activity.checkins = activity.checkins.map(checkin => checkin.memberId === memberId ? { ...checkin, ticket: { name, paid, method: paid ? "cash" : ticket === "volunteer" ? "waived" : "free" } } : checkin)
     return activity
   }
   const event = route.match(/^\/events\/([^/]+)(\/rsvps)?$/)

@@ -94,8 +94,8 @@ const dollars = (amount: number) => amount.toFixed(2).replace(/\.00$/, "")
 // added to the Sheet by hand can't have one until the nightly sync gives it a Member ID.
 function TicketCell({ checkin, tickets, onSave }: { checkin: Checkin; tickets: EventTicket[]; onSave: (checkin: Checkin, ticket: string, paid: number) => Promise<void> }) {
   const sold = checkin.ticket
-  const priceOf = (id: string) => dollars(Number(tickets.find(ticket => ticket.id === id)?.price || 0))
-  const startChoice = () => sold?.method === "waived" ? VOLUNTEER : tickets.find(ticket => ticket.name === sold?.name)?.id ?? ""
+  const priceOf = (id: string) => { const price = tickets.find(ticket => ticket.id === id)?.price; return price ? dollars(Number(price)) : "" }
+  const startChoice = () => sold?.method === "waived" || sold?.name === "Volunteer" ? VOLUNTEER : tickets.find(ticket => ticket.name === sold?.name)?.id ?? ""
   const [open, setOpen] = useState(false)
   const [choice, setChoice] = useState(startChoice)
   const [paid, setPaid] = useState("")
@@ -105,12 +105,12 @@ function TicketCell({ checkin, tickets, onSave }: { checkin: Checkin; tickets: E
   function reset() {
     const chosen = startChoice()
     setChoice(chosen); setError("")
-    setPaid(sold ? dollars(sold.paid) : chosen && chosen !== VOLUNTEER ? priceOf(chosen) : "")
+    setPaid(sold ? sold.paid ? dollars(sold.paid) : "" : priceOf(chosen))
   }
   async function save(event: React.FormEvent) {
     event.preventDefault()
     setSaving(true); setError("")
-    try { await onSave(checkin, choice, choice === VOLUNTEER ? 0 : Number(paid || 0)); setOpen(false) }
+    try { await onSave(checkin, choice, Number(paid || 0)); setOpen(false) }
     catch (err) { setError(errorMessage(err)) }
     setSaving(false)
   }
@@ -121,11 +121,11 @@ function TicketCell({ checkin, tickets, onSave }: { checkin: Checkin; tickets: E
         : <Button type="button" variant="ghost" size="sm" className="finance-event-edit text-muted-foreground" aria-label={`Add ticket for ${checkin.name}`}>Add ticket</Button>}</PopoverTrigger>
       <PopoverContent align="start" className="gap-2 p-2" aria-label={`Ticket for ${checkin.name}`}>
         <form className="ticket-edit" onSubmit={event => void save(event)}>
-          <div className="editor-row"><span>Ticket</span><Select value={choice} disabled={saving} onValueChange={value => { setChoice(value); setPaid(value === VOLUNTEER ? "" : priceOf(value)) }}>
+          <div className="editor-row"><span>Ticket</span><Select value={choice} disabled={saving} onValueChange={value => { setChoice(value); setPaid(priceOf(value)) }}>
             <SelectTrigger className="w-full" aria-label="Ticket"><SelectValue placeholder="Choose" /></SelectTrigger>
             <SelectContent>{tickets.map(ticket => <SelectItem key={ticket.id} value={ticket.id}>{ticket.name}</SelectItem>)}<SelectItem value={VOLUNTEER}>Volunteer</SelectItem></SelectContent>
           </Select></div>
-          {choice !== VOLUNTEER && <div className="editor-row"><span>Cash paid</span><PriceInput label="Cash paid" placeholder="0" disabled={saving} value={paid} onChange={setPaid} /></div>}
+          <div className="editor-row"><span>Cash paid</span><PriceInput label="Cash paid" placeholder="0" disabled={saving} value={paid} onChange={setPaid} /></div>
           <Button type="submit" disabled={saving || !choice}>{saving ? "Saving…" : "Save"}</Button>
         </form>
         {error && <p role="alert" className="event-error">{error}</p>}

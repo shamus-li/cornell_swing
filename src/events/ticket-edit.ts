@@ -12,7 +12,7 @@ const accessToken = createCachedGoogleAccessTokenProvider(getGoogleAccessToken)
 export const VOLUNTEER = 'volunteer'
 
 // Sets the ticket of someone who checked in, from the manager: an event ticket type or Volunteer, and the cash they
-// paid in cents. Their old ticket is canceled and the new one covers the same days. Cash Square already has is
+// paid in cents, which a volunteer can pay too. Their old ticket is canceled and the new one covers the same days. Cash Square already has is
 // refunded there and the new amount sent as new cash, so Square, the Balance Sheet and the manager agree. A card
 // sale belongs to Square, so it's changed there instead.
 export async function setDoorTicket(env: Env, eventId: string, memberId: string, choice: string, paid: number): Promise<void> {
@@ -20,7 +20,7 @@ export async function setDoorTicket(env: Env, eventId: string, memberId: string,
   if (!event) throw new TicketEditError(404, 'Event not found.')
   const ticket = choice === VOLUNTEER ? volunteerTicket(event) : findTicket(event, choice)
   if (!ticket) throw new TicketEditError(400, 'Choose a ticket.')
-  if (!Number.isInteger(paid) || paid < 0 || paid > 100_000 || (choice === VOLUNTEER && paid)) throw new TicketEditError(400, 'Enter the cash they paid.')
+  if (!Number.isInteger(paid) || paid < 0 || paid > 100_000) throw new TicketEditError(400, 'Enter the cash they paid.')
   const rows = (await readCheckins(env, await accessToken(env))).filter(row => row.eventId === eventId && row.memberId === memberId && typeof row.timestamp === 'number')
   if (!rows.length) throw new TicketEditError(404, 'This person hasn’t checked in to this event.')
   const newest = rows.reduce((latest, row) => (row.timestamp as number) > (latest.timestamp as number) ? row : latest)
@@ -40,7 +40,7 @@ export async function setDoorTicket(env: Env, eventId: string, memberId: string,
   }
   const id = crypto.randomUUID()
   const now = new Date().toISOString()
-  const status = choice === VOLUNTEER ? 'waived' : paid ? 'cash' : 'free'
+  const status = paid ? 'cash' : choice === VOLUNTEER ? 'waived' : 'free'
   await env.EVENTS_DB.batch([
     ...old.map(charge => env.EVENTS_DB.prepare("UPDATE door_charges SET status = 'canceled' WHERE id = ?").bind(charge.id)),
     env.EVENTS_DB.prepare('INSERT INTO door_charges (id, eventId, sessionDate, email, memberId, attendee, ticketName, amount, days, status, createdAt, settledAt) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)')
